@@ -166,14 +166,14 @@
 <!-- ===== CONFIGURATION — edit these ===== -->
 <script>
 const CONFIG = {
-  supabaseUrl: 'YOUR_SUPABASE_URL',
-  supabaseKey: 'YOUR_SUPABASE_ANON_KEY',
-  itemsTable: 'items',         // table with your 4500 items
-  countsTable: 'count_records', // table where scans are saved
-  barcodeColumn: 'barcode',    // column name for barcode in items table
+  supabaseUrl: 'https://unbjlhofoqzglacczwvg.supabase.co',
+  supabaseKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVuYmpsaG9mb3F6Z2xhY2N6d3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDI2NDcsImV4cCI6MjA5MDcxODY0N30.tSqXTptfePkGAi7uzl6uqaLAftzQzgNS63vgmyzX87I',
+  itemsTable: 'items',
+  countsTable: 'count_records',
+  barcodeColumn: 'barcode',
   nameColumn: 'name',
-  descColumn: 'description',
-  demoMode: true               // set false after connecting Supabase
+  costColumn: 'cost',
+  demoMode: false
 };
 </script>
 
@@ -215,7 +215,7 @@ const CONFIG = {
     <div class="card-title">Scan item</div>
 
     <div id="demo-notice" class="config-notice">
-      <strong>Demo mode</strong> — TESTTTTT using sample item data. Connect Supabase to use your 4,500 items. See setup guide below.
+      <strong>Demo mode</strong> — using sample item data. Connect Supabase to use your 4,500 items. See setup guide below.
     </div>
 
     <div class="scan-input-row">
@@ -402,7 +402,7 @@ async function lookupBarcode(barcode) {
     foundBox.innerHTML = `
       <div class="item-found">
         <div class="item-name">${item.name}</div>
-        ${item.description ? `<div class="item-desc">${item.description}</div>` : ''}
+        ${item.cost != null ? `<div class="item-desc">Cost: $${parseFloat(item.cost).toFixed(2)}</div>` : ''}
         <div class="item-barcode-show">${barcode}</div>
       </div>`;
     countForm.classList.add('visible');
@@ -421,7 +421,7 @@ async function lookupBarcode(barcode) {
 
 async function fetchFromSupabase(barcode) {
   try {
-    const url = `${CONFIG.supabaseUrl}/rest/v1/${CONFIG.itemsTable}?${CONFIG.barcodeColumn}=eq.${encodeURIComponent(barcode)}&select=${CONFIG.barcodeColumn},${CONFIG.nameColumn},${CONFIG.descColumn}&limit=1`;
+    const url = `${CONFIG.supabaseUrl}/rest/v1/${CONFIG.itemsTable}?${CONFIG.barcodeColumn}=eq.${encodeURIComponent(barcode)}&select=${CONFIG.barcodeColumn},${CONFIG.nameColumn},${CONFIG.costColumn}&limit=1`;
     const res = await fetch(url, {
       headers: {
         'apikey': CONFIG.supabaseKey,
@@ -430,7 +430,7 @@ async function fetchFromSupabase(barcode) {
     });
     const data = await res.json();
     if (data && data.length > 0) {
-      return { name: data[0][CONFIG.nameColumn], description: data[0][CONFIG.descColumn] };
+      return { name: data[0][CONFIG.nameColumn], cost: data[0][CONFIG.costColumn] };
     }
     return null;
   } catch(e) {
@@ -451,7 +451,7 @@ async function submitCount() {
   const record = {
     barcode: currentItem.barcode,
     name: currentItem.name,
-    description: currentItem.description || '',
+    cost: currentItem.cost || null,
     quantity: qty,
     serial: serial,
     location: location,
@@ -514,7 +514,7 @@ function renderLog() {
     <div class="log-item">
       <div>
         <div class="log-item-name">${r.name}</div>
-        <div class="log-item-meta">${r.barcode}${r.serial ? ' · ' + r.serial : ''}</div>
+        <div class="log-item-meta">${r.barcode}${r.serial ? ' · ' + r.serial : ''}${r.cost != null ? ' · $' + parseFloat(r.cost).toFixed(2) : ''}</div>
         <div class="log-item-loc">${r.location}</div>
       </div>
       <div>
@@ -552,9 +552,9 @@ function updateStats() {
 // ===== EXPORT =====
 function exportCSV() {
   if (scanLog.length === 0) { alert('Nothing to export yet.'); return; }
-  const headers = ['Timestamp', 'Location', 'Barcode', 'Item Name', 'Description', 'Quantity', 'Serial/Lot'];
+  const headers = ['Timestamp', 'Location', 'Barcode', 'Item Name', 'Cost', 'Quantity', 'Serial/Lot'];
   const rows = scanLog.map(r => [
-    r.timestamp, r.location, r.barcode, r.name, r.description, r.quantity, r.serial
+    r.timestamp, r.location, r.barcode, r.name, r.cost, r.quantity, r.serial
   ]);
   const csv = [headers, ...rows].map(row => row.map(v => `"${String(v||'').replace(/"/g,'""')}"`).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
