@@ -210,6 +210,8 @@ const CONFIG = {
     </div>
   </div>
 
+  <div id="db-status" style="background:var(--amber-bg);border:0.5px solid var(--amber-border);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:var(--amber-text);">Connecting to database…</div>
+
   <!-- Scan card -->
   <div class="scan-card">
     <div class="card-title">Scan item</div>
@@ -331,6 +333,29 @@ function init() {
 
   if (!CONFIG.demoMode) {
     document.getElementById('demo-notice').style.display = 'none';
+    checkDBConnection();
+  }
+}
+
+async function checkDBConnection() {
+  const el = document.getElementById('db-status');
+  try {
+    const res = await fetch(
+      CONFIG.supabaseUrl + '/rest/v1/' + CONFIG.itemsTable + '?select=count&limit=1',
+      { headers: { 'apikey': CONFIG.supabaseKey, 'Authorization': 'Bearer ' + CONFIG.supabaseKey, 'Prefer': 'count=exact' } }
+    );
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const count = res.headers.get('content-range');
+    const total = count ? count.split('/')[1] : '?';
+    el.style.background = 'var(--green-bg)';
+    el.style.borderColor = 'var(--green-border)';
+    el.style.color = 'var(--green-text)';
+    el.innerHTML = 'Connected to database — <strong>' + total + '</strong> items loaded';
+  } catch(e) {
+    el.style.background = 'var(--red-bg)';
+    el.style.borderColor = 'var(--red-border)';
+    el.style.color = 'var(--red-text)';
+    el.innerHTML = 'Database connection failed: ' + e.message;
   }
 }
 
