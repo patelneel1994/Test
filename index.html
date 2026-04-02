@@ -2,190 +2,233 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Inventory Counter</title>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <style>
   :root {
-    --bg: #f7f6f3;
-    --surface: #ffffff;
-    --border: rgba(0,0,0,0.1);
-    --border-strong: rgba(0,0,0,0.2);
-    --text: #1a1a18;
-    --text-muted: #6b6b67;
-    --text-hint: #a0a09c;
-    --blue-bg: #E6F1FB;
-    --blue-border: #B5D4F4;
-    --blue-text: #0C447C;
-    --green-bg: #EAF3DE;
-    --green-border: #C0DD97;
-    --green-text: #3B6D11;
-    --amber-bg: #FAEEDA;
-    --amber-border: #FAC775;
-    --amber-text: #854F0B;
-    --red-bg: #FCEBEB;
-    --red-border: #F7C1C1;
-    --red-text: #A32D2D;
-    --radius: 10px;
-    --radius-sm: 6px;
+    --bg:             #EEF2FF;
+    --surface:        #FFFFFF;
+    --border:         #D1D9F0;
+    --text:           #1A2035;
+    --text-muted:     #6B7A99;
+    --text-hint:      #AAB4CC;
+    --primary:        #2563EB;
+    --primary-dark:   #1D4ED8;
+    --primary-bg:     #EFF4FF;
+    --primary-border: #BFCFFA;
+    --green:          #16A34A;
+    --green-bg:       #F0FDF4;
+    --green-border:   #86EFAC;
+    --green-text:     #15803D;
+    --red-bg:         #FEF2F2;
+    --red-border:     #FECACA;
+    --red-text:       #B91C1C;
+    --amber-bg:       #FFFBEB;
+    --amber-border:   #FCD34D;
+    --amber-text:     #92400E;
+    --radius:    12px;
+    --radius-sm:  8px;
+    --radius-xs:  6px;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #1c1c1a;
-      --surface: #252523;
-      --border: rgba(255,255,255,0.1);
-      --border-strong: rgba(255,255,255,0.2);
-      --text: #f0ede8;
-      --text-muted: #9a9a94;
-      --text-hint: #606060;
-      --blue-bg: #042C53;
-      --blue-border: #185FA5;
-      --blue-text: #B5D4F4;
-      --green-bg: #173404;
-      --green-border: #3B6D11;
-      --green-text: #C0DD97;
-      --amber-bg: #412402;
-      --amber-border: #854F0B;
-      --amber-text: #FAC775;
-      --red-bg: #501313;
-      --red-border: #A32D2D;
-      --red-text: #F7C1C1;
-    }
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
 
-  /* Header */
-  .header { background: var(--surface); border-bottom: 0.5px solid var(--border); padding: 0 16px; display: flex; align-items: center; justify-content: space-between; height: 56px; position: sticky; top: 0; z-index: 100; }
-  .header-title { font-size: 17px; font-weight: 600; letter-spacing: -0.3px; }
-  .header-sub { font-size: 12px; color: var(--text-muted); }
+  /* HEADER */
+  .header { background: var(--primary); padding: 0 16px; display: flex; align-items: center; justify-content: space-between; height: 54px; position: sticky; top: 0; z-index: 100; }
+  .header-title { font-size: 17px; font-weight: 700; color: #fff; letter-spacing: -.3px; }
+  .header-right  { font-size: 12px; color: rgba(255,255,255,.7); }
 
-  /* Location bar */
-  .loc-bar { background: var(--blue-bg); border-bottom: 0.5px solid var(--blue-border); padding: 10px 16px; display: flex; align-items: center; gap: 10px; position: sticky; top: 56px; z-index: 99; }
-  .loc-label { font-size: 12px; font-weight: 500; color: var(--blue-text); white-space: nowrap; }
-  .loc-select { flex: 1; background: var(--surface); border: 0.5px solid var(--blue-border); border-radius: var(--radius-sm); padding: 7px 10px; font-size: 14px; font-weight: 500; color: var(--text); appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b6b67' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; padding-right: 28px; cursor: pointer; }
-  .loc-select:focus { outline: none; border-color: var(--blue-text); }
-  .loc-manage-btn { font-size: 12px; color: var(--blue-text); background: none; border: none; cursor: pointer; white-space: nowrap; padding: 4px 0; text-decoration: underline; }
+  /* LOCATION BAR */
+  .loc-bar { background: var(--surface); border-bottom: 1.5px solid var(--border); padding: 10px 16px; display: flex; align-items: center; gap: 10px; position: sticky; top: 54px; z-index: 99; }
+  .loc-label { font-size: 11px; font-weight: 700; color: var(--text-muted); white-space: nowrap; text-transform: uppercase; letter-spacing: .05em; }
+  .loc-select { flex: 1; background: var(--bg); border: 1.5px solid var(--border); border-radius: var(--radius-xs); padding: 8px 28px 8px 10px; font-size: 14px; font-weight: 600; color: var(--text); appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236B7A99' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; cursor: pointer; }
+  .loc-select:focus { outline: none; border-color: var(--primary); }
+  .loc-manage-btn { font-size: 12px; font-weight: 600; color: var(--primary); background: var(--primary-bg); border: 1.5px solid var(--primary-border); border-radius: var(--radius-xs); padding: 6px 10px; cursor: pointer; white-space: nowrap; }
 
-  /* Main content */
-  .main { padding: 16px; max-width: 640px; margin: 0 auto; }
+  /* MAIN */
+  .main { padding: 14px 16px 48px; max-width: 600px; margin: 0 auto; }
 
-  /* Scan card */
-  .scan-card { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
-  .card-title { font-size: 13px; font-weight: 500; color: var(--text-muted); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+  /* STATS */
+  .stat-row { display: grid; grid-template-columns: repeat(2,1fr); gap: 8px; margin-bottom: 14px; }
+  .stat { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 10px 8px; text-align: center; }
+  .stat-val { font-size: 26px; font-weight: 800; color: var(--primary); line-height: 1; }
+  .stat-label { font-size: 11px; color: var(--text-muted); margin-top: 3px; font-weight: 500; }
 
-  .scan-input-row { display: flex; gap: 8px; margin-bottom: 12px; }
-  .scan-input { flex: 1; border: 0.5px solid var(--border-strong); border-radius: var(--radius-sm); padding: 12px 14px; font-size: 16px; color: var(--text); background: var(--bg); transition: border-color 0.15s; }
-  .scan-input:focus { outline: none; border-color: #378ADD; }
+  /* DB STATUS */
+  #db-status { border-radius: var(--radius-sm); padding: 9px 14px; margin-bottom: 12px; font-size: 13px; font-weight: 500; }
+
+  /* SCAN CARD */
+  .scan-card { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 14px; }
+  .card-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 10px; }
+
+  .scan-row { display: flex; gap: 8px; }
+  .scan-input { flex: 1; border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 13px 14px; font-size: 16px; color: var(--text); background: var(--bg); transition: border-color .15s, background .15s; }
+  .scan-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
+  .scan-input.loading { background: var(--primary-bg); border-color: var(--primary-border); }
+  .scan-input.dup-warn { background: var(--amber-bg); border-color: var(--amber-border); }
   .scan-input::placeholder { color: var(--text-hint); }
-  .camera-btn { background: var(--blue-bg); border: 0.5px solid var(--blue-border); border-radius: var(--radius-sm); padding: 0 14px; cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: var(--blue-text); white-space: nowrap; }
-  .camera-btn svg { width: 18px; height: 18px; }
+  .camera-btn { background: var(--primary-bg); border: 1.5px solid var(--primary-border); border-radius: var(--radius-sm); padding: 0 14px; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--primary); cursor: pointer; white-space: nowrap; }
+  .camera-btn svg { width: 18px; height: 18px; flex-shrink: 0; }
 
-  /* Camera scanner */
-  .camera-scanner { margin-bottom: 12px; display: none; }
+  /* CAMERA */
+  .camera-scanner { margin-top: 12px; display: none; }
   .camera-scanner.active { display: block; }
-  #qr-reader { border-radius: var(--radius-sm); overflow: hidden; border: 0.5px solid var(--border); }
+  #qr-reader { border-radius: var(--radius-sm); overflow: hidden; border: 1.5px solid var(--border); }
   #qr-reader video { width: 100% !important; }
-  .camera-stop { width: 100%; margin-top: 8px; background: var(--red-bg); border: 0.5px solid var(--red-border); border-radius: var(--radius-sm); padding: 8px; font-size: 13px; font-weight: 500; color: var(--red-text); cursor: pointer; }
+  .camera-stop { width: 100%; margin-top: 8px; background: var(--red-bg); border: 1.5px solid var(--red-border); border-radius: var(--radius-sm); padding: 10px; font-size: 14px; font-weight: 600; color: var(--red-text); cursor: pointer; }
 
-  /* Item result */
-  .item-result { display: none; }
-  .item-result.visible { display: block; }
-  .item-found { background: var(--green-bg); border: 0.5px solid var(--green-border); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 12px; }
-  .item-not-found { background: var(--red-bg); border: 0.5px solid var(--red-border); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 12px; }
-  .item-name { font-size: 15px; font-weight: 600; color: var(--green-text); }
-  .item-desc { font-size: 13px; color: var(--green-text); opacity: 0.8; margin-top: 2px; }
-  .item-barcode-show { font-size: 12px; color: var(--green-text); opacity: 0.6; margin-top: 4px; font-family: monospace; }
-  .not-found-text { font-size: 14px; font-weight: 500; color: var(--red-text); }
-  .not-found-sub { font-size: 12px; color: var(--red-text); opacity: 0.8; margin-top: 2px; }
-
-  /* Count form */
-  .count-form { display: none; }
-  .count-form.visible { display: block; }
-  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
-  .form-group { display: flex; flex-direction: column; gap: 4px; }
-  .form-group.full { grid-column: 1 / -1; }
-  .form-label { font-size: 12px; font-weight: 500; color: var(--text-muted); }
-  .form-input { border: 0.5px solid var(--border-strong); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 15px; color: var(--text); background: var(--bg); }
-  .form-input:focus { outline: none; border-color: #378ADD; }
-  .submit-btn { width: 100%; background: #185FA5; border: none; border-radius: var(--radius-sm); padding: 13px; font-size: 15px; font-weight: 600; color: #fff; cursor: pointer; margin-top: 4px; transition: background 0.15s; }
-  .submit-btn:hover { background: #0C447C; }
-  .submit-btn:active { transform: scale(0.99); }
-
-  /* Success flash */
-  .success-flash { background: var(--green-bg); border: 0.5px solid var(--green-border); border-radius: var(--radius-sm); padding: 10px 14px; display: none; margin-bottom: 12px; text-align: center; }
+  /* SUCCESS FLASH */
+  .success-flash { display: none; margin-top: 12px; }
   .success-flash.show { display: block; animation: fadeOut 2.5s forwards; }
-  .success-text { font-size: 14px; font-weight: 500; color: var(--green-text); }
-  @keyframes fadeOut { 0%{opacity:1} 70%{opacity:1} 100%{opacity:0} }
+  .success-inner { background: var(--green-bg); border: 1.5px solid var(--green-border); border-radius: var(--radius-sm); padding: 10px 14px; display: flex; align-items: center; gap: 8px; }
+  .success-icon { width: 22px; height: 22px; background: var(--green); border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .success-text { font-size: 14px; font-weight: 600; color: var(--green-text); }
+  @keyframes fadeOut { 0%{opacity:1} 65%{opacity:1} 100%{opacity:0} }
 
-  /* Log */
+  /* ITEM FOUND */
+  .item-result { display: block; margin-top: 12px; }
+  .item-placeholder { background: var(--bg); border: 1.5px dashed var(--border); border-radius: var(--radius-sm); padding: 14px; text-align: center; font-size: 13px; color: var(--text-hint); }
+  .item-result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .item-result-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; }
+  .item-dismiss-btn { background: none; border: none; cursor: pointer; color: var(--text-hint); font-size: 20px; line-height: 1; padding: 0 2px; }
+  .item-dismiss-btn:hover { color: var(--red-text); }
+  .item-found-card { background: var(--primary-bg); border: 2px solid var(--primary); border-radius: var(--radius-sm); padding: 14px; }
+  .item-found-name { font-size: 17px; font-weight: 700; color: var(--text); line-height: 1.3; }
+  .item-found-cost { font-size: 14px; font-weight: 600; color: var(--primary); margin-top: 4px; }
+  .item-found-code { font-size: 11px; color: var(--text-muted); font-family: monospace; margin-top: 4px; }
+  .item-found-time { font-size: 11px; color: var(--text-hint); margin-top: 4px; }
+  .item-not-found-card { background: var(--red-bg); border: 1.5px solid var(--red-border); border-radius: var(--radius-sm); padding: 14px; }
+  .item-nf-title { font-size: 15px; font-weight: 700; color: var(--red-text); }
+  .item-nf-sub   { font-size: 12px; color: var(--red-text); opacity: .75; margin-top: 3px; font-family: monospace; }
+
+  /* COUNT FORM */
+  .count-form { display: none; margin-top: 14px; }
+  .count-form.visible { display: block; }
+  .qty-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; }
+
+  /* Stepper: − [num] + */
+  .qty-stepper { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 12px; }
+  .qty-step-btn {
+    width: 50px; height: 50px; border-radius: 50%;
+    border: 2px solid var(--border); background: var(--bg);
+    font-size: 26px; font-weight: 700; color: var(--text-muted);
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    user-select: none; touch-action: manipulation;
+  }
+  .qty-step-btn:active { background: var(--border); transform: scale(.91); }
+  .qty-number {
+    width: 94px; height: 60px;
+    border: 2px solid var(--primary); border-radius: var(--radius-sm);
+    background: var(--bg); font-size: 32px; font-weight: 800; color: var(--primary);
+    text-align: center; -moz-appearance: textfield;
+  }
+  .qty-number::-webkit-outer-spin-button,
+  .qty-number::-webkit-inner-spin-button { -webkit-appearance: none; }
+  .qty-number:focus { outline: none; box-shadow: 0 0 0 3px rgba(37,99,235,.15); }
+
+  /* Quick-set preset buttons */
+  .qty-presets { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin-bottom: 12px; }
+  .qty-preset {
+    border: none; border-radius: var(--radius-sm);
+    padding: 14px 4px 12px;
+    cursor: pointer; transition: filter .1s, transform .1s;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    color: #fff; user-select: none; touch-action: manipulation;
+  }
+  .qty-preset:active { filter: brightness(.82); transform: scale(.94); }
+  .qty-preset .pn { font-size: 22px; font-weight: 800; line-height: 1; }
+  .qty-preset .pl { font-size: 10px; opacity: .85; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+  .qty-preset[data-q="1"]  { background: #2563EB; }
+  .qty-preset[data-q="5"]  { background: #7C3AED; }
+  .qty-preset[data-q="10"] { background: #059669; }
+  .qty-preset[data-q="25"] { background: #D97706; }
+
+  /* Serial */
+
+  /* LOG button */
+  .log-btn-main {
+    width: 100%; background: #16A34A; border: none; border-radius: var(--radius-sm);
+    padding: 16px; font-size: 17px; font-weight: 800; color: #fff;
+    cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+    transition: filter .1s, transform .1s; touch-action: manipulation; user-select: none;
+  }
+  .log-btn-main:active { filter: brightness(.88); transform: scale(.99); }
+  .log-btn-main:disabled { background: #9CA3AF; cursor: not-allowed; transform: none; filter: none; }
+
+  /* LOCATION GROUPS */
+  .loc-group { margin-bottom: 10px; }
+  .loc-group-hdr { background: var(--primary-bg); border: 1.5px solid var(--primary-border); border-radius: var(--radius-sm); padding: 10px 14px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none; touch-action: manipulation; }
+  .loc-group-name { font-size: 14px; font-weight: 700; color: var(--primary); }
+  .loc-group-meta { display: flex; gap: 12px; align-items: center; }
+  .loc-group-stat { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+  .loc-group-stat b { color: var(--text); }
+  .loc-group-chevron { font-size: 10px; color: var(--text-muted); transition: transform .2s; display: inline-block; margin-left: 6px; }
+  .loc-group-chevron.open { transform: rotate(180deg); }
+  .loc-group-items { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+  .loc-group-items.hidden { display: none; }
+  .log-item-time { font-size: 10px; color: var(--text-hint); margin-top: 3px; }
+
+  /* SESSION LOG */
   .log-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-  .log-title { font-size: 13px; font-weight: 500; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
-  .log-actions { display: flex; gap: 8px; }
-  .log-btn { font-size: 12px; background: var(--surface); border: 0.5px solid var(--border-strong); border-radius: var(--radius-sm); padding: 5px 10px; cursor: pointer; color: var(--text-muted); font-weight: 500; }
-  .log-btn:hover { color: var(--text); border-color: var(--border-strong); }
-  .log-empty { text-align: center; padding: 32px 16px; color: var(--text-hint); font-size: 14px; background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius); }
-
+  .log-title { font-size: 13px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+  .log-actions { display: flex; gap: 6px; }
+  .log-act-btn { font-size: 12px; font-weight: 600; background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius-xs); padding: 5px 10px; cursor: pointer; color: var(--text-muted); }
+  .log-act-btn:hover { color: var(--text); }
+  .log-empty { text-align: center; padding: 32px 16px; color: var(--text-hint); font-size: 14px; background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius); }
   .log-list { display: flex; flex-direction: column; gap: 6px; }
-  .log-item { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; display: grid; grid-template-columns: 1fr auto; align-items: start; gap: 8px; }
-  .log-item-name { font-size: 14px; font-weight: 500; color: var(--text); }
-  .log-item-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
-  .log-item-loc { font-size: 11px; background: var(--blue-bg); color: var(--blue-text); border-radius: 4px; padding: 2px 6px; display: inline-block; margin-top: 4px; font-weight: 500; }
-  .log-qty { font-size: 18px; font-weight: 600; color: var(--text); text-align: right; }
-  .log-qty-label { font-size: 11px; color: var(--text-hint); text-align: right; }
-  .log-delete { background: none; border: none; cursor: pointer; color: var(--text-hint); font-size: 16px; padding: 0 0 0 8px; }
+  .log-item { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 11px 12px; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; }
+  .log-item.new-flash { animation: newItem .35s ease; }
+  @keyframes newItem { 0%{background:#EFF4FF;border-color:var(--primary)} 100%{background:var(--surface);border-color:var(--border)} }
+  .log-item-name { font-size: 14px; font-weight: 600; color: var(--text); }
+  .log-item-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .log-item-loc  { display: inline-block; font-size: 10px; font-weight: 700; background: var(--primary-bg); color: var(--primary); border-radius: 4px; padding: 2px 6px; margin-top: 4px; }
+  .log-right { display: flex; align-items: center; gap: 8px; }
+  .log-qty-pill { background: var(--primary); color: #fff; border-radius: 20px; padding: 5px 13px; font-size: 16px; font-weight: 800; }
+  .log-delete { background: none; border: none; cursor: pointer; color: var(--text-hint); font-size: 20px; line-height: 1; padding: 2px 4px; }
   .log-delete:hover { color: var(--red-text); }
 
-  /* Modal */
-  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200; display: none; align-items: center; justify-content: center; padding: 20px; }
+  /* MODAL (bottom sheet) */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 200; display: none; align-items: flex-end; justify-content: center; }
   .modal-overlay.open { display: flex; }
-  .modal { background: var(--surface); border-radius: var(--radius); padding: 20px; width: 100%; max-width: 400px; max-height: 90vh; overflow-y: auto; }
-  .modal-title { font-size: 16px; font-weight: 600; margin-bottom: 14px; }
-  .modal-input { width: 100%; border: 0.5px solid var(--border-strong); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 14px; color: var(--text); background: var(--bg); margin-bottom: 8px; }
-  .modal-input:focus { outline: none; border-color: #378ADD; }
-  .modal-add-btn { width: 100%; background: #185FA5; border: none; border-radius: var(--radius-sm); padding: 10px; font-size: 14px; font-weight: 600; color: #fff; cursor: pointer; margin-bottom: 16px; }
+  .modal { background: var(--surface); border-radius: var(--radius) var(--radius) 0 0; padding: 16px 20px 36px; width: 100%; max-width: 520px; max-height: 80vh; overflow-y: auto; }
+  .modal-handle { width: 40px; height: 4px; background: var(--border); border-radius: 2px; margin: 0 auto 14px; }
+  .modal-title { font-size: 16px; font-weight: 700; margin-bottom: 14px; }
+  .modal-input { width: 100%; border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 11px 12px; font-size: 15px; color: var(--text); background: var(--bg); margin-bottom: 8px; }
+  .modal-input:focus { outline: none; border-color: var(--primary); }
+  .modal-add-btn { width: 100%; background: var(--primary); border: none; border-radius: var(--radius-sm); padding: 12px; font-size: 14px; font-weight: 700; color: #fff; cursor: pointer; margin-bottom: 16px; }
   .location-list { display: flex; flex-direction: column; gap: 6px; }
-  .location-item { display: flex; align-items: center; justify-content: space-between; background: var(--bg); border: 0.5px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; }
-  .location-name { font-size: 14px; font-weight: 500; }
-  .loc-del-btn { background: none; border: none; cursor: pointer; color: var(--text-hint); font-size: 18px; }
+  .location-item { display: flex; align-items: center; justify-content: space-between; background: var(--bg); border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 11px 12px; }
+  .location-name { font-size: 14px; font-weight: 600; }
+  .loc-del-btn { background: none; border: none; cursor: pointer; color: var(--text-hint); font-size: 20px; }
   .loc-del-btn:hover { color: var(--red-text); }
-  .modal-close { width: 100%; margin-top: 14px; background: none; border: 0.5px solid var(--border-strong); border-radius: var(--radius-sm); padding: 10px; font-size: 14px; color: var(--text-muted); cursor: pointer; }
-
-  /* Supabase config notice */
-  .config-notice { background: var(--amber-bg); border: 0.5px solid var(--amber-border); border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 12px; font-size: 13px; color: var(--amber-text); }
-  .config-notice strong { font-weight: 600; }
-
-  .stat-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 16px; }
-  .stat { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; text-align: center; }
-  .stat-val { font-size: 22px; font-weight: 600; }
-  .stat-label { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .modal-close { width: 100%; margin-top: 14px; background: none; border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 11px; font-size: 14px; font-weight: 600; color: var(--text-muted); cursor: pointer; }
 </style>
 </head>
 <body>
 
-<!-- ===== CONFIGURATION — edit these ===== -->
 <script>
 const CONFIG = {
-  supabaseUrl: 'https://unbjlhofoqzglacczwvg.supabase.co',
-  supabaseKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVuYmpsaG9mb3F6Z2xhY2N6d3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDI2NDcsImV4cCI6MjA5MDcxODY0N30.tSqXTptfePkGAi7uzl6uqaLAftzQzgNS63vgmyzX87I',
-  itemsTable: 'items',
-  countsTable: 'count_records',
+  supabaseUrl:   'https://unbjlhofoqzglacczwvg.supabase.co',
+  supabaseKey:   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVuYmpsaG9mb3F6Z2xhY2N6d3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDI2NDcsImV4cCI6MjA5MDcxODY0N30.tSqXTptfePkGAi7uzl6uqaLAftzQzgNS63vgmyzX87I',
+  itemsTable:    'items',
+  countsTable:   'count_records',
   barcodeColumn: 'barcode',
-  nameColumn: 'name',
-  costColumn: 'cost',
-  demoMode: false
+  nameColumn:    'name',
+  costColumn:    'cost',
+  demoMode:      false
 };
 </script>
 
+<!-- HEADER -->
 <header class="header">
-  <div>
-    <div class="header-title">Inventory Counter</div>
-  </div>
-  <div id="session-time" style="font-size:12px;color:var(--text-muted);"></div>
+  <div class="header-title">📦 Inventory Counter</div>
+  <div class="header-right" id="session-time"></div>
 </header>
 
+<!-- LOCATION BAR -->
 <div class="loc-bar">
-  <span class="loc-label">Location:</span>
+  <span class="loc-label">Location</span>
   <select class="loc-select" id="loc-select">
     <option value="">— select location —</option>
   </select>
@@ -194,36 +237,25 @@ const CONFIG = {
 
 <div class="main">
 
-  <!-- Stats -->
+  <!-- STATS -->
   <div class="stat-row">
-    <div class="stat">
-      <div class="stat-val" id="stat-scans">0</div>
-      <div class="stat-label">Scans today</div>
-    </div>
-    <div class="stat">
-      <div class="stat-val" id="stat-items">0</div>
-      <div class="stat-label">Unique items</div>
-    </div>
-    <div class="stat">
-      <div class="stat-val" id="stat-qty">0</div>
-      <div class="stat-label">Total qty</div>
-    </div>
+    <div class="stat"><div class="stat-val" id="stat-scans">0</div><div class="stat-label">Scans</div></div>
+    <div class="stat"><div class="stat-val" id="stat-items">0</div><div class="stat-label">Unique items</div></div>
+    <div class="stat"><div class="stat-val" id="stat-qty">0</div><div class="stat-label">Total qty</div></div>
+    <div class="stat"><div class="stat-val" id="stat-cost" style="font-size:20px;">$0</div><div class="stat-label">Total cost</div></div>
   </div>
 
-  <div id="db-status" style="background:var(--amber-bg);border:0.5px solid var(--amber-border);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:var(--amber-text);">Connecting to database…</div>
+  <!-- DB STATUS -->
+  <div id="db-status" style="background:var(--amber-bg);border:1.5px solid var(--amber-border);color:var(--amber-text);border-radius:var(--radius-sm);padding:9px 14px;margin-bottom:12px;font-size:13px;font-weight:500;">Connecting to database…</div>
 
-  <!-- Scan card -->
+  <!-- SCAN CARD -->
   <div class="scan-card">
-    <div class="card-title">Scan item</div>
+    <div class="card-label">Scan barcode</div>
 
-    <div id="demo-notice" class="config-notice">
-      <strong>Demo mode</strong> — using sample item data. Connect Supabase to use your 4,500 items. See setup guide below.
-    </div>
-
-    <div class="scan-input-row">
+    <div class="scan-row">
       <input class="scan-input" id="barcode-input" type="text" inputmode="none"
         placeholder="Scan or type barcode…" autocomplete="off" autocorrect="off" spellcheck="false" />
-      <button class="camera-btn" id="camera-btn" onclick="toggleCamera()">
+      <button class="camera-btn" onclick="toggleCamera()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
           <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
           <circle cx="12" cy="13" r="4"/>
@@ -237,48 +269,88 @@ const CONFIG = {
       <button class="camera-stop" onclick="stopCamera()">Stop camera</button>
     </div>
 
+    <!-- SUCCESS FLASH -->
     <div class="success-flash" id="success-flash">
-      <div class="success-text" id="success-text">Counted!</div>
-    </div>
-
-    <div class="item-result" id="item-result">
-      <div id="item-found-box"></div>
-    </div>
-
-    <div class="count-form" id="count-form">
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Quantity</label>
-          <input class="form-input" id="qty-input" type="number" min="1" value="1" inputmode="numeric" />
+      <div class="success-inner">
+        <div class="success-icon">
+          <svg viewBox="0 0 14 14" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><polyline points="2 7 6 11 12 3"/></svg>
         </div>
-        <div class="form-group">
-          <label class="form-label">Serial / Lot # (optional)</label>
-          <input class="form-input" id="serial-input" type="text" placeholder="e.g. SN-001" />
-        </div>
+        <div class="success-text" id="success-text">Logged!</div>
       </div>
-      <button class="submit-btn" onclick="submitCount()">Record count</button>
+    </div>
+
+    <!-- ITEM RESULT -->
+    <div class="item-result" id="item-result">
+      <div class="item-result-header">
+        <span class="item-result-label">Item</span>
+        <button class="item-dismiss-btn" onclick="dismissCurrentItem()" title="Dismiss">×</button>
+      </div>
+      <div id="item-found-box"><div class="item-placeholder">Scan a barcode to see item details</div></div>
+    </div>
+
+    <!-- COUNT FORM -->
+    <div class="count-form" id="count-form">
+      <div class="qty-label">Quantity</div>
+
+      <!-- − number + stepper -->
+      <div class="qty-stepper">
+        <button class="qty-step-btn"
+          onmousedown="stepQty(-1,event)" ontouchstart="stepQty(-1,event)">−</button>
+        <input class="qty-number" id="qty-input" type="number" min="1" value="1"
+          inputmode="numeric" onchange="clampQty()" />
+        <button class="qty-step-btn"
+          onmousedown="stepQty(1,event)" ontouchstart="stepQty(1,event)">+</button>
+      </div>
+
+      <!-- Quick-set: 1 / 5 / 10 / 25 -->
+      <div class="qty-presets">
+        <button class="qty-preset" data-q="1"
+          onmousedown="setQty(1,event)" ontouchstart="setQty(1,event)">
+          <span class="pn">1</span><span class="pl">Each</span>
+        </button>
+        <button class="qty-preset" data-q="5"
+          onmousedown="setQty(5,event)" ontouchstart="setQty(5,event)">
+          <span class="pn">5</span><span class="pl">Pack</span>
+        </button>
+        <button class="qty-preset" data-q="10"
+          onmousedown="setQty(10,event)" ontouchstart="setQty(10,event)">
+          <span class="pn">10</span><span class="pl">Box</span>
+        </button>
+        <button class="qty-preset" data-q="25"
+          onmousedown="setQty(25,event)" ontouchstart="setQty(25,event)">
+          <span class="pn">25</span><span class="pl">Case</span>
+        </button>
+      </div>
+
+<!-- LOG -->
+      <button class="log-btn-main" id="log-btn"
+        onmousedown="submitCount(event)" ontouchstart="submitCount(event)" disabled>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        Log Count
+      </button>
     </div>
   </div>
 
-  <!-- Log -->
+  <!-- SESSION LOG -->
   <div class="log-header">
     <div class="log-title">Session log</div>
     <div class="log-actions">
-      <button class="log-btn" onclick="exportCSV()">Export CSV</button>
-      <button class="log-btn" onclick="clearLog()">Clear</button>
+      <button class="log-act-btn" id="undo-btn" onclick="undoLast()" style="display:none">Undo</button>
+      <button class="log-act-btn" onclick="exportCSV()">Export CSV</button>
+      <button class="log-act-btn" onclick="clearLog()">Clear</button>
     </div>
   </div>
-
   <div id="log-container"></div>
 
 </div>
 
-<!-- Location modal -->
+<!-- LOCATION MODAL -->
 <div class="modal-overlay" id="loc-modal">
   <div class="modal">
-    <div class="modal-title">Manage locations</div>
+    <div class="modal-handle"></div>
+    <div class="modal-title">Manage Locations</div>
     <input class="modal-input" id="new-loc-input" type="text" placeholder="New location name…" />
-    <button class="modal-add-btn" onclick="addLocation()">Add location</button>
+    <button class="modal-add-btn" onclick="addLocation()">Add Location</button>
     <div class="location-list" id="location-list"></div>
     <button class="modal-close" onclick="closeLocationModal()">Done</button>
   </div>
@@ -286,57 +358,91 @@ const CONFIG = {
 
 <script>
 // ===== STATE =====
-let currentItem = null;
-let scanLog = [];
-let locations = JSON.parse(localStorage.getItem('inv_locations') || '["Warehouse A","Warehouse B","Office","Stockroom"]');
-let cameraRunning = false;
+let currentItem    = null;
+let scanLog        = [];
+let locations      = JSON.parse(localStorage.getItem('inv_locations') || '["Warehouse A","Warehouse B","Office","Stockroom"]');
+let cameraRunning  = false;
 let html5QrScanner = null;
+let lastScanBarcode = null;
+let lastScanTime    = 0;
+const DUP_WINDOW_MS = 2000;
 
-// Demo items (replace with Supabase lookup)
-const DEMO_ITEMS = {
-  '012345678901': { name: 'Widget Type A', description: 'Blue, 10mm, pack of 12' },
-  '098765432109': { name: 'Connector XJ-7', description: 'Stainless steel, M8 thread' },
-  '111222333444': { name: 'Filter Cartridge', description: 'HEPA, 6-month replacement' },
-  '555666777888': { name: 'Cable 3m USB-C', description: 'Black, braided, 60W' },
-  '999000111222': { name: 'Power Supply 12V', description: '2A, wall adapter, universal' },
-};
+// ===== AUDIO =====
+const _ac = new (window.AudioContext || window.webkitAudioContext)();
+function _beep(freq, dur, type='sine', vol=0.3) {
+  const o = _ac.createOscillator(), g = _ac.createGain();
+  o.connect(g); g.connect(_ac.destination);
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(vol, _ac.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, _ac.currentTime + dur);
+  o.start(); o.stop(_ac.currentTime + dur);
+}
+function beepSuccess() { _beep(880, 0.08); setTimeout(()=>_beep(1320, 0.1), 80); }
+function beepNotFound() { _beep(220, 0.25, 'sawtooth', 0.2); }
+function beepDuplicate() { _beep(550, 0.12, 'square', 0.15); setTimeout(()=>_beep(550, 0.12, 'square', 0.15), 140); }
+
+// ===== FOCUS =====
+// Barcode input ALWAYS holds focus except when camera open or modal is active.
+// ALL qty buttons use onmousedown/ontouchstart + e.preventDefault() so they never steal focus.
+function refocusBarcode() {
+  if (cameraRunning) return;
+  if (document.getElementById('loc-modal').classList.contains('open')) return;
+  setTimeout(() => document.getElementById('barcode-input').focus(), 30);
+}
+
+// ===== QTY HELPERS =====
+function getQty()    { return parseInt(document.getElementById('qty-input').value) || 1; }
+function setQtyVal(n){ document.getElementById('qty-input').value = Math.max(1, n); }
+
+function stepQty(delta, e) { e.preventDefault(); setQtyVal(getQty() + delta); }
+function setQty(n, e)      { e.preventDefault(); setQtyVal(n); }
+function clampQty()        { const v = parseInt(document.getElementById('qty-input').value); if (!v || v < 1) document.getElementById('qty-input').value = 1; }
 
 // ===== INIT =====
 function init() {
+  const saved = localStorage.getItem('inv_log');
+  if (saved) scanLog = JSON.parse(saved);
+
   renderLocations();
   renderLog();
   updateStats();
 
-  const saved = localStorage.getItem('inv_location');
-  if (saved) document.getElementById('loc-select').value = saved;
+  const savedLoc = localStorage.getItem('inv_location');
+  if (savedLoc) document.getElementById('loc-select').value = savedLoc;
 
   document.getElementById('loc-select').addEventListener('change', e => {
     localStorage.setItem('inv_location', e.target.value);
   });
 
   document.getElementById('barcode-input').addEventListener('keydown', e => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      lookupBarcode(e.target.value.trim());
-    }
+    if (e.key === 'Enter') { e.preventDefault(); const v = e.target.value.trim(); if (v) lookupBarcode(v); }
   });
 
-  // Auto-focus barcode input
-  document.getElementById('barcode-input').focus();
+  // Enter on qty number field also submits
+  document.getElementById('qty-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); if (document.getElementById('count-form').classList.contains('visible')) submitCount(e); }
+  });
 
-  // Session timer
+  // Click outside loc-bar and scan card → refocus barcode
+  document.addEventListener('click', e => {
+    const card   = document.querySelector('.scan-card');
+    const modal  = document.getElementById('loc-modal');
+    const locBar = document.querySelector('.loc-bar');
+    if (!card.contains(e.target) && !modal.contains(e.target) && !locBar.contains(e.target)) refocusBarcode();
+  });
+
+  refocusBarcode();
+
   const start = Date.now();
   setInterval(() => {
-    const mins = Math.floor((Date.now() - start) / 60000);
-    document.getElementById('session-time').textContent = mins < 1 ? 'Session started' : `${mins}m session`;
+    const m = Math.floor((Date.now() - start) / 60000);
+    document.getElementById('session-time').textContent = m < 1 ? 'Just started' : `${m}m`;
   }, 10000);
 
-  if (!CONFIG.demoMode) {
-    document.getElementById('demo-notice').style.display = 'none';
-    checkDBConnection();
-  }
+  checkDBConnection();
 }
 
+// ===== DB =====
 async function checkDBConnection() {
   const el = document.getElementById('db-status');
   try {
@@ -345,459 +451,334 @@ async function checkDBConnection() {
       { headers: { 'apikey': CONFIG.supabaseKey, 'Authorization': 'Bearer ' + CONFIG.supabaseKey, 'Prefer': 'count=exact' } }
     );
     if (!res.ok) throw new Error('HTTP ' + res.status);
-    const count = res.headers.get('content-range');
-    const total = count ? count.split('/')[1] : '?';
-    el.style.background = 'var(--green-bg)';
-    el.style.borderColor = 'var(--green-border)';
-    el.style.color = 'var(--green-text)';
-    el.innerHTML = 'Connected to database — <strong>' + total + '</strong> items loaded';
+    const total = (res.headers.get('content-range') || '').split('/')[1] || '?';
+    el.style.cssText = 'background:var(--green-bg);border:1.5px solid var(--green-border);color:var(--green-text);border-radius:var(--radius-sm);padding:9px 14px;margin-bottom:12px;font-size:13px;font-weight:500;';
+    el.innerHTML = '✓ Connected — <strong>' + total + '</strong> items in database';
   } catch(e) {
-    el.style.background = 'var(--red-bg)';
-    el.style.borderColor = 'var(--red-border)';
-    el.style.color = 'var(--red-text)';
-    el.innerHTML = 'Database connection failed: ' + e.message;
+    el.style.cssText = 'background:var(--red-bg);border:1.5px solid var(--red-border);color:var(--red-text);border-radius:var(--radius-sm);padding:9px 14px;margin-bottom:12px;font-size:13px;font-weight:500;';
+    el.innerHTML = '✗ Database error: ' + e.message;
   }
 }
 
-// ===== LOCATION =====
+// ===== LOCATIONS =====
 function renderLocations() {
   const select = document.getElementById('loc-select');
-  const saved = select.value || localStorage.getItem('inv_location') || '';
+  const saved  = select.value || localStorage.getItem('inv_location') || '';
   select.innerHTML = '<option value="">— select location —</option>';
   locations.forEach(loc => {
-    const opt = document.createElement('option');
-    opt.value = loc;
-    opt.textContent = loc;
-    if (loc === saved) opt.selected = true;
-    select.appendChild(opt);
+    const o = document.createElement('option');
+    o.value = loc; o.textContent = loc;
+    if (loc === saved) o.selected = true;
+    select.appendChild(o);
   });
-
-  const list = document.getElementById('location-list');
-  list.innerHTML = '';
-  locations.forEach((loc, i) => {
-    list.innerHTML += `
-      <div class="location-item">
-        <span class="location-name">${loc}</span>
-        <button class="loc-del-btn" onclick="deleteLocation(${i})">×</button>
-      </div>`;
-  });
+  document.getElementById('location-list').innerHTML = locations.map((loc,i) => `
+    <div class="location-item">
+      <span class="location-name">${loc}</span>
+      <button class="loc-del-btn" onclick="deleteLocation(${i})">×</button>
+    </div>`).join('');
 }
-
 function addLocation() {
   const input = document.getElementById('new-loc-input');
-  const val = input.value.trim();
-  if (!val) return;
-  locations.push(val);
-  localStorage.setItem('inv_locations', JSON.stringify(locations));
-  input.value = '';
-  renderLocations();
+  const val = input.value.trim(); if (!val) return;
+  locations.push(val); localStorage.setItem('inv_locations', JSON.stringify(locations));
+  input.value = ''; renderLocations();
 }
-
 function deleteLocation(i) {
-  locations.splice(i, 1);
-  localStorage.setItem('inv_locations', JSON.stringify(locations));
-  renderLocations();
+  locations.splice(i,1); localStorage.setItem('inv_locations', JSON.stringify(locations)); renderLocations();
 }
-
-function openLocationModal() { document.getElementById('loc-modal').classList.add('open'); }
-function closeLocationModal() { document.getElementById('loc-modal').classList.remove('open'); }
+function openLocationModal()  { document.getElementById('loc-modal').classList.add('open'); }
+function closeLocationModal() { document.getElementById('loc-modal').classList.remove('open'); refocusBarcode(); }
 
 // ===== BARCODE MATCHING =====
-// Multi-strategy lookup covering industry-standard barcode formats:
-//  1. Exact raw string
-//  2. Normalized — leading zeros stripped
-//  3. UPC-A (12-digit) ↔ EAN-13 (13-digit) conversion
-//  4. UPC-E (6–8 digit compressed) expanded to full UPC-A
-//  5. Without check digit — legacy systems often store the body only
-//  6. With check digit appended — scanner may return body without it
-//  7. Normalize all of the above
-//  8. Suffix/fuzzy fallback (min 4 significant digits)
-
-function normalizeBarcode(code) {
-  const trimmed = String(code).trim();
-  if (!trimmed) return '';
-  const m = trimmed.match(/^0*(.+)$/);
-  return m ? m[1] : '0';
-}
-
-// UPC-A / EAN check digit: odd positions (1-indexed) × 3, even × 1
-function calcCheckDigit(body) {
-  let sum = 0;
-  for (let i = 0; i < body.length; i++) {
-    sum += parseInt(body[i]) * (i % 2 === 0 ? 3 : 1);
-  }
-  return String((10 - (sum % 10)) % 10);
-}
-
-// Expand a 6-, 7-, or 8-digit UPC-E to a full 12-digit UPC-A string.
-// Returns null if the input doesn't look like UPC-E.
+function normalizeBarcode(code) { const t=String(code).trim(); if(!t) return ''; const m=t.match(/^0*(.+)$/); return m?m[1]:'0'; }
+function calcCheckDigit(body) { let s=0; for(let i=0;i<body.length;i++) s+=parseInt(body[i])*(i%2===0?3:1); return String((10-(s%10))%10); }
 function expandUpcE(raw) {
-  const d = raw.replace(/\D/g, '');
-  let b; // 6 significant digits
-  if      (d.length === 6) b = d;
-  else if (d.length === 7) b = d.slice(1);       // strip number-system digit
-  else if (d.length === 8) b = d.slice(1, 7);    // strip NS + check digit
-  else return null;
-
-  const [e0,e1,e2,e3,e4,e5] = b.split('');
-  let body11;
-  switch (parseInt(e5)) {
-    case 0: case 1: case 2:
-      body11 = `0${e0}${e1}${e5}0000${e2}${e3}${e4}`; break;
-    case 3:
-      body11 = `0${e0}${e1}${e2}00000${e3}${e4}`; break;
-    case 4:
-      body11 = `0${e0}${e1}${e2}${e3}00000${e4}`; break;
-    default: // 5–9
-      body11 = `0${e0}${e1}${e2}${e3}${e4}0000${e5}`; break;
+  const d=raw.replace(/\D/g,''); let b;
+  if(d.length===6) b=d; else if(d.length===7) b=d.slice(1); else if(d.length===8) b=d.slice(1,7); else return null;
+  const [e0,e1,e2,e3,e4,e5]=b.split(''); let b11;
+  switch(parseInt(e5)){
+    case 0:case 1:case 2: b11=`0${e0}${e1}${e5}0000${e2}${e3}${e4}`; break;
+    case 3: b11=`0${e0}${e1}${e2}00000${e3}${e4}`; break;
+    case 4: b11=`0${e0}${e1}${e2}${e3}00000${e4}`; break;
+    default: b11=`0${e0}${e1}${e2}${e3}${e4}0000${e5}`; break;
   }
-  return body11 + calcCheckDigit(body11); // full 12-digit UPC-A
+  return b11+calcCheckDigit(b11);
 }
-
 function barcodeCandidates(raw) {
-  const trimmed = String(raw).trim();
-  if (!trimmed) return [];
-
-  const seen = new Set();
-  const result = [];
-  function add(c) {
-    const s = String(c).trim();
-    if (s && !seen.has(s)) { seen.add(s); result.push(s); }
-  }
-
-  const digits = trimmed.replace(/\D/g, '');
-
-  // 1 & 2 — exact + normalized
-  add(trimmed);
-  add(normalizeBarcode(trimmed));
-
-  // 3 — UPC-A ↔ EAN-13
-  if (digits.length === 12) {
-    add('0' + digits);
-    add(normalizeBarcode('0' + digits));
-  }
-  if (digits.length === 13 && digits.startsWith('0')) {
-    add(digits.slice(1));
-    add(normalizeBarcode(digits.slice(1)));
-  }
-
-  // 4 — UPC-E expansion (6–8 digits)
-  if (digits.length >= 6 && digits.length <= 8) {
-    const upcA = expandUpcE(digits);
-    if (upcA) {
-      add(upcA);
-      add(normalizeBarcode(upcA));
-      add('0' + upcA);                          // EAN-13 form of expanded UPC-A
-      add(normalizeBarcode('0' + upcA));
-    }
-  }
-
-  // 5 — without check digit (last digit stripped)
-  if (digits.length > 4) {
-    const noCheck = digits.slice(0, -1);
-    add(noCheck);
-    add(normalizeBarcode(noCheck));
-  }
-
-  // 6 — with check digit appended (body-only inputs)
-  if (digits.length === 11) add(digits + calcCheckDigit(digits));
-  if (digits.length === 12) {
-    const ean = '0' + digits;
-    add(ean + calcCheckDigit(ean));
-  }
-
-  // 7 — normalize everything collected so far
-  result.slice().forEach(c => add(normalizeBarcode(c)));
-
+  const t=String(raw).trim(); if(!t) return [];
+  const seen=new Set(),result=[],add=c=>{const s=String(c).trim();if(s&&!seen.has(s)){seen.add(s);result.push(s);}};
+  const d=t.replace(/\D/g,'');
+  add(t); add(normalizeBarcode(t));
+  if(d.length===12){add('0'+d);add(normalizeBarcode('0'+d));}
+  if(d.length===13&&d.startsWith('0')){add(d.slice(1));add(normalizeBarcode(d.slice(1)));}
+  if(d.length>=6&&d.length<=8){const u=expandUpcE(d);if(u){add(u);add(normalizeBarcode(u));add('0'+u);add(normalizeBarcode('0'+u));}}
+  if(d.length>4){const nc=d.slice(0,-1);add(nc);add(normalizeBarcode(nc));}
+  if(d.length===11) add(d+calcCheckDigit(d));
+  if(d.length===12){const e='0'+d;add(e+calcCheckDigit(e));}
+  result.slice().forEach(c=>add(normalizeBarcode(c)));
   return result;
 }
 
-// ===== BARCODE LOOKUP =====
+// ===== LOOKUP =====
 async function lookupBarcode(barcode) {
   if (!barcode) return;
-  document.getElementById('barcode-input').value = '';
 
-  let item = null;
+  const inp = document.getElementById('barcode-input');
+  inp.value = '';
 
-  if (CONFIG.demoMode) {
-    item = DEMO_ITEMS[barcode] || null;
-  } else {
-    item = await fetchFromSupabase(barcode);
+  const location = document.getElementById('loc-select').value;
+  if (!location) { alert('Please select a location first.'); refocusBarcode(); return; }
+
+  // Duplicate scan guard
+  const now = Date.now();
+  if (barcode === lastScanBarcode && (now - lastScanTime) < DUP_WINDOW_MS) {
+    beepDuplicate();
+    inp.classList.add('dup-warn');
+    setTimeout(() => inp.classList.remove('dup-warn'), 600);
+    refocusBarcode();
+    return;
   }
+  lastScanBarcode = barcode;
+  lastScanTime = now;
 
-  currentItem = item ? { ...item, barcode } : null;
+  // Auto-log the previous item before switching to the new scan
+  if (currentItem) await submitCount(null);
 
-  const resultBox = document.getElementById('item-result');
-  const foundBox = document.getElementById('item-found-box');
-  const countForm = document.getElementById('count-form');
+  // Loading state
+  inp.classList.add('loading');
+  inp.placeholder = 'Looking up…';
 
-  resultBox.classList.add('visible');
+  const item = await fetchFromSupabase(barcode);
+
+  inp.classList.remove('loading');
+  inp.placeholder = 'Scan or type barcode…';
+
+  const scanTime = new Date();
+  currentItem = item ? { ...item, barcode, scanTime } : null;
+  document.getElementById('log-btn').disabled = !currentItem;
 
   if (item) {
-    foundBox.innerHTML = `
-      <div class="item-found">
-        <div class="item-name">${item.name}</div>
-        ${item.cost != null ? `<div class="item-desc">Cost: $${parseFloat(item.cost).toFixed(2)}</div>` : ''}
-        <div class="item-barcode-show">${barcode}</div>
+    beepSuccess();
+    if (navigator.vibrate) navigator.vibrate(40);
+    const timeStr = scanTime.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    document.getElementById('item-found-box').innerHTML = `
+      <div class="item-found-card">
+        <div class="item-found-name">${item.name}</div>
+        ${item.cost != null ? `<div class="item-found-cost">$${parseFloat(item.cost).toFixed(2)}</div>` : ''}
+        <div class="item-found-code">${barcode}</div>
+        <div class="item-found-time">Scanned at ${timeStr}</div>
       </div>`;
-    countForm.classList.add('visible');
-    document.getElementById('qty-input').value = 1;
-    document.getElementById('serial-input').value = '';
-    document.getElementById('qty-input').focus();
+    setQtyVal(1);
+    document.getElementById('count-form').classList.add('visible');
+    refocusBarcode();
   } else {
-    foundBox.innerHTML = `
-      <div class="item-not-found">
-        <div class="not-found-text">Item not found</div>
-        <div class="not-found-sub">Barcode: ${barcode}</div>
+    beepNotFound();
+    document.getElementById('item-found-box').innerHTML = `
+      <div class="item-not-found-card">
+        <div class="item-nf-title">Item not found</div>
+        <div class="item-nf-sub">${barcode}</div>
       </div>`;
-    countForm.classList.remove('visible');
+    document.getElementById('count-form').classList.remove('visible');
+    refocusBarcode();
   }
 }
 
 async function fetchFromSupabase(barcode) {
-  const headers = {
-    'apikey': CONFIG.supabaseKey,
-    'Authorization': `Bearer ${CONFIG.supabaseKey}`,
-  };
-  const sel  = `select=${CONFIG.barcodeColumn},${CONFIG.nameColumn},${CONFIG.costColumn}`;
-  const base = `${CONFIG.supabaseUrl}/rest/v1/${CONFIG.itemsTable}`;
-  const col  = CONFIG.barcodeColumn;
-
-  function parseRow(row) {
-    return { name: row[CONFIG.nameColumn], cost: row[CONFIG.costColumn] };
-  }
-
+  const headers={'apikey':CONFIG.supabaseKey,'Authorization':`Bearer ${CONFIG.supabaseKey}`};
+  const sel=`select=${CONFIG.barcodeColumn},${CONFIG.nameColumn},${CONFIG.costColumn}`;
+  const base=`${CONFIG.supabaseUrl}/rest/v1/${CONFIG.itemsTable}`;
+  const col=CONFIG.barcodeColumn;
+  const parse=row=>({name:row[CONFIG.nameColumn],cost:row[CONFIG.costColumn]});
   try {
-    // ── Strategies 1–7: single OR query covering all candidates ─────────────
-    const candidates = barcodeCandidates(barcode);
-    if (candidates.length > 0) {
-      const orFilter = encodeURIComponent(
-        '(' + candidates.map(c => `${col}.eq.${c}`).join(',') + ')'
-      );
-      const res  = await fetch(`${base}?or=${orFilter}&${sel}&limit=1`, { headers });
-      const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) return parseRow(data[0]);
+    const cands=barcodeCandidates(barcode);
+    if(cands.length){
+      const or=encodeURIComponent('('+cands.map(c=>`${col}.eq.${c}`).join(',')+ ')');
+      const res=await fetch(`${base}?or=${or}&${sel}&limit=1`,{headers});
+      const d=await res.json();
+      if(Array.isArray(d)&&d.length) return parse(d[0]);
     }
-
-    // ── Strategy 8: suffix/fuzzy fallback (min 4 significant digits) ────────
-    const norm = normalizeBarcode(barcode);
-    if (norm.length >= 4) {
-      const fuzzyRes  = await fetch(
-        `${base}?${col}=like.%25${encodeURIComponent(norm)}&${sel}&limit=1`,
-        { headers }
-      );
-      const fuzzyData = await fuzzyRes.json();
-      if (Array.isArray(fuzzyData) && fuzzyData.length > 0) return parseRow(fuzzyData[0]);
+    const norm=normalizeBarcode(barcode);
+    if(norm.length>=4){
+      const r2=await fetch(`${base}?${col}=like.%25${encodeURIComponent(norm)}&${sel}&limit=1`,{headers});
+      const d2=await r2.json();
+      if(Array.isArray(d2)&&d2.length) return parse(d2[0]);
     }
-
     return null;
-  } catch (e) {
-    console.error('Supabase lookup failed', e);
-    return null;
-  }
+  } catch(e){ console.error('Lookup failed',e); return null; }
 }
 
-// ===== SUBMIT COUNT =====
-async function submitCount() {
-  const location = document.getElementById('loc-select').value;
-  if (!location) { alert('Please select a location first.'); return; }
+// ===== SUBMIT =====
+async function submitCount(e) {
+  if (e) e.preventDefault();
   if (!currentItem) return;
-
-  const qty = parseInt(document.getElementById('qty-input').value) || 1;
-  const serial = document.getElementById('serial-input').value.trim();
+  const location = document.getElementById('loc-select').value;
+  const qty    = getQty();
+  if (qty < 1) { setQtyVal(1); return; }
 
   const record = {
-    barcode: currentItem.barcode,
-    name: currentItem.name,
-    cost: currentItem.cost || null,
-    quantity: qty,
-    serial: serial,
-    location: location,
-    timestamp: new Date().toISOString(),
+    barcode:   currentItem.barcode,
+    name:      currentItem.name,
+    cost:      currentItem.cost || null,
+    quantity:  qty,
+    location,
+    timestamp: (currentItem.scanTime || new Date()).toISOString(),
   };
-
-  // Save to Supabase if connected
-  if (!CONFIG.demoMode) {
-    await saveCountToSupabase(record);
-  }
-
-  // Always save locally for session log
+  if (!CONFIG.demoMode) await saveCountToSupabase(record);
   scanLog.unshift(record);
-  localStorage.setItem('inv_log', JSON.stringify(scanLog.slice(0, 500)));
+  localStorage.setItem('inv_log', JSON.stringify(scanLog.slice(0,500)));
+  // Reset dup guard so same item can be scanned again intentionally after logging
+  lastScanBarcode = null;
 
-  // Flash success
-  document.getElementById('success-text').textContent = `Counted ${qty}x ${currentItem.name}`;
+  document.getElementById('success-text').textContent = `Logged: ${qty}× ${currentItem.name}`;
   const flash = document.getElementById('success-flash');
-  flash.classList.remove('show');
-  void flash.offsetWidth;
-  flash.classList.add('show');
+  flash.classList.remove('show'); void flash.offsetWidth; flash.classList.add('show');
 
-  // Reset
-  document.getElementById('item-result').classList.remove('visible');
-  document.getElementById('count-form').classList.remove('visible');
-  currentItem = null;
-  document.getElementById('barcode-input').focus();
-
-  renderLog();
-  updateStats();
+  renderLog(true); updateStats();
+  setQtyVal(1);
+  refocusBarcode();
+  dismissCurrentItem();
 }
 
 async function saveCountToSupabase(record) {
   try {
-    await fetch(`${CONFIG.supabaseUrl}/rest/v1/${CONFIG.countsTable}`, {
+    const res = await fetch(`${CONFIG.supabaseUrl}/rest/v1/${CONFIG.countsTable}`, {
       method: 'POST',
-      headers: {
-        'apikey': CONFIG.supabaseKey,
-        'Authorization': `Bearer ${CONFIG.supabaseKey}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=minimal'
-      },
+      headers: {'apikey':CONFIG.supabaseKey,'Authorization':`Bearer ${CONFIG.supabaseKey}`,'Content-Type':'application/json','Prefer':'return=minimal'},
       body: JSON.stringify(record)
     });
-  } catch(e) { console.error('Save failed', e); }
+    if (!res.ok) {
+      const body = await res.text();
+      console.error('Save failed', res.status, body);
+      alert(`Save failed (${res.status}): ${body}`);
+    }
+  } catch(e){ console.error('Save failed',e); alert('Save failed: ' + e.message); }
 }
 
 // ===== LOG =====
-function renderLog() {
-  const saved = localStorage.getItem('inv_log');
-  if (saved) scanLog = JSON.parse(saved);
-
-  const container = document.getElementById('log-container');
-  if (scanLog.length === 0) {
-    container.innerHTML = '<div class="log-empty">No items counted yet this session</div>';
-    return;
-  }
-
-  container.innerHTML = `<div class="log-list">${scanLog.map((r, i) => `
-    <div class="log-item">
-      <div>
-        <div class="log-item-name">${r.name}</div>
-        <div class="log-item-meta">${r.barcode}${r.serial ? ' · ' + r.serial : ''}${r.cost != null ? ' · $' + parseFloat(r.cost).toFixed(2) : ''}</div>
-        <div class="log-item-loc">${r.location}</div>
-      </div>
-      <div>
-        <div class="log-qty">${r.quantity}</div>
-        <div class="log-qty-label">qty</div>
-        <button class="log-delete" onclick="deleteLogItem(${i})">×</button>
-      </div>
-    </div>`).join('')}
-  </div>`;
+function formatTime(ts) {
+  const d = new Date(ts);
+  return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
 }
 
-function deleteLogItem(i) {
-  scanLog.splice(i, 1);
+function toggleLocGroup(el) {
+  const items = el.nextElementSibling;
+  items.classList.toggle('hidden');
+  el.querySelector('.loc-group-chevron').classList.toggle('open');
+}
+
+function renderLog(flashFirst) {
+  document.getElementById('undo-btn').style.display = scanLog.length ? '' : 'none';
+  const c = document.getElementById('log-container');
+  if (!scanLog.length) { c.innerHTML='<div class="log-empty">No items logged yet this session</div>'; return; }
+
+  // Group by location, preserving newest-first order within each group
+  const groupMap = {};
+  const groupOrder = [];
+  scanLog.forEach((r, i) => {
+    if (!groupMap[r.location]) { groupMap[r.location] = []; groupOrder.push(r.location); }
+    groupMap[r.location].push({ r, i });
+  });
+
+  c.innerHTML = groupOrder.map(loc => {
+    const entries = groupMap[loc];
+    const totalQty  = entries.reduce((s, {r}) => s + r.quantity, 0);
+    const hasCost   = entries.some(({r}) => r.cost != null);
+    const totalCost = entries.reduce((s, {r}) => s + (r.cost != null ? parseFloat(r.cost) * r.quantity : 0), 0);
+    const isNew     = flashFirst && entries[0].i === 0;
+    return `
+      <div class="loc-group">
+        <div class="loc-group-hdr" onclick="toggleLocGroup(this)">
+          <div class="loc-group-name">${loc}</div>
+          <div class="loc-group-meta">
+            <span class="loc-group-stat">Qty <b>${totalQty}</b></span>
+            ${hasCost ? `<span class="loc-group-stat">Cost <b>$${totalCost.toFixed(2)}</b></span>` : ''}
+            <span class="loc-group-chevron open">▼</span>
+          </div>
+        </div>
+        <div class="loc-group-items">
+          ${entries.map(({r, i}) => `
+            <div class="log-item${flashFirst && i === 0 ? ' new-flash' : ''}">
+              <div>
+                <div class="log-item-name">${r.name}</div>
+                <div class="log-item-meta">${r.barcode}${r.cost != null ? ' · $' + parseFloat(r.cost).toFixed(2) : ''}</div>
+                <div class="log-item-time">${formatTime(r.timestamp)}</div>
+              </div>
+              <div class="log-right">
+                <div class="log-qty-pill">${r.quantity}</div>
+                <button class="log-delete" onclick="deleteLogItem(${i})">×</button>
+              </div>
+            </div>`).join('')}
+        </div>
+      </div>`;
+  }).join('');
+}
+function deleteLogItem(i) { scanLog.splice(i,1); localStorage.setItem('inv_log',JSON.stringify(scanLog)); renderLog(); updateStats(); refocusBarcode(); }
+
+function undoLast() {
+  if (!scanLog.length) return;
+  scanLog.shift();
   localStorage.setItem('inv_log', JSON.stringify(scanLog));
-  renderLog();
-  updateStats();
+  renderLog(); updateStats(); refocusBarcode();
+}
+function showPlaceholder() {
+  document.getElementById('item-found-box').innerHTML = '<div class="item-placeholder">Scan a barcode to see item details</div>';
+  document.getElementById('count-form').classList.remove('visible');
+}
+
+function dismissCurrentItem() {
+  currentItem = null;
+  document.getElementById('log-btn').disabled = true;
+  showPlaceholder();
+  refocusBarcode();
 }
 
 function clearLog() {
-  if (!confirm('Clear this session log?')) return;
-  scanLog = [];
-  localStorage.removeItem('inv_log');
-  renderLog();
-  updateStats();
+  if(!confirm('Clear this session log?')) return;
+  scanLog=[]; localStorage.removeItem('inv_log');
+  currentItem = null;
+  document.getElementById('log-btn').disabled = true;
+  showPlaceholder();
+  renderLog(); updateStats(); refocusBarcode();
 }
-
 function updateStats() {
+  const totalCost = scanLog.reduce((s,r) => s + (r.cost != null ? parseFloat(r.cost) * r.quantity : 0), 0);
   document.getElementById('stat-scans').textContent = scanLog.length;
-  const unique = new Set(scanLog.map(r => r.barcode)).size;
-  document.getElementById('stat-items').textContent = unique;
-  const total = scanLog.reduce((s, r) => s + r.quantity, 0);
-  document.getElementById('stat-qty').textContent = total;
+  document.getElementById('stat-items').textContent = new Set(scanLog.map(r=>r.barcode)).size;
+  document.getElementById('stat-qty').textContent   = scanLog.reduce((s,r)=>s+r.quantity,0);
+  document.getElementById('stat-cost').textContent  = '$' + totalCost.toFixed(2);
 }
 
 // ===== EXPORT =====
 function exportCSV() {
-  if (scanLog.length === 0) { alert('Nothing to export yet.'); return; }
-  const headers = ['Timestamp', 'Location', 'Barcode', 'Item Name', 'Cost', 'Quantity', 'Serial/Lot'];
-  const rows = scanLog.map(r => [
-    r.timestamp, r.location, r.barcode, r.name, r.cost, r.quantity, r.serial
-  ]);
-  const csv = [headers, ...rows].map(row => row.map(v => `"${String(v||'').replace(/"/g,'""')}"`).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `inventory-count-${new Date().toISOString().slice(0,10)}.csv`;
+  if (!scanLog.length) { alert('Nothing to export yet.'); return; }
+  const h=['Timestamp','Location','Barcode','Item Name','Cost','Quantity'];
+  const rows=scanLog.map(r=>[r.timestamp,r.location,r.barcode,r.name,r.cost,r.quantity]);
+  const csv=[h,...rows].map(row=>row.map(v=>`"${String(v||'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download=`inventory-${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
 }
 
 // ===== CAMERA =====
 function toggleCamera() {
   if (cameraRunning) { stopCamera(); return; }
-  const scanner = document.getElementById('camera-scanner');
-  scanner.classList.add('active');
+  document.getElementById('camera-scanner').classList.add('active');
   cameraRunning = true;
-
   html5QrScanner = new Html5Qrcode('qr-reader');
   html5QrScanner.start(
-    { facingMode: 'environment' },
-    { fps: 10, qrbox: { width: 250, height: 150 } },
-    (decodedText) => {
-      stopCamera();
-      lookupBarcode(decodedText);
-    },
-    () => {}
-  ).catch(err => {
-    console.error('Camera failed:', err);
-    alert('Camera access denied or not available.');
-    stopCamera();
-  });
+    {facingMode:'environment'},{fps:10,qrbox:{width:250,height:150}},
+    decoded=>{ stopCamera(); lookupBarcode(decoded); },
+    ()=>{}
+  ).catch(err=>{ console.error(err); alert('Camera access denied.'); stopCamera(); });
 }
-
 function stopCamera() {
-  if (html5QrScanner) {
-    html5QrScanner.stop().catch(() => {}).finally(() => {
-      html5QrScanner = null;
-    });
-  }
+  if(html5QrScanner) html5QrScanner.stop().catch(()=>{}).finally(()=>{ html5QrScanner=null; });
   document.getElementById('camera-scanner').classList.remove('active');
-  cameraRunning = false;
-  document.getElementById('barcode-input').focus();
+  cameraRunning=false; refocusBarcode();
 }
 
 init();
 </script>
-
-<!-- Setup Guide -->
-<div style="max-width:640px;margin:0 auto;padding:0 16px 48px;">
-  <div style="border-top:0.5px solid var(--border);padding-top:24px;margin-top:8px;">
-    <p style="font-size:13px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:12px;">Setup guide — connect your data....</p>
-
-    <div style="background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:10px;">
-      <p style="font-size:14px;font-weight:600;margin-bottom:6px;">Step 1 — Create free Supabase account</p>
-      <p style="font-size:13px;color:var(--text-muted);">Go to <strong>supabase.com</strong> → New project. Copy your Project URL and anon/public API key from Settings → API.</p>
-    </div>
-
-    <div style="background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:10px;">
-      <p style="font-size:14px;font-weight:600;margin-bottom:6px;">Step 2 — Create two tables</p>
-      <p style="font-size:13px;color:var(--text-muted);margin-bottom:8px;">In Supabase → Table Editor, create:</p>
-      <p style="font-size:12px;font-family:monospace;background:var(--bg);padding:10px;border-radius:6px;color:var(--text-muted);">
-        <strong>items</strong>: id (int8, pk), barcode (text), name (text), description (text)<br><br>
-        <strong>count_records</strong>: id (int8, pk), barcode (text), name (text), location (text), quantity (int4), serial (text), timestamp (timestamptz)
-      </p>
-    </div>
-
-    <div style="background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:10px;">
-      <p style="font-size:14px;font-weight:600;margin-bottom:6px;">Step 3 — Import your CSV</p>
-      <p style="font-size:13px;color:var(--text-muted);">In Supabase → items table → Import data → upload your CSV. Make sure your CSV has columns named <strong>barcode</strong>, <strong>name</strong>, <strong>description</strong> (or update the CONFIG at the top of this file to match your column names).</p>
-    </div>
-
-    <div style="background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:10px;">
-      <p style="font-size:14px;font-weight:600;margin-bottom:6px;">Step 4 — Update CONFIG in this file</p>
-      <p style="font-size:12px;font-family:monospace;background:var(--bg);padding:10px;border-radius:6px;color:var(--text-muted);">
-        supabaseUrl: 'https://xxxx.supabase.co',<br>
-        supabaseKey: 'your-anon-key',<br>
-        demoMode: false
-      </p>
-    </div>
-
-    <div style="background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);padding:16px;">
-      <p style="font-size:14px;font-weight:600;margin-bottom:6px;">Step 5 — Host on Vercel (free)</p>
-      <p style="font-size:13px;color:var(--text-muted);">Drag this HTML file into <strong>vercel.com/new</strong> (or put it in a GitHub repo and connect it). You'll get a shareable HTTPS URL that works on any phone or desktop.</p>
-    </div>
-  </div>
-</div>
-
 </body>
 </html>
