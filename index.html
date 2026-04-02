@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Inventory Counter</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  :root {
+    --bg: #f7f6f3;
+    --surface: #ffffff;
+    --border: rgba(0,0,0,0.1);
+    --border-strong: rgba(0,0,0,0.2);
+    --text: #1a1a18;
+    --text-muted: #6b6b67;
+    --text-hint: #a0a09c;
+    --blue-bg: #E6F1FB;
+    --blue-border: #B5D4F4;
+    --blue-text: #0C447C;
+    --green-bg: #EAF3DE;
+    --green-border: #C0DD97;
+    --green-text: #3B6D11;
+    --amber-bg: #FAEEDA;
+    --amber-border: #FAC775;
+    --amber-text: #854F0B;
+    --red-bg: #FCEBEB;
+    --red-border: #F7C1C1;
+    --red-text: #A32D2D;
+    --radius: 10px;
+    --radius-sm: 6px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1c1a;
+      --surface: #252523;
+      --border: rgba(255,255,255,0.1);
+      --border-strong: rgba(255,255,255,0.2);
+      --text: #f0ede8;
+      --text-muted: #9a9a94;
+      --text-hint: #606060;
+      --blue-bg: #042C53;
+      --blue-border: #185FA5;
+      --blue-text: #B5D4F4;
+      --green-bg: #173404;
+      --green-border: #3B6D11;
+      --green-text: #C0DD97;
+      --amber-bg: #412402;
+      --amber-border: #854F0B;
+      --amber-text: #FAC775;
+      --red-bg: #501313;
+      --red-border: #A32D2D;
+      --red-text: #F7C1C1;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  /* Header */
+  .header { background: var(--surface); border-bottom: 0.5px solid var(--border); padding: 0 16px; display: flex; align-items: center; justify-content: space-between; height: 56px; position: sticky; top: 0; z-index: 100; }
+  .header-title { font-size: 17px; font-weight: 600; letter-spacing: -0.3px; }
+  .header-sub { font-size: 12px; color: var(--text-muted); }
+
+  /* Location bar */
+  .loc-bar { background: var(--blue-bg); border-bottom: 0.5px solid var(--blue-border); padding: 10px 16px; display: flex; align-items: center; gap: 10px; position: sticky; top: 56px; z-index: 99; }
+  .loc-label { font-size: 12px; font-weight: 500; color: var(--blue-text); white-space: nowrap; }
+  .loc-select { flex: 1; background: var(--surface); border: 0.5px solid var(--blue-border); border-radius: var(--radius-sm); padding: 7px 10px; font-size: 14px; font-weight: 500; color: var(--text); appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b6b67' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; padding-right: 28px; cursor: pointer; }
+  .loc-select:focus { outline: none; border-color: var(--blue-text); }
+  .loc-manage-btn { font-size: 12px; color: var(--blue-text); background: none; border: none; cursor: pointer; white-space: nowrap; padding: 4px 0; text-decoration: underline; }
+
+  /* Main content */
+  .main { padding: 16px; max-width: 640px; margin: 0 auto; }
+
+  /* Scan card */
+  .scan-card { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
+  .card-title { font-size: 13px; font-weight: 500; color: var(--text-muted); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+  .scan-input-row { display: flex; gap: 8px; margin-bottom: 12px; }
+  .scan-input { flex: 1; border: 0.5px solid var(--border-strong); border-radius: var(--radius-sm); padding: 12px 14px; font-size: 16px; color: var(--text); background: var(--bg); transition: border-color 0.15s; }
+  .scan-input:focus { outline: none; border-color: #378ADD; }
+  .scan-input::placeholder { color: var(--text-hint); }
+  .camera-btn { background: var(--blue-bg); border: 0.5px solid var(--blue-border); border-radius: var(--radius-sm); padding: 0 14px; cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: var(--blue-text); white-space: nowrap; }
+  .camera-btn svg { width: 18px; height: 18px; }
+
+  /* Camera scanner */
+  .camera-scanner { margin-bottom: 12px; display: none; }
+  .camera-scanner.active { display: block; }
+  #qr-reader { border-radius: var(--radius-sm); overflow: hidden; border: 0.5px solid var(--border); }
+  #qr-reader video { width: 100% !important; }
+  .camera-stop { width: 100%; margin-top: 8px; background: var(--red-bg); border: 0.5px solid var(--red-border); border-radius: var(--radius-sm); padding: 8px; font-size: 13px; font-weight: 500; color: var(--red-text); cursor: pointer; }
+
+  /* Item result */
+  .item-result { display: none; }
+  .item-result.visible { display: block; }
+  .item-found { background: var(--green-bg); border: 0.5px solid var(--green-border); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 12px; }
+  .item-not-found { background: var(--red-bg); border: 0.5px solid var(--red-border); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 12px; }
+  .item-name { font-size: 15px; font-weight: 600; color: var(--green-text); }
+  .item-desc { font-size: 13px; color: var(--green-text); opacity: 0.8; margin-top: 2px; }
+  .item-barcode-show { font-size: 12px; color: var(--green-text); opacity: 0.6; margin-top: 4px; font-family: monospace; }
+  .not-found-text { font-size: 14px; font-weight: 500; color: var(--red-text); }
+  .not-found-sub { font-size: 12px; color: var(--red-text); opacity: 0.8; margin-top: 2px; }
+
+  /* Count form */
+  .count-form { display: none; }
+  .count-form.visible { display: block; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+  .form-group { display: flex; flex-direction: column; gap: 4px; }
+  .form-group.full { grid-column: 1 / -1; }
+  .form-label { font-size: 12px; font-weight: 500; color: var(--text-muted); }
+  .form-input { border: 0.5px solid var(--border-strong); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 15px; color: var(--text); background: var(--bg); }
+  .form-input:focus { outline: none; border-color: #378ADD; }
+  .submit-btn { width: 100%; background: #185FA5; border: none; border-radius: var(--radius-sm); padding: 13px; font-size: 15px; font-weight: 600; color: #fff; cursor: pointer; margin-top: 4px; transition: background 0.15s; }
+  .submit-btn:hover { background: #0C447C; }
+  .submit-btn:active { transform: scale(0.99); }
+
+  /* Success flash */
+  .success-flash { background: var(--green-bg); border: 0.5px solid var(--green-border); border-radius: var(--radius-sm); padding: 10px 14px; display: none; margin-bottom: 12px; text-align: center; }
+  .success-flash.show { display: block; animation: fadeOut 2.5s forwards; }
+  .success-text { font-size: 14px; font-weight: 500; color: var(--green-text); }
+  @keyframes fadeOut { 0%{opacity:1} 70%{opacity:1} 100%{opacity:0} }
+
+  /* Log */
+  .log-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .log-title { font-size: 13px; font-weight: 500; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .log-actions { display: flex; gap: 8px; }
+  .log-btn { font-size: 12px; background: var(--surface); border: 0.5px solid var(--border-strong); border-radius: var(--radius-sm); padding: 5px 10px; cursor: pointer; color: var(--text-muted); font-weight: 500; }
+  .log-btn:hover { color: var(--text); border-color: var(--border-strong); }
+  .log-empty { text-align: center; padding: 32px 16px; color: var(--text-hint); font-size: 14px; background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius); }
+
+  .log-list { display: flex; flex-direction: column; gap: 6px; }
+  .log-item { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; display: grid; grid-template-columns: 1fr auto; align-items: start; gap: 8px; }
+  .log-item-name { font-size: 14px; font-weight: 500; color: var(--text); }
+  .log-item-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .log-item-loc { font-size: 11px; background: var(--blue-bg); color: var(--blue-text); border-radius: 4px; padding: 2px 6px; display: inline-block; margin-top: 4px; font-weight: 500; }
+  .log-qty { font-size: 18px; font-weight: 600; color: var(--text); text-align: right; }
+  .log-qty-label { font-size: 11px; color: var(--text-hint); text-align: right; }
+  .log-delete { background: none; border: none; cursor: pointer; color: var(--text-hint); font-size: 16px; padding: 0 0 0 8px; }
+  .log-delete:hover { color: var(--red-text); }
+
+  /* Modal */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200; display: none; align-items: center; justify-content: center; padding: 20px; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: var(--surface); border-radius: var(--radius); padding: 20px; width: 100%; max-width: 400px; max-height: 90vh; overflow-y: auto; }
+  .modal-title { font-size: 16px; font-weight: 600; margin-bottom: 14px; }
+  .modal-input { width: 100%; border: 0.5px solid var(--border-strong); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 14px; color: var(--text); background: var(--bg); margin-bottom: 8px; }
+  .modal-input:focus { outline: none; border-color: #378ADD; }
+  .modal-add-btn { width: 100%; background: #185FA5; border: none; border-radius: var(--radius-sm); padding: 10px; font-size: 14px; font-weight: 600; color: #fff; cursor: pointer; margin-bottom: 16px; }
+  .location-list { display: flex; flex-direction: column; gap: 6px; }
+  .location-item { display: flex; align-items: center; justify-content: space-between; background: var(--bg); border: 0.5px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; }
+  .location-name { font-size: 14px; font-weight: 500; }
+  .loc-del-btn { background: none; border: none; cursor: pointer; color: var(--text-hint); font-size: 18px; }
+  .loc-del-btn:hover { color: var(--red-text); }
+  .modal-close { width: 100%; margin-top: 14px; background: none; border: 0.5px solid var(--border-strong); border-radius: var(--radius-sm); padding: 10px; font-size: 14px; color: var(--text-muted); cursor: pointer; }
+
+  /* Supabase config notice */
+  .config-notice { background: var(--amber-bg); border: 0.5px solid var(--amber-border); border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 12px; font-size: 13px; color: var(--amber-text); }
+  .config-notice strong { font-weight: 600; }
+
+  .stat-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+  .stat { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; text-align: center; }
+  .stat-val { font-size: 22px; font-weight: 600; }
+  .stat-label { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+</style>
+</head>
+<body>
+
+<!-- ===== CONFIGURATION — edit these ===== -->
+<script>
+const CONFIG = {
+  supabaseUrl: 'YOUR_SUPABASE_URL',
+  supabaseKey: 'YOUR_SUPABASE_ANON_KEY',
+  itemsTable: 'items',         // table with your 4500 items
+  countsTable: 'count_records', // table where scans are saved
+  barcodeColumn: 'barcode',    // column name for barcode in items table
+  nameColumn: 'name',
+  descColumn: 'description',
+  demoMode: true               // set false after connecting Supabase
+};
+</script>
+
+<header class="header">
+  <div>
+    <div class="header-title">Inventory Counter</div>
+  </div>
+  <div id="session-time" style="font-size:12px;color:var(--text-muted);"></div>
+</header>
+
+<div class="loc-bar">
+  <span class="loc-label">Location:</span>
+  <select class="loc-select" id="loc-select">
+    <option value="">— select location —</option>
+  </select>
+  <button class="loc-manage-btn" onclick="openLocationModal()">Manage</button>
+</div>
+
+<div class="main">
+
+  <!-- Stats -->
+  <div class="stat-row">
+    <div class="stat">
+      <div class="stat-val" id="stat-scans">0</div>
+      <div class="stat-label">Scans today</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val" id="stat-items">0</div>
+      <div class="stat-label">Unique items</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val" id="stat-qty">0</div>
+      <div class="stat-label">Total qty</div>
+    </div>
+  </div>
+
+  <!-- Scan card -->
+  <div class="scan-card">
+    <div class="card-title">Scan item</div>
+
+    <div id="demo-notice" class="config-notice">
+      <strong>Demo mode</strong> — using sample item data. Connect Supabase to use your 4,500 items. See setup guide below.
+    </div>
+
+    <div class="scan-input-row">
+      <input class="scan-input" id="barcode-input" type="text" inputmode="none"
+        placeholder="Scan or type barcode…" autocomplete="off" autocorrect="off" spellcheck="false" />
+      <button class="camera-btn" id="camera-btn" onclick="toggleCamera()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+          <circle cx="12" cy="13" r="4"/>
+        </svg>
+        Camera
+      </button>
+    </div>
+
+    <div class="camera-scanner" id="camera-scanner">
+      <div id="qr-reader"></div>
+      <button class="camera-stop" onclick="stopCamera()">Stop camera</button>
+    </div>
+
+    <div class="success-flash" id="success-flash">
+      <div class="success-text" id="success-text">Counted!</div>
+    </div>
+
+    <div class="item-result" id="item-result">
+      <div id="item-found-box"></div>
+    </div>
+
+    <div class="count-form" id="count-form">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Quantity</label>
+          <input class="form-input" id="qty-input" type="number" min="1" value="1" inputmode="numeric" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Serial / Lot # (optional)</label>
+          <input class="form-input" id="serial-input" type="text" placeholder="e.g. SN-001" />
+        </div>
+      </div>
+      <button class="submit-btn" onclick="submitCount()">Record count</button>
+    </div>
+  </div>
+
+  <!-- Log -->
+  <div class="log-header">
+    <div class="log-title">Session log</div>
+    <div class="log-actions">
+      <button class="log-btn" onclick="exportCSV()">Export CSV</button>
+      <button class="log-btn" onclick="clearLog()">Clear</button>
+    </div>
+  </div>
+
+  <div id="log-container"></div>
+
+</div>
+
+<!-- Location modal -->
+<div class="modal-overlay" id="loc-modal">
+  <div class="modal">
+    <div class="modal-title">Manage locations</div>
+    <input class="modal-input" id="new-loc-input" type="text" placeholder="New location name…" />
+    <button class="modal-add-btn" onclick="addLocation()">Add location</button>
+    <div class="location-list" id="location-list"></div>
+    <button class="modal-close" onclick="closeLocationModal()">Done</button>
+  </div>
+</div>
+
+<script>
+// ===== STATE =====
+let currentItem = null;
+let scanLog = [];
+let locations = JSON.parse(localStorage.getItem('inv_locations') || '["Warehouse A","Warehouse B","Office","Stockroom"]');
+let cameraRunning = false;
+let html5QrScanner = null;
+
+// Demo items (replace with Supabase lookup)
+const DEMO_ITEMS = {
+  '012345678901': { name: 'Widget Type A', description: 'Blue, 10mm, pack of 12' },
+  '098765432109': { name: 'Connector XJ-7', description: 'Stainless steel, M8 thread' },
+  '111222333444': { name: 'Filter Cartridge', description: 'HEPA, 6-month replacement' },
+  '555666777888': { name: 'Cable 3m USB-C', description: 'Black, braided, 60W' },
+  '999000111222': { name: 'Power Supply 12V', description: '2A, wall adapter, universal' },
+};
+
+// ===== INIT =====
+function init() {
+  renderLocations();
+  renderLog();
+  updateStats();
+
+  const saved = localStorage.getItem('inv_location');
+  if (saved) document.getElementById('loc-select').value = saved;
+
+  document.getElementById('loc-select').addEventListener('change', e => {
+    localStorage.setItem('inv_location', e.target.value);
+  });
+
+  document.getElementById('barcode-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      lookupBarcode(e.target.value.trim());
+    }
+  });
+
+  // Auto-focus barcode input
+  document.getElementById('barcode-input').focus();
+
+  // Session timer
+  const start = Date.now();
+  setInterval(() => {
+    const mins = Math.floor((Date.now() - start) / 60000);
+    document.getElementById('session-time').textContent = mins < 1 ? 'Session started' : `${mins}m session`;
+  }, 10000);
+
+  if (!CONFIG.demoMode) {
+    document.getElementById('demo-notice').style.display = 'none';
+  }
+}
+
+// ===== LOCATION =====
+function renderLocations() {
+  const select = document.getElementById('loc-select');
+  const saved = select.value || localStorage.getItem('inv_location') || '';
+  select.innerHTML = '<option value="">— select location —</option>';
+  locations.forEach(loc => {
+    const opt = document.createElement('option');
+    opt.value = loc;
+    opt.textContent = loc;
+    if (loc === saved) opt.selected = true;
+    select.appendChild(opt);
+  });
+
+  const list = document.getElementById('location-list');
+  list.innerHTML = '';
+  locations.forEach((loc, i) => {
+    list.innerHTML += `
+      <div class="location-item">
+        <span class="location-name">${loc}</span>
+        <button class="loc-del-btn" onclick="deleteLocation(${i})">×</button>
+      </div>`;
+  });
+}
+
+function addLocation() {
+  const input = document.getElementById('new-loc-input');
+  const val = input.value.trim();
+  if (!val) return;
+  locations.push(val);
+  localStorage.setItem('inv_locations', JSON.stringify(locations));
+  input.value = '';
+  renderLocations();
+}
+
+function deleteLocation(i) {
+  locations.splice(i, 1);
+  localStorage.setItem('inv_locations', JSON.stringify(locations));
+  renderLocations();
+}
+
+function openLocationModal() { document.getElementById('loc-modal').classList.add('open'); }
+function closeLocationModal() { document.getElementById('loc-modal').classList.remove('open'); }
+
+// ===== BARCODE LOOKUP =====
+async function lookupBarcode(barcode) {
+  if (!barcode) return;
+  document.getElementById('barcode-input').value = '';
+
+  let item = null;
+
+  if (CONFIG.demoMode) {
+    item = DEMO_ITEMS[barcode] || null;
+  } else {
+    item = await fetchFromSupabase(barcode);
+  }
+
+  currentItem = item ? { ...item, barcode } : null;
+
+  const resultBox = document.getElementById('item-result');
+  const foundBox = document.getElementById('item-found-box');
+  const countForm = document.getElementById('count-form');
+
+  resultBox.classList.add('visible');
+
+  if (item) {
+    foundBox.innerHTML = `
+      <div class="item-found">
+        <div class="item-name">${item.name}</div>
+        ${item.description ? `<div class="item-desc">${item.description}</div>` : ''}
+        <div class="item-barcode-show">${barcode}</div>
+      </div>`;
+    countForm.classList.add('visible');
+    document.getElementById('qty-input').value = 1;
+    document.getElementById('serial-input').value = '';
+    document.getElementById('qty-input').focus();
+  } else {
+    foundBox.innerHTML = `
+      <div class="item-not-found">
+        <div class="not-found-text">Item not found</div>
+        <div class="not-found-sub">Barcode: ${barcode}</div>
+      </div>`;
+    countForm.classList.remove('visible');
+  }
+}
+
+async function fetchFromSupabase(barcode) {
+  try {
+    const url = `${CONFIG.supabaseUrl}/rest/v1/${CONFIG.itemsTable}?${CONFIG.barcodeColumn}=eq.${encodeURIComponent(barcode)}&select=${CONFIG.barcodeColumn},${CONFIG.nameColumn},${CONFIG.descColumn}&limit=1`;
+    const res = await fetch(url, {
+      headers: {
+        'apikey': CONFIG.supabaseKey,
+        'Authorization': `Bearer ${CONFIG.supabaseKey}`,
+      }
+    });
+    const data = await res.json();
+    if (data && data.length > 0) {
+      return { name: data[0][CONFIG.nameColumn], description: data[0][CONFIG.descColumn] };
+    }
+    return null;
+  } catch(e) {
+    console.error('Supabase lookup failed', e);
+    return null;
+  }
+}
+
+// ===== SUBMIT COUNT =====
+async function submitCount() {
+  const location = document.getElementById('loc-select').value;
+  if (!location) { alert('Please select a location first.'); return; }
+  if (!currentItem) return;
+
+  const qty = parseInt(document.getElementById('qty-input').value) || 1;
+  const serial = document.getElementById('serial-input').value.trim();
+
+  const record = {
+    barcode: currentItem.barcode,
+    name: currentItem.name,
+    description: currentItem.description || '',
+    quantity: qty,
+    serial: serial,
+    location: location,
+    timestamp: new Date().toISOString(),
+  };
+
+  // Save to Supabase if connected
+  if (!CONFIG.demoMode) {
+    await saveCountToSupabase(record);
+  }
+
+  // Always save locally for session log
+  scanLog.unshift(record);
+  localStorage.setItem('inv_log', JSON.stringify(scanLog.slice(0, 500)));
+
+  // Flash success
+  document.getElementById('success-text').textContent = `Counted ${qty}x ${currentItem.name}`;
+  const flash = document.getElementById('success-flash');
+  flash.classList.remove('show');
+  void flash.offsetWidth;
+  flash.classList.add('show');
+
+  // Reset
+  document.getElementById('item-result').classList.remove('visible');
+  document.getElementById('count-form').classList.remove('visible');
+  currentItem = null;
+  document.getElementById('barcode-input').focus();
+
+  renderLog();
+  updateStats();
+}
+
+async function saveCountToSupabase(record) {
+  try {
+    await fetch(`${CONFIG.supabaseUrl}/rest/v1/${CONFIG.countsTable}`, {
+      method: 'POST',
+      headers: {
+        'apikey': CONFIG.supabaseKey,
+        'Authorization': `Bearer ${CONFIG.supabaseKey}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify(record)
+    });
+  } catch(e) { console.error('Save failed', e); }
+}
+
+// ===== LOG =====
+function renderLog() {
+  const saved = localStorage.getItem('inv_log');
+  if (saved) scanLog = JSON.parse(saved);
+
+  const container = document.getElementById('log-container');
+  if (scanLog.length === 0) {
+    container.innerHTML = '<div class="log-empty">No items counted yet this session</div>';
+    return;
+  }
+
+  container.innerHTML = `<div class="log-list">${scanLog.map((r, i) => `
+    <div class="log-item">
+      <div>
+        <div class="log-item-name">${r.name}</div>
+        <div class="log-item-meta">${r.barcode}${r.serial ? ' · ' + r.serial : ''}</div>
+        <div class="log-item-loc">${r.location}</div>
+      </div>
+      <div>
+        <div class="log-qty">${r.quantity}</div>
+        <div class="log-qty-label">qty</div>
+        <button class="log-delete" onclick="deleteLogItem(${i})">×</button>
+      </div>
+    </div>`).join('')}
+  </div>`;
+}
+
+function deleteLogItem(i) {
+  scanLog.splice(i, 1);
+  localStorage.setItem('inv_log', JSON.stringify(scanLog));
+  renderLog();
+  updateStats();
+}
+
+function clearLog() {
+  if (!confirm('Clear this session log?')) return;
+  scanLog = [];
+  localStorage.removeItem('inv_log');
+  renderLog();
+  updateStats();
+}
+
+function updateStats() {
+  document.getElementById('stat-scans').textContent = scanLog.length;
+  const unique = new Set(scanLog.map(r => r.barcode)).size;
+  document.getElementById('stat-items').textContent = unique;
+  const total = scanLog.reduce((s, r) => s + r.quantity, 0);
+  document.getElementById('stat-qty').textContent = total;
+}
+
+// ===== EXPORT =====
+function exportCSV() {
+  if (scanLog.length === 0) { alert('Nothing to export yet.'); return; }
+  const headers = ['Timestamp', 'Location', 'Barcode', 'Item Name', 'Description', 'Quantity', 'Serial/Lot'];
+  const rows = scanLog.map(r => [
+    r.timestamp, r.location, r.barcode, r.name, r.description, r.quantity, r.serial
+  ]);
+  const csv = [headers, ...rows].map(row => row.map(v => `"${String(v||'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `inventory-count-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+}
+
+// ===== CAMERA =====
+function toggleCamera() {
+  if (cameraRunning) { stopCamera(); return; }
+  const scanner = document.getElementById('camera-scanner');
+  scanner.classList.add('active');
+  cameraRunning = true;
+
+  html5QrScanner = new Html5Qrcode('qr-reader');
+  html5QrScanner.start(
+    { facingMode: 'environment' },
+    { fps: 10, qrbox: { width: 250, height: 150 } },
+    (decodedText) => {
+      stopCamera();
+      lookupBarcode(decodedText);
+    },
+    () => {}
+  ).catch(err => {
+    console.error('Camera failed:', err);
+    alert('Camera access denied or not available.');
+    stopCamera();
+  });
+}
+
+function stopCamera() {
+  if (html5QrScanner) {
+    html5QrScanner.stop().catch(() => {}).finally(() => {
+      html5QrScanner = null;
+    });
+  }
+  document.getElementById('camera-scanner').classList.remove('active');
+  cameraRunning = false;
+  document.getElementById('barcode-input').focus();
+}
+
+init();
+</script>
+
+<!-- Setup Guide -->
+<div style="max-width:640px;margin:0 auto;padding:0 16px 48px;">
+  <div style="border-top:0.5px solid var(--border);padding-top:24px;margin-top:8px;">
+    <p style="font-size:13px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:12px;">Setup guide — connect your data</p>
+
+    <div style="background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:10px;">
+      <p style="font-size:14px;font-weight:600;margin-bottom:6px;">Step 1 — Create free Supabase account</p>
+      <p style="font-size:13px;color:var(--text-muted);">Go to <strong>supabase.com</strong> → New project. Copy your Project URL and anon/public API key from Settings → API.</p>
+    </div>
+
+    <div style="background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:10px;">
+      <p style="font-size:14px;font-weight:600;margin-bottom:6px;">Step 2 — Create two tables</p>
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:8px;">In Supabase → Table Editor, create:</p>
+      <p style="font-size:12px;font-family:monospace;background:var(--bg);padding:10px;border-radius:6px;color:var(--text-muted);">
+        <strong>items</strong>: id (int8, pk), barcode (text), name (text), description (text)<br><br>
+        <strong>count_records</strong>: id (int8, pk), barcode (text), name (text), location (text), quantity (int4), serial (text), timestamp (timestamptz)
+      </p>
+    </div>
+
+    <div style="background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:10px;">
+      <p style="font-size:14px;font-weight:600;margin-bottom:6px;">Step 3 — Import your CSV</p>
+      <p style="font-size:13px;color:var(--text-muted);">In Supabase → items table → Import data → upload your CSV. Make sure your CSV has columns named <strong>barcode</strong>, <strong>name</strong>, <strong>description</strong> (or update the CONFIG at the top of this file to match your column names).</p>
+    </div>
+
+    <div style="background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:10px;">
+      <p style="font-size:14px;font-weight:600;margin-bottom:6px;">Step 4 — Update CONFIG in this file</p>
+      <p style="font-size:12px;font-family:monospace;background:var(--bg);padding:10px;border-radius:6px;color:var(--text-muted);">
+        supabaseUrl: 'https://xxxx.supabase.co',<br>
+        supabaseKey: 'your-anon-key',<br>
+        demoMode: false
+      </p>
+    </div>
+
+    <div style="background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);padding:16px;">
+      <p style="font-size:14px;font-weight:600;margin-bottom:6px;">Step 5 — Host on Vercel (free)</p>
+      <p style="font-size:13px;color:var(--text-muted);">Drag this HTML file into <strong>vercel.com/new</strong> (or put it in a GitHub repo and connect it). You'll get a shareable HTTPS URL that works on any phone or desktop.</p>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
