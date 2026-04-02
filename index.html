@@ -402,6 +402,116 @@ function deleteLocation(i) {
 function openLocationModal() { document.getElementById('loc-modal').classList.add('open'); }
 function closeLocationModal() { document.getElementById('loc-modal').classList.remove('open'); }
 
+// ===== BARCODE MATCHING =====
+// Multi-strategy lookup covering industry-standard barcode formats:
+//  1. Exact raw string
+//  2. Normalized — leading zeros stripped
+//  3. UPC-A (12-digit) ↔ EAN-13 (13-digit) conversion
+//  4. UPC-E (6–8 digit compressed) expanded to full UPC-A
+//  5. Without check digit — legacy systems often store the body only
+//  6. With check digit appended — scanner may return body without it
+//  7. Normalize all of the above
+//  8. Suffix/fuzzy fallback (min 4 significant digits)
+
+function normalizeBarcode(code) {
+  const trimmed = String(code).trim();
+  if (!trimmed) return '';
+  const m = trimmed.match(/^0*(.+)$/);
+  return m ? m[1] : '0';
+}
+
+// UPC-A / EAN check digit: odd positions (1-indexed) × 3, even × 1
+function calcCheckDigit(body) {
+  let sum = 0;
+  for (let i = 0; i < body.length; i++) {
+    sum += parseInt(body[i]) * (i % 2 === 0 ? 3 : 1);
+  }
+  return String((10 - (sum % 10)) % 10);
+}
+
+// Expand a 6-, 7-, or 8-digit UPC-E to a full 12-digit UPC-A string.
+// Returns null if the input doesn't look like UPC-E.
+function expandUpcE(raw) {
+  const d = raw.replace(/\D/g, '');
+  let b; // 6 significant digits
+  if      (d.length === 6) b = d;
+  else if (d.length === 7) b = d.slice(1);       // strip number-system digit
+  else if (d.length === 8) b = d.slice(1, 7);    // strip NS + check digit
+  else return null;
+
+  const [e0,e1,e2,e3,e4,e5] = b.split('');
+  let body11;
+  switch (parseInt(e5)) {
+    case 0: case 1: case 2:
+      body11 = `0${e0}${e1}${e5}0000${e2}${e3}${e4}`; break;
+    case 3:
+      body11 = `0${e0}${e1}${e2}00000${e3}${e4}`; break;
+    case 4:
+      body11 = `0${e0}${e1}${e2}${e3}00000${e4}`; break;
+    default: // 5–9
+      body11 = `0${e0}${e1}${e2}${e3}${e4}0000${e5}`; break;
+  }
+  return body11 + calcCheckDigit(body11); // full 12-digit UPC-A
+}
+
+function barcodeCandidates(raw) {
+  const trimmed = String(raw).trim();
+  if (!trimmed) return [];
+
+  const seen = new Set();
+  const result = [];
+  function add(c) {
+    const s = String(c).trim();
+    if (s && !seen.has(s)) { seen.add(s); result.push(s); }
+  }
+
+  const digits = trimmed.replace(/\D/g, '');
+
+  // 1 & 2 — exact + normalized
+  add(trimmed);
+  add(normalizeBarcode(trimmed));
+
+  // 3 — UPC-A ↔ EAN-13
+  if (digits.length === 12) {
+    add('0' + digits);
+    add(normalizeBarcode('0' + digits));
+  }
+  if (digits.length === 13 && digits.startsWith('0')) {
+    add(digits.slice(1));
+    add(normalizeBarcode(digits.slice(1)));
+  }
+
+  // 4 — UPC-E expansion (6–8 digits)
+  if (digits.length >= 6 && digits.length <= 8) {
+    const upcA = expandUpcE(digits);
+    if (upcA) {
+      add(upcA);
+      add(normalizeBarcode(upcA));
+      add('0' + upcA);                          // EAN-13 form of expanded UPC-A
+      add(normalizeBarcode('0' + upcA));
+    }
+  }
+
+  // 5 — without check digit (last digit stripped)
+  if (digits.length > 4) {
+    const noCheck = digits.slice(0, -1);
+    add(noCheck);
+    add(normalizeBarcode(noCheck));
+  }
+
+  // 6 — with check digit appended (body-only inputs)
+  if (digits.length === 11) add(digits + calcCheckDigit(digits));
+  if (digits.length === 12) {
+    const ean = '0' + digits;
+    add(ean + calcCheckDigit(ean));
+  }
+
+  // 7 — normalize everything collected so far
+  result.slice().forEach(c => add(normalizeBarcode(c)));
+
+  return result;
+}
+
 // ===== BARCODE LOOKUP =====
 async function lookupBarcode(barcode) {
   if (!barcode) return;
@@ -445,20 +555,43 @@ async function lookupBarcode(barcode) {
 }
 
 async function fetchFromSupabase(barcode) {
+  const headers = {
+    'apikey': CONFIG.supabaseKey,
+    'Authorization': `Bearer ${CONFIG.supabaseKey}`,
+  };
+  const sel  = `select=${CONFIG.barcodeColumn},${CONFIG.nameColumn},${CONFIG.costColumn}`;
+  const base = `${CONFIG.supabaseUrl}/rest/v1/${CONFIG.itemsTable}`;
+  const col  = CONFIG.barcodeColumn;
+
+  function parseRow(row) {
+    return { name: row[CONFIG.nameColumn], cost: row[CONFIG.costColumn] };
+  }
+
   try {
-    const url = `${CONFIG.supabaseUrl}/rest/v1/${CONFIG.itemsTable}?${CONFIG.barcodeColumn}=eq.${encodeURIComponent(barcode)}&select=${CONFIG.barcodeColumn},${CONFIG.nameColumn},${CONFIG.costColumn}&limit=1`;
-    const res = await fetch(url, {
-      headers: {
-        'apikey': CONFIG.supabaseKey,
-        'Authorization': `Bearer ${CONFIG.supabaseKey}`,
-      }
-    });
-    const data = await res.json();
-    if (data && data.length > 0) {
-      return { name: data[0][CONFIG.nameColumn], cost: data[0][CONFIG.costColumn] };
+    // ── Strategies 1–7: single OR query covering all candidates ─────────────
+    const candidates = barcodeCandidates(barcode);
+    if (candidates.length > 0) {
+      const orFilter = encodeURIComponent(
+        '(' + candidates.map(c => `${col}.eq.${c}`).join(',') + ')'
+      );
+      const res  = await fetch(`${base}?or=${orFilter}&${sel}&limit=1`, { headers });
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) return parseRow(data[0]);
     }
+
+    // ── Strategy 8: suffix/fuzzy fallback (min 4 significant digits) ────────
+    const norm = normalizeBarcode(barcode);
+    if (norm.length >= 4) {
+      const fuzzyRes  = await fetch(
+        `${base}?${col}=like.%25${encodeURIComponent(norm)}&${sel}&limit=1`,
+        { headers }
+      );
+      const fuzzyData = await fuzzyRes.json();
+      if (Array.isArray(fuzzyData) && fuzzyData.length > 0) return parseRow(fuzzyData[0]);
+    }
+
     return null;
-  } catch(e) {
+  } catch (e) {
     console.error('Supabase lookup failed', e);
     return null;
   }
