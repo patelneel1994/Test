@@ -39,8 +39,29 @@
   .header-title { font-size: 17px; font-weight: 700; color: #fff; letter-spacing: -.3px; }
   .header-right  { font-size: 12px; color: rgba(255,255,255,.7); }
 
+  /* TAB BAR */
+  .tab-bar { background: var(--surface); border-bottom: 1.5px solid var(--border); display: flex; position: sticky; top: 54px; z-index: 99; }
+  .tab { flex: 1; background: none; border: none; border-bottom: 3px solid transparent; padding: 12px 0; font-size: 14px; font-weight: 600; color: var(--text-muted); cursor: pointer; transition: color .15s, border-color .15s; }
+  .tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+
   /* LOCATION BAR */
-  .loc-bar { background: var(--surface); border-bottom: 1.5px solid var(--border); padding: 10px 16px; display: flex; align-items: center; gap: 10px; position: sticky; top: 54px; z-index: 99; }
+  .loc-bar { background: var(--surface); border-bottom: 1.5px solid var(--border); padding: 10px 16px; display: flex; align-items: center; gap: 10px; position: sticky; top: 102px; z-index: 98; }
+
+  /* SUMMARY */
+  .summary-group { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius); margin-bottom: 10px; overflow: hidden; }
+  .summary-group-hdr { background: var(--primary-bg); border-bottom: 1.5px solid var(--primary-border); padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; }
+  .summary-group-name { font-size: 15px; font-weight: 700; color: var(--primary); }
+  .summary-group-stats { display: flex; gap: 16px; }
+  .summary-group-stat { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+  .summary-group-stat b { color: var(--text); font-size: 14px; }
+  .summary-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--border); }
+  .summary-row:last-child { border-bottom: none; }
+  .summary-item-name { font-size: 14px; font-weight: 600; color: var(--text); }
+  .summary-item-barcode { font-size: 11px; color: var(--text-muted); font-family: monospace; margin-top: 2px; }
+  .summary-qty { background: var(--primary); color: #fff; border-radius: 20px; padding: 4px 12px; font-size: 14px; font-weight: 800; white-space: nowrap; }
+  .summary-cost { font-size: 13px; font-weight: 700; color: var(--green); min-width: 70px; text-align: right; }
+  .summary-empty { text-align: center; padding: 32px 16px; color: var(--text-hint); font-size: 14px; }
+  .summary-loading { text-align: center; padding: 32px 16px; color: var(--text-muted); font-size: 14px; }
   .loc-label { font-size: 11px; font-weight: 700; color: var(--text-muted); white-space: nowrap; text-transform: uppercase; letter-spacing: .05em; }
   .loc-select { flex: 1; background: var(--bg); border: 1.5px solid var(--border); border-radius: var(--radius-xs); padding: 8px 28px 8px 10px; font-size: 14px; font-weight: 600; color: var(--text); appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236B7A99' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; cursor: pointer; }
   .loc-select:focus { outline: none; border-color: var(--primary); }
@@ -226,8 +247,14 @@ const CONFIG = {
   <div class="header-right" id="session-time"></div>
 </header>
 
+<!-- TAB BAR -->
+<div class="tab-bar">
+  <button class="tab active" id="tab-scan" onclick="switchTab('scan')">Scan</button>
+  <button class="tab" id="tab-summary" onclick="switchTab('summary')">DB Summary</button>
+</div>
+
 <!-- LOCATION BAR -->
-<div class="loc-bar">
+<div class="loc-bar" id="loc-bar">
   <span class="loc-label">Location</span>
   <select class="loc-select" id="loc-select">
     <option value="">— select location —</option>
@@ -342,6 +369,16 @@ const CONFIG = {
   </div>
   <div id="log-container"></div>
 
+</div>
+
+<!-- SUMMARY SCREEN -->
+<div class="main" id="screen-summary" style="display:none">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+    <div style="font-size:13px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;">All-time totals from database</div>
+    <button class="log-act-btn" onclick="loadSummary()">Refresh</button>
+  </div>
+  <div id="summary-totals" class="stat-row" style="margin-bottom:14px;"></div>
+  <div id="summary-container"></div>
 </div>
 
 <!-- LOCATION MODAL -->
@@ -776,6 +813,85 @@ function stopCamera() {
   if(html5QrScanner) html5QrScanner.stop().catch(()=>{}).finally(()=>{ html5QrScanner=null; });
   document.getElementById('camera-scanner').classList.remove('active');
   cameraRunning=false; refocusBarcode();
+}
+
+// ===== TABS =====
+function switchTab(tab) {
+  const isScan = tab === 'scan';
+  document.getElementById('tab-scan').classList.toggle('active', isScan);
+  document.getElementById('tab-summary').classList.toggle('active', !isScan);
+  document.querySelector('.main:not(#screen-summary)').style.display = isScan ? '' : 'none';
+  document.getElementById('screen-summary').style.display = isScan ? 'none' : '';
+  document.getElementById('loc-bar').style.display = isScan ? '' : 'none';
+  if (!isScan) loadSummary();
+}
+
+// ===== SUMMARY =====
+async function loadSummary() {
+  const sc = document.getElementById('summary-container');
+  const st = document.getElementById('summary-totals');
+  sc.innerHTML = '<div class="summary-loading">Loading…</div>';
+  st.innerHTML = '';
+
+  try {
+    const headers = { 'apikey': CONFIG.supabaseKey, 'Authorization': 'Bearer ' + CONFIG.supabaseKey };
+    const res = await fetch(
+      `${CONFIG.supabaseUrl}/rest/v1/${CONFIG.countsTable}?select=barcode,name,cost,quantity,location&limit=5000`,
+      { headers }
+    );
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const rows = await res.json();
+
+    if (!rows.length) { sc.innerHTML = '<div class="summary-empty">No records in database yet</div>'; return; }
+
+    // Overall totals
+    const totalQty  = rows.reduce((s, r) => s + r.quantity, 0);
+    const totalCost = rows.reduce((s, r) => s + (r.cost != null ? parseFloat(r.cost) * r.quantity : 0), 0);
+    const uniqueItems = new Set(rows.map(r => r.barcode)).size;
+    st.innerHTML = `
+      <div class="stat"><div class="stat-val">${rows.length}</div><div class="stat-label">Records</div></div>
+      <div class="stat"><div class="stat-val">${uniqueItems}</div><div class="stat-label">Unique items</div></div>
+      <div class="stat"><div class="stat-val">${totalQty}</div><div class="stat-label">Total qty</div></div>
+      <div class="stat"><div class="stat-val" style="font-size:20px;">$${totalCost.toFixed(2)}</div><div class="stat-label">Total cost</div></div>`;
+
+    // Group by location
+    const groups = {};
+    rows.forEach(r => {
+      if (!groups[r.location]) groups[r.location] = {};
+      const key = r.barcode;
+      if (!groups[r.location][key]) groups[r.location][key] = { name: r.name, barcode: r.barcode, cost: r.cost, qty: 0, total: 0 };
+      groups[r.location][key].qty += r.quantity;
+      groups[r.location][key].total += r.cost != null ? parseFloat(r.cost) * r.quantity : 0;
+    });
+
+    sc.innerHTML = Object.entries(groups).map(([loc, items]) => {
+      const locQty  = Object.values(items).reduce((s, i) => s + i.qty, 0);
+      const locCost = Object.values(items).reduce((s, i) => s + i.total, 0);
+      const sortedItems = Object.values(items).sort((a, b) => b.qty - a.qty);
+      return `
+        <div class="summary-group">
+          <div class="summary-group-hdr">
+            <div class="summary-group-name">${loc}</div>
+            <div class="summary-group-stats">
+              <span class="summary-group-stat">Qty <b>${locQty}</b></span>
+              <span class="summary-group-stat">Cost <b>$${locCost.toFixed(2)}</b></span>
+            </div>
+          </div>
+          ${sortedItems.map(i => `
+            <div class="summary-row">
+              <div>
+                <div class="summary-item-name">${i.name}</div>
+                <div class="summary-item-barcode">${i.barcode}</div>
+              </div>
+              <div class="summary-qty">${i.qty}</div>
+              <div class="summary-cost">${i.cost != null ? '$' + i.total.toFixed(2) : '—'}</div>
+            </div>`).join('')}
+        </div>`;
+    }).join('');
+
+  } catch(e) {
+    sc.innerHTML = `<div class="summary-empty">Error: ${e.message}</div>`;
+  }
 }
 
 init();
