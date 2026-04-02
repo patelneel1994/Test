@@ -119,6 +119,15 @@
   .item-found-cost { font-size: 14px; font-weight: 600; color: var(--primary); margin-top: 4px; }
   .item-found-code { font-size: 11px; color: var(--text-muted); font-family: monospace; margin-top: 4px; }
   .item-found-time { font-size: 11px; color: var(--text-hint); margin-top: 4px; }
+  .item-cost-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+  .item-cost-label { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+  .item-cost-edit { display: flex; align-items: center; border: 1.5px solid var(--primary-border); border-radius: var(--radius-xs); background: var(--bg); padding: 4px 8px; gap: 2px; }
+  .item-cost-prefix { font-size: 13px; font-weight: 700; color: var(--primary); }
+  .item-cost-input { border: none; background: none; width: 72px; font-size: 14px; font-weight: 700; color: var(--primary); outline: none; -moz-appearance: textfield; }
+  .item-cost-input::-webkit-outer-spin-button, .item-cost-input::-webkit-inner-spin-button { -webkit-appearance: none; }
+  .item-cost-save { font-size: 12px; font-weight: 700; background: var(--primary); color: #fff; border: none; border-radius: var(--radius-xs); padding: 5px 10px; cursor: pointer; }
+  .item-cost-save:active { filter: brightness(.88); }
+  .item-cost-status { font-size: 11px; font-weight: 600; color: var(--green); }
   .item-not-found-card { background: var(--red-bg); border: 1.5px solid var(--red-border); border-radius: var(--radius-sm); padding: 14px; }
   .item-nf-title { font-size: 15px; font-weight: 700; color: var(--red-text); }
   .item-nf-sub   { font-size: 12px; color: var(--red-text); opacity: .75; margin-top: 3px; font-family: monospace; }
@@ -479,15 +488,31 @@ function init() {
   checkDBConnection();
 }
 
+// ===== SUPABASE FETCH WRAPPER =====
+// All Supabase calls go through here. Any non-2xx throws with the full error body.
+async function sbFetch(url, options = {}) {
+  const headers = {
+    'apikey': CONFIG.supabaseKey,
+    'Authorization': 'Bearer ' + CONFIG.supabaseKey,
+    ...options.headers
+  };
+  const res = await fetch(url, { ...options, headers });
+  if (!res.ok) {
+    let body = '';
+    try { body = await res.text(); } catch(_) {}
+    throw new Error(`[${res.status}] ${body || res.statusText}`);
+  }
+  return res;
+}
+
 // ===== DB =====
 async function checkDBConnection() {
   const el = document.getElementById('db-status');
   try {
-    const res = await fetch(
+    const res = await sbFetch(
       CONFIG.supabaseUrl + '/rest/v1/' + CONFIG.itemsTable + '?select=count&limit=1',
-      { headers: { 'apikey': CONFIG.supabaseKey, 'Authorization': 'Bearer ' + CONFIG.supabaseKey, 'Prefer': 'count=exact' } }
+      { headers: { 'Prefer': 'count=exact' } }
     );
-    if (!res.ok) throw new Error('HTTP ' + res.status);
     const total = (res.headers.get('content-range') || '').split('/')[1] || '?';
     el.style.cssText = 'background:var(--green-bg);border:1.5px solid var(--green-border);color:var(--green-text);border-radius:var(--radius-sm);padding:9px 14px;margin-bottom:12px;font-size:13px;font-weight:500;';
     el.innerHTML = '✓ Connected — <strong>' + total + '</strong> items in database';
@@ -585,7 +610,23 @@ async function lookupBarcode(barcode) {
   inp.classList.add('loading');
   inp.placeholder = 'Looking up…';
 
-  const item = await fetchFromSupabase(barcode);
+  let item;
+  try {
+    item = await fetchFromSupabase(barcode);
+  } catch(e) {
+    inp.classList.remove('loading');
+    inp.placeholder = 'Scan or type barcode…';
+    document.getElementById('item-found-box').innerHTML = `
+      <div class="item-not-found-card">
+        <div class="item-nf-title">Lookup error</div>
+        <div class="item-nf-sub">${e.message}</div>
+      </div>`;
+    document.getElementById('item-result').classList.add('visible');
+    document.getElementById('count-form').classList.remove('visible');
+    beepNotFound();
+    refocusBarcode();
+    return;
+  }
 
   inp.classList.remove('loading');
   inp.placeholder = 'Scan or type barcode…';
@@ -598,10 +639,20 @@ async function lookupBarcode(barcode) {
     beepSuccess();
     if (navigator.vibrate) navigator.vibrate(40);
     const timeStr = scanTime.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    const costVal = item.cost != null ? parseFloat(item.cost).toFixed(2) : '';
     document.getElementById('item-found-box').innerHTML = `
       <div class="item-found-card">
         <div class="item-found-name">${item.name}</div>
-        ${item.cost != null ? `<div class="item-found-cost">$${parseFloat(item.cost).toFixed(2)}</div>` : ''}
+        <div class="item-cost-row">
+          <span class="item-cost-label">Cost</span>
+          <div class="item-cost-edit">
+            <span class="item-cost-prefix">$</span>
+            <input class="item-cost-input" id="cost-input" type="number" min="0" step="0.01"
+              value="${costVal}" placeholder="0.00" onchange="updateCostLocal()" />
+          </div>
+          <button class="item-cost-save" onclick="saveCostToDb()">Save</button>
+          <span class="item-cost-status" id="cost-status"></span>
+        </div>
         <div class="item-found-code">${barcode}</div>
         <div class="item-found-time">Scanned at ${timeStr}</div>
       </div>`;
@@ -621,27 +672,58 @@ async function lookupBarcode(barcode) {
 }
 
 async function fetchFromSupabase(barcode) {
-  const headers={'apikey':CONFIG.supabaseKey,'Authorization':`Bearer ${CONFIG.supabaseKey}`};
   const sel=`select=${CONFIG.barcodeColumn},${CONFIG.nameColumn},${CONFIG.costColumn}`;
   const base=`${CONFIG.supabaseUrl}/rest/v1/${CONFIG.itemsTable}`;
   const col=CONFIG.barcodeColumn;
-  const parse=row=>({name:row[CONFIG.nameColumn],cost:row[CONFIG.costColumn]});
+  const parse=row=>({name:row[CONFIG.nameColumn],cost:row[CONFIG.costColumn],dbBarcode:row[CONFIG.barcodeColumn]});
+  const cands=barcodeCandidates(barcode);
+  if(cands.length){
+    const or=encodeURIComponent('('+cands.map(c=>`${col}.eq.${c}`).join(',')+ ')');
+    const res=await sbFetch(`${base}?or=${or}&${sel}&limit=1`);
+    const d=await res.json();
+    if(Array.isArray(d)&&d.length) return parse(d[0]);
+  }
+  const norm=normalizeBarcode(barcode);
+  if(norm.length>=4){
+    const r2=await sbFetch(`${base}?${col}=like.%25${encodeURIComponent(norm)}&${sel}&limit=1`);
+    const d2=await r2.json();
+    if(Array.isArray(d2)&&d2.length) return parse(d2[0]);
+  }
+  return null;
+}
+
+// ===== COST EDIT =====
+function updateCostLocal() {
+  const v = parseFloat(document.getElementById('cost-input').value);
+  if (!isNaN(v) && currentItem) currentItem.cost = v;
+}
+
+async function saveCostToDb() {
+  if (!currentItem) return;
+  const inp = document.getElementById('cost-input');
+  const status = document.getElementById('cost-status');
+  const v = parseFloat(inp.value);
+  if (isNaN(v) || v < 0) { status.style.color = 'var(--red-text)'; status.textContent = 'Invalid'; return; }
+
+  currentItem.cost = v;
+  status.textContent = 'Saving…';
+  status.style.color = 'var(--text-muted)';
+
   try {
-    const cands=barcodeCandidates(barcode);
-    if(cands.length){
-      const or=encodeURIComponent('('+cands.map(c=>`${col}.eq.${c}`).join(',')+ ')');
-      const res=await fetch(`${base}?or=${or}&${sel}&limit=1`,{headers});
-      const d=await res.json();
-      if(Array.isArray(d)&&d.length) return parse(d[0]);
-    }
-    const norm=normalizeBarcode(barcode);
-    if(norm.length>=4){
-      const r2=await fetch(`${base}?${col}=like.%25${encodeURIComponent(norm)}&${sel}&limit=1`,{headers});
-      const d2=await r2.json();
-      if(Array.isArray(d2)&&d2.length) return parse(d2[0]);
-    }
-    return null;
-  } catch(e){ console.error('Lookup failed',e); return null; }
+    const matchBarcode = currentItem.dbBarcode || currentItem.barcode;
+    await sbFetch(
+      `${CONFIG.supabaseUrl}/rest/v1/${CONFIG.itemsTable}?${CONFIG.barcodeColumn}=eq.${encodeURIComponent(matchBarcode)}`,
+      { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }, body: JSON.stringify({ [CONFIG.costColumn]: v }) }
+    );
+    status.style.color = 'var(--green)';
+    status.textContent = 'Saved';
+    setTimeout(() => { if (status) status.textContent = ''; }, 2000);
+  } catch(e) {
+    status.style.color = 'var(--red-text)';
+    status.textContent = 'Failed';
+    console.error('Cost save failed', e);
+    alert('Cost save failed: ' + e.message);
+  }
 }
 
 // ===== SUBMIT =====
@@ -652,15 +734,23 @@ async function submitCount(e) {
   const qty    = getQty();
   if (qty < 1) { setQtyVal(1); return; }
 
-  const record = {
-    barcode:   currentItem.barcode,
+  const dbRecord = {
+    barcode:   currentItem.dbBarcode || currentItem.barcode,
     name:      currentItem.name,
-    cost:      currentItem.cost || null,
     quantity:  qty,
     location,
     timestamp: (currentItem.scanTime || new Date()).toISOString(),
   };
-  if (!CONFIG.demoMode) await saveCountToSupabase(record);
+  if (!CONFIG.demoMode) {
+    try {
+      await saveCountToSupabase(dbRecord);
+    } catch(e) {
+      alert('Failed to save to database: ' + e.message);
+      return;
+    }
+  }
+  // Keep cost in memory only for session display
+  const record = { ...dbRecord, cost: currentItem.cost != null ? parseFloat(currentItem.cost) : null };
   scanLog.unshift(record);
   localStorage.setItem('inv_log', JSON.stringify(scanLog.slice(0,500)));
   // Reset dup guard so same item can be scanned again intentionally after logging
@@ -677,18 +767,11 @@ async function submitCount(e) {
 }
 
 async function saveCountToSupabase(record) {
-  try {
-    const res = await fetch(`${CONFIG.supabaseUrl}/rest/v1/${CONFIG.countsTable}`, {
-      method: 'POST',
-      headers: {'apikey':CONFIG.supabaseKey,'Authorization':`Bearer ${CONFIG.supabaseKey}`,'Content-Type':'application/json','Prefer':'return=minimal'},
-      body: JSON.stringify(record)
-    });
-    if (!res.ok) {
-      const body = await res.text();
-      console.error('Save failed', res.status, body);
-      alert(`Save failed (${res.status}): ${body}`);
-    }
-  } catch(e){ console.error('Save failed',e); alert('Save failed: ' + e.message); }
+  await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/${CONFIG.countsTable}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+    body: JSON.stringify(record)
+  });
 }
 
 // ===== LOG =====
@@ -834,19 +917,28 @@ async function loadSummary() {
   st.innerHTML = '';
 
   try {
-    const headers = { 'apikey': CONFIG.supabaseKey, 'Authorization': 'Bearer ' + CONFIG.supabaseKey };
-    const res = await fetch(
-      `${CONFIG.supabaseUrl}/rest/v1/${CONFIG.countsTable}?select=barcode,name,cost,quantity,location&limit=5000`,
-      { headers }
-    );
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const rows = await res.json();
+    // Fetch count_records and items in parallel
+    const [countsRes, itemsRes] = await Promise.all([
+      sbFetch(`${CONFIG.supabaseUrl}/rest/v1/${CONFIG.countsTable}?select=barcode,name,quantity,location&limit=5000`),
+      sbFetch(`${CONFIG.supabaseUrl}/rest/v1/${CONFIG.itemsTable}?select=${CONFIG.barcodeColumn},${CONFIG.costColumn}&limit=5000`)
+    ]);
 
-    if (!rows.length) { sc.innerHTML = '<div class="summary-empty">No records in database yet</div>'; return; }
+    const rows      = await countsRes.json();
+    const itemsList = await itemsRes.json();
+
+    // Build barcode → cost lookup from items table (exact match)
+    const costMap = {};
+    itemsList.forEach(i => { costMap[i[CONFIG.barcodeColumn]] = i[CONFIG.costColumn]; });
+    const getCost = barcode => {
+      const c = costMap[barcode];
+      return c != null ? parseFloat(c) : null;
+    };
+
+    if (!rows.length) { st.innerHTML = ''; sc.innerHTML = '<div class="summary-empty">No records in database yet</div>'; return; }
 
     // Overall totals
-    const totalQty  = rows.reduce((s, r) => s + r.quantity, 0);
-    const totalCost = rows.reduce((s, r) => s + (r.cost != null ? parseFloat(r.cost) * r.quantity : 0), 0);
+    const totalQty    = rows.reduce((s, r) => s + r.quantity, 0);
+    const totalCost   = rows.reduce((s, r) => { const c = getCost(r.barcode); return s + (c != null ? c * r.quantity : 0); }, 0);
     const uniqueItems = new Set(rows.map(r => r.barcode)).size;
     st.innerHTML = `
       <div class="stat"><div class="stat-val">${rows.length}</div><div class="stat-label">Records</div></div>
@@ -854,14 +946,14 @@ async function loadSummary() {
       <div class="stat"><div class="stat-val">${totalQty}</div><div class="stat-label">Total qty</div></div>
       <div class="stat"><div class="stat-val" style="font-size:20px;">$${totalCost.toFixed(2)}</div><div class="stat-label">Total cost</div></div>`;
 
-    // Group by location
+    // Group by location, joining cost from items table
     const groups = {};
     rows.forEach(r => {
       if (!groups[r.location]) groups[r.location] = {};
-      const key = r.barcode;
-      if (!groups[r.location][key]) groups[r.location][key] = { name: r.name, barcode: r.barcode, cost: r.cost, qty: 0, total: 0 };
-      groups[r.location][key].qty += r.quantity;
-      groups[r.location][key].total += r.cost != null ? parseFloat(r.cost) * r.quantity : 0;
+      const cost = getCost(r.barcode);
+      if (!groups[r.location][r.barcode]) groups[r.location][r.barcode] = { name: r.name, barcode: r.barcode, cost, qty: 0, total: 0 };
+      groups[r.location][r.barcode].qty += r.quantity;
+      if (cost != null) groups[r.location][r.barcode].total += cost * r.quantity;
     });
 
     sc.innerHTML = Object.entries(groups).map(([loc, items]) => {
@@ -890,7 +982,9 @@ async function loadSummary() {
     }).join('');
 
   } catch(e) {
-    sc.innerHTML = `<div class="summary-empty">Error: ${e.message}</div>`;
+    console.error('Summary load failed', e);
+    sc.innerHTML = `<div class="summary-empty" style="color:var(--red-text);">Error loading summary: ${e.message}</div>`;
+    alert('Failed to load summary: ' + e.message);
   }
 }
 
