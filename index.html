@@ -146,35 +146,14 @@
   .count-form.visible { display: block; }
   .qty-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; }
 
-  /* Stepper: − [num] + */
-  .qty-stepper { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 12px; }
-  .qty-step-btn {
-    width: 50px; height: 50px; border-radius: 50%;
-    border: 2px solid var(--border); background: var(--bg);
-    font-size: 26px; font-weight: 700; color: var(--text-muted);
-    cursor: pointer; display: flex; align-items: center; justify-content: center;
-    user-select: none; touch-action: manipulation;
-  }
+  /* Stepper row */
+  .qty-stepper { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 10px; }
+  .qty-step-btn { width: 50px; height: 50px; border-radius: 50%; border: 2px solid var(--border); background: var(--bg); font-size: 26px; font-weight: 700; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; user-select: none; touch-action: manipulation; }
   .qty-step-btn:active { background: var(--border); transform: scale(.91); }
-  .qty-number {
-    width: 94px; height: 60px;
-    border: 2px solid var(--primary); border-radius: var(--radius-sm);
-    background: var(--bg); font-size: 32px; font-weight: 800; color: var(--primary);
-    text-align: center; -moz-appearance: textfield;
-  }
-  .qty-number::-webkit-outer-spin-button,
-  .qty-number::-webkit-inner-spin-button { -webkit-appearance: none; }
-  .qty-number:focus { outline: none; box-shadow: 0 0 0 3px rgba(37,99,235,.15); }
 
   /* Quick-set preset buttons */
   .qty-presets { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin-bottom: 12px; }
-  .qty-preset {
-    border: none; border-radius: var(--radius-sm);
-    padding: 14px 4px 12px;
-    cursor: pointer; transition: filter .1s, transform .1s;
-    display: flex; flex-direction: column; align-items: center; gap: 2px;
-    color: #fff; user-select: none; touch-action: manipulation;
-  }
+  .qty-preset { border: none; border-radius: var(--radius-sm); padding: 14px 4px 12px; cursor: pointer; transition: filter .1s, transform .1s; display: flex; flex-direction: column; align-items: center; gap: 2px; color: #fff; user-select: none; touch-action: manipulation; }
   .qty-preset:active { filter: brightness(.82); transform: scale(.94); }
   .qty-preset .pn { font-size: 22px; font-weight: 800; line-height: 1; }
   .qty-preset .pl { font-size: 10px; opacity: .85; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
@@ -182,6 +161,31 @@
   .qty-preset[data-q="5"]  { background: #7C3AED; }
   .qty-preset[data-q="10"] { background: #059669; }
   .qty-preset[data-q="25"] { background: #D97706; }
+
+  /* Qty display tap target */
+  .qty-display-val {
+    min-width: 110px; height: 64px; border: 2.5px solid var(--primary); border-radius: var(--radius-sm);
+    background: var(--primary-bg); font-size: 36px; font-weight: 800; color: var(--primary);
+    display: flex; align-items: center; justify-content: center; letter-spacing: -1px;
+  }
+  .qty-display-hint { font-size: 11px; color: var(--text-hint); }
+
+  /* Numpad overlay */
+  .numpad-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 300; display: none; align-items: flex-end; justify-content: center; }
+  .numpad-overlay.open { display: flex; }
+  .numpad-sheet { background: var(--surface); border-radius: var(--radius) var(--radius) 0 0; width: 100%; max-width: 420px; padding: 14px 16px 32px; }
+  .numpad-display { background: var(--bg); border: 2px solid var(--primary); border-radius: var(--radius-sm); padding: 12px 16px; font-size: 42px; font-weight: 800; color: var(--primary); text-align: right; margin-bottom: 12px; min-height: 68px; letter-spacing: -1px; }
+  .numpad-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .nk {
+    height: 64px; border: none; border-radius: var(--radius-sm); font-size: 24px; font-weight: 700;
+    cursor: pointer; user-select: none; touch-action: manipulation; transition: filter .1s, transform .08s;
+  }
+  .nk:active { filter: brightness(.85); transform: scale(.95); }
+  .nk-num { background: var(--bg); border: 1.5px solid var(--border); color: var(--text); }
+  .nk-zero { grid-column: span 2; }
+  .nk-back { background: var(--amber-bg); border: 1.5px solid var(--amber-border); color: var(--amber-text); font-size: 20px; }
+  .nk-confirm { background: #16A34A; color: #fff; font-size: 18px; font-weight: 800; }
+  .nk-cancel  { background: var(--red-bg); border: 1.5px solid var(--red-border); color: var(--red-text); font-size: 14px; font-weight: 700; }
 
   /* Serial */
 
@@ -348,34 +352,18 @@ const CONFIG = {
     <div class="count-form" id="count-form">
       <div class="qty-label">Quantity</div>
 
-      <!-- − number + stepper -->
       <div class="qty-stepper">
-        <button class="qty-step-btn"
-          onmousedown="stepQty(-1,event)" ontouchstart="stepQty(-1,event)">−</button>
-        <input class="qty-number" id="qty-input" type="number" min="1" value="1"
-          inputmode="numeric" onchange="clampQty()" />
-        <button class="qty-step-btn"
-          onmousedown="stepQty(1,event)" ontouchstart="stepQty(1,event)">+</button>
+        <button class="qty-step-btn" onmousedown="stepQty(-1,event)" ontouchstart="stepQty(-1,event)">−</button>
+        <div class="qty-display-val" id="qty-display" onclick="openNumpad()" title="Tap to type">1</div>
+        <button class="qty-step-btn" onmousedown="stepQty(1,event)" ontouchstart="stepQty(1,event)">+</button>
       </div>
+      <input type="hidden" id="qty-input" value="1" />
 
-      <!-- Quick-set: 1 / 5 / 10 / 25 -->
       <div class="qty-presets">
-        <button class="qty-preset" data-q="1"
-          onmousedown="setQty(1,event)" ontouchstart="setQty(1,event)">
-          <span class="pn">1</span><span class="pl">Qty</span>
-        </button>
-        <button class="qty-preset" data-q="5"
-          onmousedown="setQty(5,event)" ontouchstart="setQty(5,event)">
-          <span class="pn">5</span><span class="pl">Qty</span>
-        </button>
-        <button class="qty-preset" data-q="10"
-          onmousedown="setQty(10,event)" ontouchstart="setQty(10,event)">
-          <span class="pn">10</span><span class="pl">Qty</span>
-        </button>
-        <button class="qty-preset" data-q="25"
-          onmousedown="setQty(25,event)" ontouchstart="setQty(25,event)">
-          <span class="pn">25</span><span class="pl">Qty</span>
-        </button>
+        <button class="qty-preset" data-q="1" onmousedown="setQty(1,event)" ontouchstart="setQty(1,event)"><span class="pn">1</span><span class="pl">Qty</span></button>
+        <button class="qty-preset" data-q="5" onmousedown="setQty(5,event)" ontouchstart="setQty(5,event)"><span class="pn">5</span><span class="pl">Qty</span></button>
+        <button class="qty-preset" data-q="10" onmousedown="setQty(10,event)" ontouchstart="setQty(10,event)"><span class="pn">10</span><span class="pl">Qty</span></button>
+        <button class="qty-preset" data-q="25" onmousedown="setQty(25,event)" ontouchstart="setQty(25,event)"><span class="pn">25</span><span class="pl">Qty</span></button>
       </div>
 
 <!-- LOG -->
@@ -408,6 +396,28 @@ const CONFIG = {
   </div>
   <div id="summary-totals" class="stat-row" style="margin-bottom:14px;"></div>
   <div id="summary-container"></div>
+</div>
+
+<!-- NUMPAD OVERLAY -->
+<div class="numpad-overlay" id="numpad-overlay" onclick="numpadOutsideClick(event)">
+  <div class="numpad-sheet">
+    <div class="numpad-display" id="numpad-display">1</div>
+    <div class="numpad-grid">
+      <button class="nk nk-num" ontouchstart="numpadKey('7',event)" onmousedown="numpadKey('7',event)">7</button>
+      <button class="nk nk-num" ontouchstart="numpadKey('8',event)" onmousedown="numpadKey('8',event)">8</button>
+      <button class="nk nk-num" ontouchstart="numpadKey('9',event)" onmousedown="numpadKey('9',event)">9</button>
+      <button class="nk nk-num" ontouchstart="numpadKey('4',event)" onmousedown="numpadKey('4',event)">4</button>
+      <button class="nk nk-num" ontouchstart="numpadKey('5',event)" onmousedown="numpadKey('5',event)">5</button>
+      <button class="nk nk-num" ontouchstart="numpadKey('6',event)" onmousedown="numpadKey('6',event)">6</button>
+      <button class="nk nk-num" ontouchstart="numpadKey('1',event)" onmousedown="numpadKey('1',event)">1</button>
+      <button class="nk nk-num" ontouchstart="numpadKey('2',event)" onmousedown="numpadKey('2',event)">2</button>
+      <button class="nk nk-num" ontouchstart="numpadKey('3',event)" onmousedown="numpadKey('3',event)">3</button>
+      <button class="nk nk-num nk-zero" ontouchstart="numpadKey('0',event)" onmousedown="numpadKey('0',event)">0</button>
+      <button class="nk nk-back" ontouchstart="numpadKey('back',event)" onmousedown="numpadKey('back',event)">⌫</button>
+      <button class="nk nk-confirm" ontouchstart="numpadConfirm(event)" onmousedown="numpadConfirm(event)">✓</button>
+      <button class="nk nk-cancel" style="grid-column:span 3" ontouchstart="numpadCancel(event)" onmousedown="numpadCancel(event)">Cancel</button>
+    </div>
+  </div>
 </div>
 
 <!-- LOCATION MODAL -->
@@ -457,12 +467,53 @@ function refocusBarcode() {
 }
 
 // ===== QTY HELPERS =====
-function getQty()    { return parseInt(document.getElementById('qty-input').value) || 1; }
-function setQtyVal(n){ document.getElementById('qty-input').value = Math.max(1, n); }
-
+function getQty()     { return parseInt(document.getElementById('qty-input').value) || 1; }
 function stepQty(delta, e) { e.preventDefault(); setQtyVal(getQty() + delta); }
 function setQty(n, e)      { e.preventDefault(); setQtyVal(n); }
-function clampQty()        { const v = parseInt(document.getElementById('qty-input').value); if (!v || v < 1) document.getElementById('qty-input').value = 1; }
+function setQtyVal(n) {
+  n = Math.max(1, n);
+  document.getElementById('qty-input').value = n;
+  document.getElementById('qty-display').textContent = n;
+}
+
+// ===== NUMPAD =====
+let _numpadVal = '1';
+
+function openNumpad() {
+  _numpadVal = ''; //String(getQty());
+  document.getElementById('numpad-display').textContent = _numpadVal;
+  document.getElementById('numpad-overlay').classList.add('open');
+  
+}
+
+function numpadKey(key, e) {
+  e.preventDefault();
+  if (key === 'back') {
+    _numpadVal = _numpadVal.length > 1 ? _numpadVal.slice(0, -1) : '0';
+  } else {
+    _numpadVal = _numpadVal === '0' ? key : _numpadVal + key;
+    if (_numpadVal.length > 4) _numpadVal = _numpadVal.slice(0, 4); // cap at 9999
+  }
+  document.getElementById('numpad-display').textContent = _numpadVal || '0';
+}
+
+function numpadConfirm(e) {
+  e.preventDefault();
+  const v = parseInt(_numpadVal) || 1;
+  setQtyVal(v);
+  document.getElementById('numpad-overlay').classList.remove('open');
+  refocusBarcode();
+}
+
+function numpadCancel(e) {
+  e.preventDefault();
+  document.getElementById('numpad-overlay').classList.remove('open');
+  refocusBarcode();
+}
+
+function numpadOutsideClick(e) {
+  if (e.target === document.getElementById('numpad-overlay')) numpadCancel(e);
+}
 
 // ===== INIT =====
 function init() {
@@ -481,10 +532,6 @@ function init() {
     if (e.key === 'Enter') { e.preventDefault(); const v = e.target.value.trim(); if (v) lookupBarcode(v); }
   });
 
-  // Enter on qty number field also submits
-  document.getElementById('qty-input').addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); if (document.getElementById('count-form').classList.contains('visible')) submitCount(e); }
-  });
 
   // Click outside loc-bar and scan card → refocus barcode
   document.addEventListener('click', e => {
@@ -976,13 +1023,13 @@ async function loadSummary() {
   st.innerHTML = '';
 
   try {
-    // Fetch count_records and items in parallel
-    const [countsRes, itemsRes] = await Promise.all([
-      sbFetch(`${CONFIG.supabaseUrl}/rest/v1/${CONFIG.countsTable}?select=barcode,name,quantity,location&limit=5000`),
-      sbFetch(`${CONFIG.supabaseUrl}/rest/v1/${CONFIG.itemsTable}?select=${CONFIG.barcodeColumn},${CONFIG.costColumn}&limit=5000`)
-    ]);
+    // Fetch all count records, then fetch costs only for the barcodes we need
+    const countsRes = await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/${CONFIG.countsTable}?select=barcode,name,quantity,location&limit=5000`);
+    const rows = await countsRes.json();
 
-    const rows      = await countsRes.json();
+    const uniqueBarcodes = [...new Set(rows.map(r => r.barcode))];
+    const orFilter = encodeURIComponent('(' + uniqueBarcodes.map(b => `${CONFIG.barcodeColumn}.eq.${b}`).join(',') + ')');
+    const itemsRes = await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/${CONFIG.itemsTable}?select=${CONFIG.barcodeColumn},${CONFIG.costColumn}&or=${orFilter}`);
     const itemsList = await itemsRes.json();
 
     // Build barcode → cost lookup from items table (exact match)
