@@ -99,6 +99,15 @@
   #qr-reader video { width: 100% !important; }
   .camera-stop { width: 100%; margin-top: 8px; background: var(--red-bg); border: 1.5px solid var(--red-border); border-radius: var(--radius-sm); padding: 10px; font-size: 14px; font-weight: 600; color: var(--red-text); cursor: pointer; }
 
+  /* ERROR BANNER */
+  .error-banner { display: none; position: sticky; top: 54px; z-index: 150; background: var(--red-bg); border-bottom: 2px solid var(--red-border); padding: 10px 16px; display: none; align-items: flex-start; gap: 10px; }
+  .error-banner.show { display: flex; }
+  .error-banner-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+  .error-banner-body { flex: 1; }
+  .error-banner-title { font-size: 13px; font-weight: 700; color: var(--red-text); }
+  .error-banner-msg { font-size: 12px; color: var(--red-text); opacity: .85; margin-top: 2px; word-break: break-word; }
+  .error-banner-close { background: none; border: none; cursor: pointer; color: var(--red-text); font-size: 20px; line-height: 1; padding: 0 2px; flex-shrink: 0; }
+
   /* SUCCESS FLASH */
   .success-flash { display: none; margin-top: 12px; }
   .success-flash.show { display: block; animation: fadeOut 2.5s forwards; }
@@ -242,7 +251,8 @@ const CONFIG = {
   supabaseUrl:   'https://unbjlhofoqzglacczwvg.supabase.co',
   supabaseKey:   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVuYmpsaG9mb3F6Z2xhY2N6d3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDI2NDcsImV4cCI6MjA5MDcxODY0N30.tSqXTptfePkGAi7uzl6uqaLAftzQzgNS63vgmyzX87I',
   itemsTable:    'items',
-  countsTable:   'count_records',
+  countsTable:      'count_records',
+  locationsTable:   'locations',
   barcodeColumn: 'barcode',
   nameColumn:    'name',
   costColumn:    'cost',
@@ -255,6 +265,16 @@ const CONFIG = {
   <div class="header-title">📦 Inventory Counter</div>
   <div class="header-right" id="session-time"></div>
 </header>
+
+<!-- ERROR BANNER -->
+<div class="error-banner" id="error-banner">
+  <div class="error-banner-icon">⚠</div>
+  <div class="error-banner-body">
+    <div class="error-banner-title" id="error-banner-title">Error</div>
+    <div class="error-banner-msg" id="error-banner-msg"></div>
+  </div>
+  <button class="error-banner-close" onclick="dismissError()">×</button>
+</div>
 
 <!-- TAB BAR -->
 <div class="tab-bar">
@@ -342,19 +362,19 @@ const CONFIG = {
       <div class="qty-presets">
         <button class="qty-preset" data-q="1"
           onmousedown="setQty(1,event)" ontouchstart="setQty(1,event)">
-          <span class="pn">1</span><span class="pl">Each</span>
+          <span class="pn">1</span><span class="pl">Qty</span>
         </button>
         <button class="qty-preset" data-q="5"
           onmousedown="setQty(5,event)" ontouchstart="setQty(5,event)">
-          <span class="pn">5</span><span class="pl">Pack</span>
+          <span class="pn">5</span><span class="pl">Qty</span>
         </button>
         <button class="qty-preset" data-q="10"
           onmousedown="setQty(10,event)" ontouchstart="setQty(10,event)">
-          <span class="pn">10</span><span class="pl">Box</span>
+          <span class="pn">10</span><span class="pl">Qty</span>
         </button>
         <button class="qty-preset" data-q="25"
           onmousedown="setQty(25,event)" ontouchstart="setQty(25,event)">
-          <span class="pn">25</span><span class="pl">Case</span>
+          <span class="pn">25</span><span class="pl">Qty</span>
         </button>
       </div>
 
@@ -406,7 +426,7 @@ const CONFIG = {
 // ===== STATE =====
 let currentItem    = null;
 let scanLog        = [];
-let locations      = JSON.parse(localStorage.getItem('inv_locations') || '["Warehouse A","Warehouse B","Office","Stockroom"]');
+let locations      = []; // [{id, name}] loaded from Supabase
 let cameraRunning  = false;
 let html5QrScanner = null;
 let lastScanBarcode = null;
@@ -449,12 +469,9 @@ function init() {
   const saved = localStorage.getItem('inv_log');
   if (saved) scanLog = JSON.parse(saved);
 
-  renderLocations();
+  loadLocations();
   renderLog();
   updateStats();
-
-  const savedLoc = localStorage.getItem('inv_location');
-  if (savedLoc) document.getElementById('loc-select').value = savedLoc;
 
   document.getElementById('loc-select').addEventListener('change', e => {
     localStorage.setItem('inv_location', e.target.value);
@@ -486,6 +503,17 @@ function init() {
   }, 10000);
 
   checkDBConnection();
+}
+
+// ===== ERROR BANNER =====
+function showError(title, msg) {
+  document.getElementById('error-banner-title').textContent = title;
+  document.getElementById('error-banner-msg').textContent = msg;
+  document.getElementById('error-banner').classList.add('show');
+  console.error(title, msg);
+}
+function dismissError() {
+  document.getElementById('error-banner').classList.remove('show');
 }
 
 // ===== SUPABASE FETCH WRAPPER =====
@@ -523,31 +551,61 @@ async function checkDBConnection() {
 }
 
 // ===== LOCATIONS =====
+async function loadLocations() {
+  try {
+    const res = await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/${CONFIG.locationsTable}?select=id,name&order=name.asc`);
+    locations = await res.json();
+    renderLocations();
+  } catch(e) {
+    showError('Failed to load locations', e.message);
+  }
+}
+
 function renderLocations() {
   const select = document.getElementById('loc-select');
-  const saved  = select.value || localStorage.getItem('inv_location') || '';
+  const saved  = localStorage.getItem('inv_location') || '';
   select.innerHTML = '<option value="">— select location —</option>';
   locations.forEach(loc => {
     const o = document.createElement('option');
-    o.value = loc; o.textContent = loc;
-    if (loc === saved) o.selected = true;
+    o.value = loc.name; o.textContent = loc.name;
+    if (loc.name === saved) o.selected = true;
     select.appendChild(o);
   });
-  document.getElementById('location-list').innerHTML = locations.map((loc,i) => `
+  document.getElementById('location-list').innerHTML = locations.map(loc => `
     <div class="location-item">
-      <span class="location-name">${loc}</span>
-      <button class="loc-del-btn" onclick="deleteLocation(${i})">×</button>
+      <span class="location-name">${loc.name}</span>
+      <button class="loc-del-btn" onclick="deleteLocation(${loc.id})">×</button>
     </div>`).join('');
 }
-function addLocation() {
+
+async function addLocation() {
   const input = document.getElementById('new-loc-input');
   const val = input.value.trim(); if (!val) return;
-  locations.push(val); localStorage.setItem('inv_locations', JSON.stringify(locations));
-  input.value = ''; renderLocations();
+  try {
+    await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/${CONFIG.locationsTable}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ name: val })
+    });
+    input.value = '';
+    await loadLocations();
+  } catch(e) {
+    showError('Failed to add location', e.message);
+  }
 }
-function deleteLocation(i) {
-  locations.splice(i,1); localStorage.setItem('inv_locations', JSON.stringify(locations)); renderLocations();
+
+async function deleteLocation(id) {
+  try {
+    await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/${CONFIG.locationsTable}?id=eq.${id}`, {
+      method: 'DELETE',
+      headers: { 'Prefer': 'return=minimal' }
+    });
+    await loadLocations();
+  } catch(e) {
+    showError('Failed to delete location', e.message);
+  }
 }
+
 function openLocationModal()  { document.getElementById('loc-modal').classList.add('open'); }
 function closeLocationModal() { document.getElementById('loc-modal').classList.remove('open'); refocusBarcode(); }
 
@@ -589,7 +647,7 @@ async function lookupBarcode(barcode) {
   inp.value = '';
 
   const location = document.getElementById('loc-select').value;
-  if (!location) { alert('Please select a location first.'); refocusBarcode(); return; }
+  if (!location) { showError('No location selected', 'Please select a location before scanning.'); refocusBarcode(); return; }
 
   // Duplicate scan guard
   const now = Date.now();
@@ -637,6 +695,7 @@ async function lookupBarcode(barcode) {
 
   if (item) {
     beepSuccess();
+    dismissError();
     if (navigator.vibrate) navigator.vibrate(40);
     const timeStr = scanTime.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
     const costVal = item.cost != null ? parseFloat(item.cost).toFixed(2) : '';
@@ -722,7 +781,7 @@ async function saveCostToDb() {
     status.style.color = 'var(--red-text)';
     status.textContent = 'Failed';
     console.error('Cost save failed', e);
-    alert('Cost save failed: ' + e.message);
+    showError('Cost save failed', e.message);
   }
 }
 
@@ -745,7 +804,7 @@ async function submitCount(e) {
     try {
       await saveCountToSupabase(dbRecord);
     } catch(e) {
-      alert('Failed to save to database: ' + e.message);
+      showError('Failed to save record', e.message);
       return;
     }
   }
@@ -890,7 +949,7 @@ function toggleCamera() {
     {facingMode:'environment'},{fps:10,qrbox:{width:250,height:150}},
     decoded=>{ stopCamera(); lookupBarcode(decoded); },
     ()=>{}
-  ).catch(err=>{ console.error(err); alert('Camera access denied.'); stopCamera(); });
+  ).catch(err=>{ showError('Camera access denied', err.message); stopCamera(); });
 }
 function stopCamera() {
   if(html5QrScanner) html5QrScanner.stop().catch(()=>{}).finally(()=>{ html5QrScanner=null; });
@@ -982,9 +1041,8 @@ async function loadSummary() {
     }).join('');
 
   } catch(e) {
-    console.error('Summary load failed', e);
-    sc.innerHTML = `<div class="summary-empty" style="color:var(--red-text);">Error loading summary: ${e.message}</div>`;
-    alert('Failed to load summary: ' + e.message);
+    sc.innerHTML = '';
+    showError('Failed to load summary', e.message);
   }
 }
 
