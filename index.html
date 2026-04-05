@@ -119,6 +119,18 @@
         <button class="qty-preset" data-q="25" onmousedown="setQty(25,event)" ontouchstart="setQty(25,event)"><span class="pn">25</span><span class="pl">Qty</span></button>
       </div>
 
+      <div class="case-btns">
+        <button class="case-btn" onmousedown="openCaseNumpad(12,event)" ontouchstart="openCaseNumpad(12,event)">
+          <span class="case-num">12</span><span class="case-lbl">/ case</span>
+        </button>
+        <button class="case-btn" onmousedown="openCaseNumpad(24,event)" ontouchstart="openCaseNumpad(24,event)">
+          <span class="case-num">24</span><span class="case-lbl">/ case</span>
+        </button>
+        <button class="case-btn" onmousedown="openCaseNumpad(48,event)" ontouchstart="openCaseNumpad(48,event)">
+          <span class="case-num">48</span><span class="case-lbl">/ case</span>
+        </button>
+      </div>
+
       <button class="log-btn-main" id="log-btn"
         onmousedown="submitCount(event)" ontouchstart="submitCount(event)" disabled>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
@@ -143,7 +155,11 @@
 <!-- ===== DB SUMMARY TAB ===== -->
 <div class="main" id="screen-summary" style="display:none">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-    <div style="font-size:13px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;">All-time totals from database</div>
+    <div class="view-toggle">
+      <button class="view-toggle-btn active" id="summary-mode-grouped" onclick="setSummaryMode('grouped')">Grouped</button>
+      <button class="view-toggle-btn" id="summary-mode-location" onclick="setSummaryMode('location')">By Location</button>
+      <button class="view-toggle-btn" id="summary-mode-detail" onclick="setSummaryMode('detail')">Detail</button>
+    </div>
     <button class="log-act-btn" onclick="loadSummary()">Refresh</button>
   </div>
   <div id="summary-totals" class="stat-row" style="margin-bottom:14px;"></div>
@@ -172,6 +188,7 @@
 <!-- NUMPAD OVERLAY -->
 <div class="numpad-overlay" id="numpad-overlay" onclick="numpadOutsideClick(event)">
   <div class="numpad-sheet">
+    <div class="numpad-label" id="numpad-label">Enter quantity</div>
     <div class="numpad-display" id="numpad-display">1</div>
     <div class="numpad-grid">
       <button class="nk nk-num" ontouchstart="numpadKey('7',event)" onmousedown="numpadKey('7',event)">7</button>
