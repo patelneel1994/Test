@@ -44,10 +44,15 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 .loc-manage-btn { font-size: 12px; font-weight: 600; color: var(--primary); background: var(--primary-bg); border: 1.5px solid var(--primary-border); border-radius: var(--radius-xs); padding: 6px 10px; cursor: pointer; white-space: nowrap; }
 
 /* MAIN */
-.main { padding: 14px 16px 48px; max-width: 600px; margin: 0 auto; }
+.main { padding: 14px 16px 48px; max-width: 1200px; margin: 0 auto; }
+
+/* SCAN TWO-COLUMN LAYOUT */
+.scan-layout { display: flex; flex-direction: column; gap: 0; }
+.scan-col-left  { min-width: 0; }
+.scan-col-right { min-width: 0; }
 
 /* STATS */
-.stat-row { display: grid; grid-template-columns: repeat(2,1fr); gap: 8px; margin-bottom: 14px; }
+.stat-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin-bottom: 14px; }
 .stat { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 10px 8px; text-align: center; }
 .stat-val { font-size: 26px; font-weight: 800; color: var(--primary); line-height: 1; }
 .stat-label { font-size: 11px; color: var(--text-muted); margin-top: 3px; font-weight: 500; }
@@ -218,7 +223,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 .view-toggle-btn.active { background: var(--primary); color: #fff; }
 
 /* CASE BUTTONS */
-.case-btns { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.case-btns { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin-bottom: 12px; }
 .case-btn { border: 2px solid #7C3AED; border-radius: var(--radius-sm); padding: 12px 4px 10px; cursor: pointer; background: #F5F3FF; display: flex; flex-direction: column; align-items: center; gap: 1px; user-select: none; touch-action: manipulation; transition: filter .1s, transform .1s; }
 .case-btn:active { filter: brightness(.88); transform: scale(.96); }
 .case-num { font-size: 22px; font-weight: 800; color: #7C3AED; line-height: 1; }
@@ -256,3 +261,49 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 .loc-del-btn { background: none; border: none; cursor: pointer; color: var(--text-hint); font-size: 20px; }
 .loc-del-btn:hover { color: var(--red-text); }
 .modal-close { width: 100%; margin-top: 14px; background: none; border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 11px; font-size: 14px; font-weight: 600; color: var(--text-muted); cursor: pointer; }
+
+/* ── MOBILE (< 500px): compact stats ──────────────────────────────────────── */
+@media (max-width: 499px) {
+  .stat-row { grid-template-columns: repeat(2, 1fr); }
+  .stat-val  { font-size: 22px; }
+  .case-btns { grid-template-columns: repeat(2, 1fr); }
+  .main      { padding: 10px 12px 40px; }
+}
+
+/* ── TABLET / SMALL DESKTOP (768px+): wider, still single column ───────────── */
+@media (min-width: 768px) {
+  .main { padding: 18px 24px 56px; }
+  .scan-card { padding: 20px; }
+  .stat-val  { font-size: 28px; }
+}
+
+/* ── DESKTOP (960px+): two-column scan layout ──────────────────────────────── */
+@media (min-width: 960px) {
+  .main { padding: 20px 32px 56px; }
+
+  /* Scan tab: left = scan+form, right = session log */
+  .scan-layout {
+    display: grid;
+    grid-template-columns: 420px 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+  .scan-col-right {
+    position: sticky;
+    top: 160px; /* below header + tab bar + loc bar */
+    max-height: calc(100vh - 180px);
+    overflow-y: auto;
+  }
+
+  /* Summary detail grid gets more room */
+  .summary-detail-hdr,
+  .summary-detail-row { grid-template-columns: 1fr 120px 60px 90px 110px; }
+
+  /* Wider search results */
+  .search-results { display: grid; grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ── LARGE DESKTOP (1200px+) ───────────────────────────────────────────────── */
+@media (min-width: 1200px) {
+  .scan-layout { grid-template-columns: 460px 1fr; gap: 28px; }
+}
