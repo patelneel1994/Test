@@ -16,5 +16,9 @@ function switchTab(tab) {
   locBar.style.display = tab === 'scan' ? '' : 'none';
 
   if (tab === 'summary') loadSummary();
-  if (tab === 'search')  document.getElementById('search-input').focus();
+  if (tab === 'search') {
+    const si = document.getElementById('search-input');
+    si.focus();
+    si.click(); // prompt keyboard on iOS
+  }
 }

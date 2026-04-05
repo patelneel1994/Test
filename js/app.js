@@ -11,12 +11,20 @@ function init() {
     localStorage.setItem('inv_location', e.target.value);
   });
 
-  document.getElementById('barcode-input').addEventListener('keydown', e => {
+  const barcodeInput = document.getElementById('barcode-input');
+  barcodeInput.addEventListener('keydown', e => {
     if (e.key === 'Enter') {
       e.preventDefault();
       const v = e.target.value.trim();
       if (v) lookupBarcode(v);
     }
+  });
+  // Auto-trigger lookup when a barcode is pasted (e.g. from iPhone clipboard)
+  barcodeInput.addEventListener('paste', e => {
+    setTimeout(() => {
+      const v = barcodeInput.value.trim();
+      if (v) lookupBarcode(v);
+    }, 50);
   });
 
   // Click outside scan card / loc bar / modals → refocus barcode
