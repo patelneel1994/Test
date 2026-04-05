@@ -1,3 +1,9 @@
+// ===== MANUAL GO BUTTON =====
+function submitBarcodeInput() {
+  const v = document.getElementById('barcode-input').value.trim();
+  if (v) lookupBarcode(v);
+}
+
 // ===== LOOKUP =====
 async function lookupBarcode(barcode) {
   if (!barcode) return;
