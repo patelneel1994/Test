@@ -66,6 +66,7 @@ async function lookupBarcode(barcode) {
     document.getElementById('item-found-box').innerHTML = `
       <div class="item-found-card">
         <div class="item-found-name">${item.name}</div>
+        ${item.category ? `<div class="item-badge">${item.category}</div>` : ''}
         <div class="item-cost-row">
           <span class="item-cost-label">Cost</span>
           <div class="item-cost-edit">
@@ -75,6 +76,11 @@ async function lookupBarcode(barcode) {
           </div>
           <button class="item-cost-save" onclick="saveCostToDb()">Save</button>
           <span class="item-cost-status" id="cost-status"></span>
+        </div>
+        <div class="item-meta-grid">
+          ${!isNaN(parseFloat(item.retailPrice)) ? `<div class="item-meta-cell"><span class="item-meta-lbl">Retail</span><span class="item-meta-val">$${parseFloat(item.retailPrice).toFixed(2)}</span></div>` : ''}
+          ${item.totalUnitsSold != null ? `<div class="item-meta-cell"><span class="item-meta-lbl">Units Sold</span><span class="item-meta-val">${item.totalUnitsSold}</span></div>` : ''}
+          ${item.lastSaleDate ? `<div class="item-meta-cell"><span class="item-meta-lbl">Last Sale</span><span class="item-meta-val">${item.lastSaleDate.slice(0,10)}</span></div>` : ''}
         </div>
         <div class="item-found-code">${barcode}</div>
         <div class="item-found-time">Scanned at ${timeStr}</div>
@@ -94,11 +100,24 @@ async function lookupBarcode(barcode) {
   }
 }
 
+const ITEM_SELECT = [
+  CONFIG.barcodeColumn, CONFIG.nameColumn, CONFIG.costColumn,
+  'Category', 'Retail_Price', 'Last_Sale_Date', 'Total_Units_Sold'
+].join(',');
+
 async function fetchFromSupabase(barcode) {
-  const sel  = `select=${CONFIG.barcodeColumn},${CONFIG.nameColumn},${CONFIG.costColumn}`;
+  const sel  = `select=${ITEM_SELECT}`;
   const base = `${CONFIG.supabaseUrl}/rest/v1/${CONFIG.itemsTable}`;
   const col  = CONFIG.barcodeColumn;
-  const parse = row => ({ name: row[CONFIG.nameColumn], cost: row[CONFIG.costColumn], dbBarcode: row[CONFIG.barcodeColumn] });
+  const parse = row => ({
+    name:           row[CONFIG.nameColumn],
+    cost:           row[CONFIG.costColumn],
+    dbBarcode:      row[CONFIG.barcodeColumn],
+    category:       row.Category,
+    retailPrice:    row.Retail_Price,
+    lastSaleDate:   row.Last_Sale_Date,
+    totalUnitsSold: row.Total_Units_Sold,
+  });
   const cands = barcodeCandidates(barcode);
   if (cands.length) {
     const or  = encodeURIComponent('(' + cands.map(c => `${col}.eq.${c}`).join(',') + ')');

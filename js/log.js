@@ -23,8 +23,15 @@ async function submitCount(e) {
     }
   }
 
-  // Keep cost in memory only for session display
-  const record = { ...dbRecord, cost: currentItem.cost != null ? parseFloat(currentItem.cost) : null };
+  // Keep display-only fields in memory (not sent to DB)
+  const record = {
+    ...dbRecord,
+    cost:           currentItem.cost           != null ? parseFloat(currentItem.cost)        : null,
+    retailPrice:    currentItem.retailPrice     != null ? parseFloat(currentItem.retailPrice) : null,
+    category:       currentItem.category        ?? null,
+    lastSaleDate:   currentItem.lastSaleDate    ?? null,
+    totalUnitsSold: currentItem.totalUnitsSold  ?? null,
+  };
   scanLog.unshift(record);
   localStorage.setItem('inv_log', JSON.stringify(scanLog.slice(0, 500)));
   // Reset dup guard so same item can be scanned again intentionally after logging
@@ -98,6 +105,12 @@ function renderLog(flashFirst) {
               <div>
                 <div class="log-item-name">${r.name}</div>
                 <div class="log-item-meta">${r.barcode}${r.cost != null ? ' · $' + parseFloat(r.cost).toFixed(2) : ''}</div>
+                <div class="summary-item-extra">
+                  ${r.category       ? `<span>${r.category}</span>` : ''}
+                  ${r.retailPrice != null ? `<span>Retail $${parseFloat(r.retailPrice).toFixed(2)}</span>` : ''}
+                  ${r.totalUnitsSold != null ? `<span>Sold ${r.totalUnitsSold}</span>` : ''}
+                  ${r.lastSaleDate   ? `<span>Last ${r.lastSaleDate.slice(0,10)}</span>` : ''}
+                </div>
                 <div class="log-item-time">${formatTime(r.timestamp)}</div>
               </div>
               <div class="log-right">

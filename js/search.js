@@ -62,10 +62,9 @@ async function doSearch(query) {
     const name = CONFIG.nameColumn;
     const cost = CONFIG.costColumn;
     const base = `${CONFIG.supabaseUrl}/rest/v1/${CONFIG.itemsTable}`;
-    const sel  = `select=${col},${name},${cost}`;
+    const sel  = `select=${col},${name},${cost},Category,Retail_Price,Last_Sale_Date,Total_Units_Sold`;
     const enc  = encodeURIComponent(query);
 
-    // Search by name (ilike) OR exact barcode match
     const url = `${base}?or=(${name}.ilike.%25${enc}%25,${col}.eq.${enc})&${sel}&limit=50&order=${name}.asc`;
     const res  = await sbFetch(url);
     const rows = await res.json();
@@ -76,14 +75,23 @@ async function doSearch(query) {
     }
 
     rc.innerHTML = `<div class="search-results">${rows.map((row, idx) => {
-      const costVal = row[cost] != null ? parseFloat(row[cost]).toFixed(2) : '';
+      const costVal   = row[cost]           != null ? parseFloat(row[cost]).toFixed(2) : '';
+      const retail    = row.Retail_Price    != null ? '$' + parseFloat(row.Retail_Price).toFixed(2) : null;
+      const sold      = row.Total_Units_Sold != null ? row.Total_Units_Sold : null;
+      const lastSale  = row.Last_Sale_Date   ? row.Last_Sale_Date.slice(0,10) : null;
       return `
         <div class="search-item">
           <div class="search-item-name">${row[name]}</div>
+          ${row.Category ? `<div class="item-badge" style="margin:4px 0 6px;">${row.Category}</div>` : ''}
           <div class="search-item-meta">
             <span class="search-item-barcode">${row[col]}</span>
           </div>
-          <div class="item-cost-row" style="margin-top:8px;">
+          <div class="item-meta-grid" style="margin:6px 0;">
+            ${retail   ? `<div class="item-meta-cell"><span class="item-meta-lbl">Retail</span><span class="item-meta-val">${retail}</span></div>` : ''}
+            ${sold     != null ? `<div class="item-meta-cell"><span class="item-meta-lbl">Units Sold</span><span class="item-meta-val">${sold}</span></div>` : ''}
+            ${lastSale ? `<div class="item-meta-cell"><span class="item-meta-lbl">Last Sale</span><span class="item-meta-val">${lastSale}</span></div>` : ''}
+          </div>
+          <div class="item-cost-row">
             <span class="item-cost-label">Cost</span>
             <div class="item-cost-edit">
               <span class="item-cost-prefix">$</span>
