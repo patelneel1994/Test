@@ -122,6 +122,7 @@ async function doReceivePack(parsed, game) {
           start_ticket:     0,
           end_ticket:       game.tickets_per_pack - 1,
           status:           'received',
+          location:         'Office',
         })
       }
     );
@@ -328,6 +329,88 @@ function refocusLottery() {
   }, 50);
 }
 
+// ---- Status + location config ----
+const PACK_STATUS = {
+  received:  { label: 'Received',  css: 'status-received'  },
+  activated: { label: 'Activated', css: 'status-activated' },
+  soldout:   { label: 'Sold Out',  css: 'status-soldout'   },
+  removed:   { label: 'Removed',   css: 'status-removed'   },
+};
+const PACK_LOC_CSS = {
+  'Office':        'loc-office',
+  'Station Booth': 'loc-station',
+  'Front - Extra': 'loc-front',
+};
+
+// ---- Status / location update ----
+async function updatePackStatus(id, status, location, e) {
+  if (e) e.preventDefault();
+  const update = { status };
+  if (location != null) update.location = location;
+  try {
+    await sbFetch(
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(id)}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify(update)
+      }
+    );
+    await loadLotteryStock();
+    loadLotteryDbStats();
+  } catch (err) {
+    showError('Status update failed', err.message);
+  }
+}
+
+// ---- Single pack row renderer ----
+function renderPackRow(p, ticketsPerPack) {
+  const st   = PACK_STATUS[p.status] || { label: p.status, css: '' };
+  const locCss = PACK_LOC_CSS[p.location] || 'loc-office';
+  const isActivated = p.status === 'activated';
+  const pct = (isActivated && ticketsPerPack > 0)
+    ? Math.round((p.start_ticket / ticketsPerPack) * 100) : 0;
+
+  let actionHtml = '';
+  if (p.status === 'received') {
+    actionHtml = `
+      <button class="pack-act-btn act-station"
+        onmousedown="updatePackStatus('${p.id}','activated','Station Booth',event)"
+        ontouchstart="updatePackStatus('${p.id}','activated','Station Booth',event)">Station</button>
+      <button class="pack-act-btn act-front"
+        onmousedown="updatePackStatus('${p.id}','activated','Front - Extra',event)"
+        ontouchstart="updatePackStatus('${p.id}','activated','Front - Extra',event)">Front</button>`;
+  } else if (p.status === 'activated') {
+    actionHtml = `
+      <button class="pack-act-btn act-soldout"
+        onmousedown="updatePackStatus('${p.id}','soldout',null,event)"
+        ontouchstart="updatePackStatus('${p.id}','soldout',null,event)">Sold Out</button>`;
+  }
+
+  const removeBtn = (p.status === 'received' || p.status === 'activated') ? `
+    <button class="pack-remove-btn"
+      onmousedown="updatePackStatus('${p.id}','removed',null,event)"
+      ontouchstart="updatePackStatus('${p.id}','removed',null,event)" title="Remove">✕</button>` : '';
+
+  return `
+    <div class="lottery-stock-book">
+      <div class="lottery-book-info">
+        <span class="lottery-book-label">#${p.pack_number}</span>
+        <span class="pack-status-pill ${st.css}">${st.label}</span>
+        ${p.location ? `<span class="pack-loc-pill ${locCss}">${p.location}</span>` : ''}
+        ${isActivated ? `<span class="lottery-book-at">Ticket #${p.start_ticket}</span>` : ''}
+      </div>
+      ${isActivated && ticketsPerPack > 0 ? `
+        <div class="lottery-book-bar-wrap">
+          <div class="lottery-book-bar" style="width:${pct}%"></div>
+        </div>` : ''}
+      <div class="lottery-book-actions">
+        ${actionHtml}
+        ${removeBtn}
+      </div>
+    </div>`;
+}
+
 // ---- Stock overview ----
 async function loadLotteryStock() {
   const el = document.getElementById('lottery-stock-container');
@@ -335,8 +418,9 @@ async function loadLotteryStock() {
   try {
     const res = await sbFetch(
       `${CONFIG.supabaseUrl}/rest/v1/lottery_packs` +
-      `?select=game_number,start_ticket,end_ticket,lottery_games(game_name,price,tickets_per_pack)` +
-      `&status=in.(received,active)` +
+      `?select=id,game_number,pack_number,start_ticket,end_ticket,status,location,lottery_games(game_name,price,tickets_per_pack)` +
+      `&status=in.(received,activated,soldout)` +
+      `&order=game_number.asc,status.asc,pack_number.asc` +
       `&limit=500`
     );
     const rows = await res.json();
@@ -350,7 +434,7 @@ function renderLotteryStock(rows) {
   const el = document.getElementById('lottery-stock-container');
 
   if (!Array.isArray(rows) || !rows.length) {
-    el.innerHTML = '<div class="log-empty" style="padding:12px 0;border:none">No active packs in stock</div>';
+    el.innerHTML = '<div class="log-empty" style="padding:12px 0;border:none">No packs in stock</div>';
     return;
   }
 
@@ -360,35 +444,49 @@ function renderLotteryStock(rows) {
     const gn = row.game_number;
     if (!games[gn]) {
       games[gn] = {
-        gameName:     row.lottery_games?.game_name || `Game #${gn}`,
-        price:        row.lottery_games?.price     || 0,
-        packCount:    0,
-        totalTickets: 0,
+        gameName:       row.lottery_games?.game_name        || `Game #${gn}`,
+        price:          row.lottery_games?.price            || 0,
+        ticketsPerPack: row.lottery_games?.tickets_per_pack || 0,
+        packs: [],
       };
     }
-    games[gn].packCount++;
-    games[gn].totalTickets += (row.end_ticket - row.start_ticket + 1);
+    games[gn].packs.push(row);
   }
 
-  const sorted       = Object.values(games).sort((a, b) => parseFloat(a.price) - parseFloat(b.price));
-  const totalPacks   = sorted.reduce((s, g) => s + g.packCount, 0);
-  const totalTickets = sorted.reduce((s, g) => s + g.totalTickets, 0);
+  const sorted      = Object.values(games).sort((a, b) => parseFloat(a.price) - parseFloat(b.price));
+  const totInStock  = sorted.reduce((s, g) => s + g.packs.filter(p => p.status !== 'soldout').length, 0);
+  const totActivated = sorted.reduce((s, g) => s + g.packs.filter(p => p.status === 'activated').length, 0);
 
   el.innerHTML = `
     <div class="lottery-stock-table">
-      ${sorted.map(g => `
-        <div class="lottery-stock-row">
-          <div class="lottery-stock-name">
-            ${g.gameName}
-            <span class="item-badge lottery-price-badge">$${parseFloat(g.price).toFixed(2)}</span>
-          </div>
-          <div class="lottery-stock-packs">${g.packCount} pack${g.packCount !== 1 ? 's' : ''}</div>
-          <div class="lottery-stock-tickets">${g.totalTickets.toLocaleString()} tickets</div>
-        </div>
-      `).join('')}
+      ${sorted.map(g => {
+        const activated  = g.packs.filter(p => p.status === 'activated');
+        const received   = g.packs.filter(p => p.status === 'received');
+        const soldOut    = g.packs.filter(p => p.status === 'soldout').length;
+        const actionable = [...activated, ...received];
+        const inStock    = activated.length + received.length;
+
+        return `
+          <div class="lottery-stock-game">
+            <div class="lottery-stock-row">
+              <div class="lottery-stock-name">
+                ${g.gameName}
+                <span class="item-badge lottery-price-badge">$${parseFloat(g.price).toFixed(2)}</span>
+              </div>
+              <div class="lottery-stock-packs">${inStock} book${inStock !== 1 ? 's' : ''}</div>
+              <div class="lottery-stock-open-pill ${activated.length > 0 ? 'is-open' : ''}">
+                ${activated.length} activated
+              </div>
+            </div>
+            <div class="lottery-stock-books">
+              ${actionable.map(p => renderPackRow(p, g.ticketsPerPack)).join('')}
+              ${soldOut > 0 ? `<div class="lottery-soldout-note">${soldOut} sold out</div>` : ''}
+            </div>
+          </div>`;
+      }).join('')}
       <div class="lottery-stock-total">
-        <span>${totalPacks} pack${totalPacks !== 1 ? 's' : ''} total</span>
-        <span>${totalTickets.toLocaleString()} tickets in stock</span>
+        <span>${totInStock} book${totInStock !== 1 ? 's' : ''} in stock</span>
+        <span>${totActivated} activated</span>
       </div>
     </div>`;
 }
