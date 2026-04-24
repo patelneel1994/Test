@@ -119,7 +119,7 @@ async function doReceivePack(parsed, game) {
           game_number:      parsed.gameNumber,
           pack_number:      parsed.packNumber,
           raw_barcode:      parsed.raw,
-          start_ticket:     0,
+          start_ticket:     parsed.ticketPosition,
           end_ticket:       game.tickets_per_pack - 1,
           status:           'received',
           location:         'Office',
@@ -133,6 +133,7 @@ async function doReceivePack(parsed, game) {
       gameName:       game.game_name,
       price:          game.price,
       ticketsPerPack: game.tickets_per_pack,
+      startTicket:    parsed.ticketPosition,
       formatted:      parsed.formatted,
       receivedAt:     new Date(),
     });
@@ -258,18 +259,21 @@ function renderLotteryResult(state) {
   if (state.type === 'success') {
     const p = state.parsed;
     const g = state.game;
+    const remaining = g.tickets_per_pack - p.ticketPosition;
+    const isPartial  = p.ticketPosition > 0;
     el.innerHTML = `
       <div class="lottery-card lottery-success" style="margin-top:12px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
           <div class="success-icon">
             <svg viewBox="0 0 14 14" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><polyline points="2 7 6 11 12 3"/></svg>
           </div>
-          <div class="lottery-card-title" style="color:var(--green-text)">Pack received!</div>
+          <div class="lottery-card-title" style="color:var(--green-text)">${isPartial ? 'Partial book received!' : 'Book received!'}</div>
         </div>
         <div class="lottery-card-sub">${g.game_name}</div>
         <div class="lottery-card-meta">
-          <div><span class="sub-lbl">Pack</span> #${p.packNumber}</div>
-          <div><span class="sub-lbl">Tickets</span> ${g.tickets_per_pack} (sells 0 → ${g.tickets_per_pack - 1})</div>
+          <div><span class="sub-lbl">Book</span> #${p.packNumber}</div>
+          <div><span class="sub-lbl">Starts at</span> Ticket #${p.ticketPosition}</div>
+          <div><span class="sub-lbl">Remaining</span> ${remaining} ticket${remaining !== 1 ? 's' : ''}</div>
         </div>
         <div style="font-size:11px;color:var(--text-muted);font-family:monospace;margin-top:6px">${p.formatted}</div>
       </div>`;
@@ -289,7 +293,7 @@ function renderLotteryLog() {
       <div class="log-item">
         <div>
           <div class="log-item-name">${e.gameName}</div>
-          <div class="log-item-meta">Pack #${e.packNumber} · ${e.ticketsPerPack} tickets (0–${e.ticketsPerPack - 1})</div>
+          <div class="log-item-meta">Book #${e.packNumber} · ${e.ticketsPerPack - e.startTicket} tickets (#${e.startTicket}–${e.ticketsPerPack - 1})${e.startTicket > 0 ? ' · partial' : ''}</div>
           <div class="log-item-time">${e.receivedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
         </div>
         <div class="log-right">
@@ -342,6 +346,29 @@ const PACK_LOC_CSS = {
   'Front - Extra': 'loc-front',
 };
 
+// ---- Remove activated book at a specific ticket number ----
+async function removePackAtTicket(id, currentTicket, e) {
+  if (e) e.preventDefault();
+  const val = window.prompt('Remove at ticket #:', String(currentTicket));
+  if (val === null) return; // cancelled
+  const ticketNum = parseInt(val, 10);
+  if (isNaN(ticketNum) || ticketNum < 0) { showError('Invalid input', 'Enter a valid ticket number.'); return; }
+  try {
+    await sbFetch(
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(id)}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ status: 'removed', start_ticket: ticketNum })
+      }
+    );
+    await loadLotteryStock();
+    loadLotteryDbStats();
+  } catch (err) {
+    showError('Remove failed', err.message);
+  }
+}
+
 // ---- Status / location update ----
 async function updatePackStatus(id, status, location, e) {
   if (e) e.preventDefault();
@@ -387,7 +414,12 @@ function renderPackRow(p, ticketsPerPack) {
         ontouchstart="updatePackStatus('${p.id}','soldout',null,event)">Sold Out</button>`;
   }
 
-  const removeBtn = (p.status === 'received' || p.status === 'activated') ? `
+  // Activated books prompt for the final ticket number before removing
+  const removeBtn = p.status === 'activated' ? `
+    <button class="pack-remove-btn"
+      onmousedown="removePackAtTicket('${p.id}',${p.start_ticket},event)"
+      ontouchstart="removePackAtTicket('${p.id}',${p.start_ticket},event)" title="Remove">✕</button>`
+  : p.status === 'received' ? `
     <button class="pack-remove-btn"
       onmousedown="updatePackStatus('${p.id}','removed',null,event)"
       ontouchstart="updatePackStatus('${p.id}','removed',null,event)" title="Remove">✕</button>` : '';
