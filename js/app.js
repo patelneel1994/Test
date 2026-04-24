@@ -37,7 +37,7 @@ function init() {
     }
   });
 
-  refocusBarcode();
+  initLotteryTab();
 
   const start = Date.now();
   setInterval(() => {

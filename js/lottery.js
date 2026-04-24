@@ -328,6 +328,71 @@ function refocusLottery() {
   }, 50);
 }
 
+// ---- Stock overview ----
+async function loadLotteryStock() {
+  const el = document.getElementById('lottery-stock-container');
+  el.innerHTML = '<div class="summary-loading">Loading…</div>';
+  try {
+    const res = await sbFetch(
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_packs` +
+      `?select=game_number,start_ticket,end_ticket,lottery_games(game_name,price,tickets_per_pack)` +
+      `&status=in.(received,active)` +
+      `&limit=500`
+    );
+    const rows = await res.json();
+    renderLotteryStock(rows);
+  } catch (e) {
+    el.innerHTML = `<div class="item-nf-sub" style="padding:10px 0">Load failed: ${e.message}</div>`;
+  }
+}
+
+function renderLotteryStock(rows) {
+  const el = document.getElementById('lottery-stock-container');
+
+  if (!Array.isArray(rows) || !rows.length) {
+    el.innerHTML = '<div class="log-empty" style="padding:12px 0;border:none">No active packs in stock</div>';
+    return;
+  }
+
+  // Group by game
+  const games = {};
+  for (const row of rows) {
+    const gn = row.game_number;
+    if (!games[gn]) {
+      games[gn] = {
+        gameName:     row.lottery_games?.game_name || `Game #${gn}`,
+        price:        row.lottery_games?.price     || 0,
+        packCount:    0,
+        totalTickets: 0,
+      };
+    }
+    games[gn].packCount++;
+    games[gn].totalTickets += (row.end_ticket - row.start_ticket + 1);
+  }
+
+  const sorted       = Object.values(games).sort((a, b) => parseFloat(a.price) - parseFloat(b.price));
+  const totalPacks   = sorted.reduce((s, g) => s + g.packCount, 0);
+  const totalTickets = sorted.reduce((s, g) => s + g.totalTickets, 0);
+
+  el.innerHTML = `
+    <div class="lottery-stock-table">
+      ${sorted.map(g => `
+        <div class="lottery-stock-row">
+          <div class="lottery-stock-name">
+            ${g.gameName}
+            <span class="item-badge lottery-price-badge">$${parseFloat(g.price).toFixed(2)}</span>
+          </div>
+          <div class="lottery-stock-packs">${g.packCount} pack${g.packCount !== 1 ? 's' : ''}</div>
+          <div class="lottery-stock-tickets">${g.totalTickets.toLocaleString()} tickets</div>
+        </div>
+      `).join('')}
+      <div class="lottery-stock-total">
+        <span>${totalPacks} pack${totalPacks !== 1 ? 's' : ''} total</span>
+        <span>${totalTickets.toLocaleString()} tickets in stock</span>
+      </div>
+    </div>`;
+}
+
 // ---- Tab init ----
 async function initLotteryTab() {
   if (!_lotteryEventsReady) {
@@ -343,5 +408,6 @@ async function initLotteryTab() {
   renderLotteryLog();
   renderLotteryStats();
   loadLotteryDbStats();
+  loadLotteryStock();
   refocusLottery();
 }

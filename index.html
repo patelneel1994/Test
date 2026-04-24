@@ -27,14 +27,14 @@
 
 <!-- TAB BAR -->
 <div class="tab-bar">
-  <button class="tab active" id="tab-scan" onclick="switchTab('scan')">Scan</button>
+  <button class="tab" id="tab-scan" onclick="switchTab('scan')">Scan</button>
   <button class="tab" id="tab-summary" onclick="switchTab('summary')">DB Summary</button>
   <button class="tab" id="tab-search" onclick="switchTab('search')">Search</button>
-  <button class="tab" id="tab-lottery" onclick="switchTab('lottery')">Lottery</button>
+  <button class="tab active" id="tab-lottery" onclick="switchTab('lottery')">Lottery</button>
 </div>
 
 <!-- LOCATION BAR (scan tab only) -->
-<div class="loc-bar" id="loc-bar">
+<div class="loc-bar" id="loc-bar" style="display:none">
   <span class="loc-label">Location</span>
   <select class="loc-select" id="loc-select">
     <option value="">— select location —</option>
@@ -43,7 +43,7 @@
 </div>
 
 <!-- ===== SCAN TAB ===== -->
-<div class="main" id="screen-scan">
+<div class="main" id="screen-scan" style="display:none">
 
   <!-- STATS -->
   <div class="stat-row">
@@ -217,7 +217,7 @@
 </div>
 
 <!-- ===== LOTTERY TAB ===== -->
-<div class="main" id="screen-lottery" style="display:none">
+<div class="main" id="screen-lottery">
 
   <!-- STATS -->
   <div class="stat-row" style="margin-bottom:14px">
@@ -225,6 +225,15 @@
     <div class="stat"><div class="stat-val" id="lottery-stat-tickets">0</div><div class="stat-label">Session tickets</div></div>
     <div class="stat"><div class="stat-val" id="lottery-stat-db-packs">—</div><div class="stat-label">DB packs</div></div>
     <div class="stat"><div class="stat-val" id="lottery-stat-games">—</div><div class="stat-label">Active games</div></div>
+  </div>
+
+  <!-- STOCK OVERVIEW -->
+  <div class="scan-card" style="margin-bottom:14px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div class="card-label" style="margin:0">Current Stock</div>
+      <button class="log-act-btn" onclick="loadLotteryStock()">Refresh</button>
+    </div>
+    <div id="lottery-stock-container"><div class="summary-loading">Loading…</div></div>
   </div>
 
   <!-- TWO-COLUMN (reuses scan-layout) -->
