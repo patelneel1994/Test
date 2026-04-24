@@ -1,10 +1,11 @@
 // ===== TAB NAVIGATION =====
 function switchTab(tab) {
-  const tabs    = ['scan', 'summary', 'search'];
+  const tabs    = ['scan', 'summary', 'search', 'lottery'];
   const screens = {
     scan:    document.getElementById('screen-scan'),
     summary: document.getElementById('screen-summary'),
     search:  document.getElementById('screen-search'),
+    lottery: document.getElementById('screen-lottery'),
   };
   const locBar = document.getElementById('loc-bar');
 
@@ -21,4 +22,5 @@ function switchTab(tab) {
     si.focus();
     si.click(); // prompt keyboard on iOS
   }
+  if (tab === 'lottery') initLotteryTab();
 }

@@ -30,6 +30,7 @@
   <button class="tab active" id="tab-scan" onclick="switchTab('scan')">Scan</button>
   <button class="tab" id="tab-summary" onclick="switchTab('summary')">DB Summary</button>
   <button class="tab" id="tab-search" onclick="switchTab('search')">Search</button>
+  <button class="tab" id="tab-lottery" onclick="switchTab('lottery')">Lottery</button>
 </div>
 
 <!-- LOCATION BAR (scan tab only) -->
@@ -215,6 +216,48 @@
   </div>
 </div>
 
+<!-- ===== LOTTERY TAB ===== -->
+<div class="main" id="screen-lottery" style="display:none">
+
+  <!-- STATS -->
+  <div class="stat-row" style="margin-bottom:14px">
+    <div class="stat"><div class="stat-val" id="lottery-stat-session">0</div><div class="stat-label">Session packs</div></div>
+    <div class="stat"><div class="stat-val" id="lottery-stat-tickets">0</div><div class="stat-label">Session tickets</div></div>
+    <div class="stat"><div class="stat-val" id="lottery-stat-db-packs">—</div><div class="stat-label">DB packs</div></div>
+    <div class="stat"><div class="stat-val" id="lottery-stat-games">—</div><div class="stat-label">Active games</div></div>
+  </div>
+
+  <!-- TWO-COLUMN (reuses scan-layout) -->
+  <div class="scan-layout">
+  <div class="scan-col-left">
+
+    <div class="scan-card">
+      <div class="card-label">Receive lottery pack</div>
+      <div class="scan-row">
+        <input class="scan-input" id="lottery-input" type="text" inputmode="text"
+          placeholder="Scan any ticket from pack…" autocomplete="off" autocorrect="off" spellcheck="false" />
+        <button class="camera-btn" onclick="submitLotteryInput()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          Go
+        </button>
+      </div>
+      <div id="lottery-result"></div>
+    </div>
+
+  </div><!-- /scan-col-left -->
+
+  <div class="scan-col-right">
+    <div class="log-header">
+      <div class="log-title">Received this session</div>
+    </div>
+    <div id="lottery-log-container"></div>
+  </div><!-- /scan-col-right -->
+  </div><!-- /scan-layout -->
+
+</div><!-- /screen-lottery -->
+
 <!-- LOCATION MODAL -->
 <div class="modal-overlay" id="loc-modal">
   <div class="modal">
@@ -239,6 +282,7 @@
 <script src="js/log.js"></script>
 <script src="js/summary.js"></script>
 <script src="js/search.js"></script>
+<script src="js/lottery.js"></script>
 <script src="js/tabs.js"></script>
 <script src="js/app.js"></script>
 
