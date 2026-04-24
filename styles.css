@@ -335,6 +335,36 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 .pack-remove-btn { font-size: 15px; background: none; border: none; cursor: pointer; color: var(--text-hint); padding: 4px 5px; touch-action: manipulation; line-height: 1; }
 .pack-remove-btn:hover { color: var(--red-text); }
 
+/* ── SHIFT CLOSE MODAL ─────────────────────────────────────────────────────── */
+.shift-loc-section { margin-bottom: 12px; }
+.shift-loc-header { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; padding: 6px 0 5px; border-bottom: 1.5px solid var(--border); margin-bottom: 4px; }
+.shift-entry-row { padding: 8px 0; border-bottom: 1px solid var(--border); }
+.shift-entry-row:last-child { border-bottom: none; }
+.shift-entry-name { font-size: 13px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-bottom: 4px; }
+.shift-entry-inputs { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--text-muted); margin-bottom: 3px; }
+.shift-entry-open-lbl { font-size: 12px; color: var(--text-muted); }
+.shift-entry-arrow { color: var(--text-hint); }
+.shift-ticket-input { width: 72px; padding: 3px 7px; font-size: 12px; border: 1.5px solid var(--border); border-radius: var(--radius-xs); font-family: inherit; background: var(--bg); color: var(--text); }
+.shift-ticket-input:focus { outline: none; border-color: var(--primary); }
+.shift-entry-calc { font-size: 12px; font-weight: 700; color: var(--green-text); min-height: 16px; }
+.shift-total-row { display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 2px solid var(--border); font-size: 13px; font-weight: 700; color: var(--text); margin-top: 8px; }
+.shift-total-rev { font-size: 16px; font-weight: 800; color: var(--green-text); }
+
+/* ── SHIFT HISTORY ──────────────────────────────────────────────────────────── */
+.shift-history-item { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.shift-history-item:last-child { border-bottom: none; }
+.shift-history-hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
+.shift-history-type { font-size: 10px; font-weight: 700; border-radius: 4px; padding: 2px 7px; border: 1px solid; white-space: nowrap; }
+.shift-type-shift { background: var(--primary-bg); color: var(--primary); border-color: var(--primary-border); }
+.shift-type-day   { background: var(--amber-bg);   color: var(--amber-text); border-color: var(--amber-border); }
+.shift-history-date { font-size: 12px; color: var(--text-muted); }
+.shift-history-rev  { font-size: 14px; font-weight: 800; color: var(--green-text); }
+.shift-history-sub  { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+.shift-history-entries { display: flex; flex-direction: column; gap: 2px; }
+.shift-history-entry { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.shift-history-entry-game   { font-size: 12px; font-weight: 600; color: var(--text); }
+.shift-history-entry-detail { font-size: 11px; color: var(--text-muted); font-family: monospace; }
+
 /* ── MOBILE (< 500px): compact stats ──────────────────────────────────────── */
 @media (max-width: 499px) {
   .stat-row { grid-template-columns: repeat(2, 1fr); }

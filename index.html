@@ -229,9 +229,16 @@
 
   <!-- STOCK OVERVIEW -->
   <div class="scan-card" style="margin-bottom:14px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;flex-wrap:wrap">
       <div class="card-label" style="margin:0">Current Stock</div>
-      <button class="log-act-btn" onclick="loadLotteryStock()">Refresh</button>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <div class="view-toggle">
+          <button class="view-toggle-btn active" id="stock-view-game" onclick="setStockView('game')">By Game</button>
+          <button class="view-toggle-btn" id="stock-view-loc" onclick="setStockView('location')">By Loc</button>
+        </div>
+        <button class="log-act-btn" onclick="openShiftClose()">Close Shift</button>
+        <button class="log-act-btn" onclick="loadLotteryStock()">Refresh</button>
+      </div>
     </div>
     <div id="lottery-stock-container"><div class="summary-loading">Loading…</div></div>
   </div>
@@ -265,7 +272,32 @@
   </div><!-- /scan-col-right -->
   </div><!-- /scan-layout -->
 
+  <!-- SHIFT HISTORY -->
+  <div class="scan-card" style="margin-top:14px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div class="card-label" style="margin:0">Shift History</div>
+      <button class="log-act-btn" onclick="loadShiftHistory()">Refresh</button>
+    </div>
+    <div id="shift-history-container"><div class="summary-loading">Loading…</div></div>
+  </div>
+
 </div><!-- /screen-lottery -->
+
+<!-- SHIFT CLOSE MODAL -->
+<div class="modal-overlay" id="shift-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Close Books</div>
+    <div id="shift-modal-body" style="overflow-y:auto;margin-bottom:2px"></div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="modal-close" style="flex:1;margin:0;padding:11px" onclick="closeShiftModal()">Cancel</button>
+      <button class="modal-add-btn" id="shift-confirm-btn" style="flex:1;margin:0"
+        onmousedown="confirmShiftClose('shift',event)" ontouchstart="confirmShiftClose('shift',event)">Shift Close</button>
+      <button class="modal-add-btn" id="shift-day-btn" style="flex:1;margin:0;background:var(--amber-bg);color:var(--amber-text);border:1.5px solid var(--amber-border)"
+        onmousedown="confirmShiftClose('day',event)" ontouchstart="confirmShiftClose('day',event)">Day Close</button>
+    </div>
+  </div>
+</div>
 
 <!-- LOCATION MODAL -->
 <div class="modal-overlay" id="loc-modal">
