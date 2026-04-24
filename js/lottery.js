@@ -5,27 +5,42 @@ let _currentLotteryParse = null; // last parsed barcode (used by add-game form)
 let _lotteryEventsReady  = false;
 
 // ---- Barcode parser ----
-// Strips non-digits, splits by TN Lottery format:
-//   12 digits → XXX-XXXXXX-XXX  (game 3, pack 6, pos 3)
-//   13 digits → XXXX-XXXXXX-XXX (game 4, pack 6, pos 3)
+// TN Lottery format: XXXX-XXXXXX-XXX (13 digits) or XXX-XXXXXX-XXX (12 digits).
+// Scanners print ITF-14 which appends a 1-digit check, so scanned codes are
+// 14 digits (13-digit ticket) or 13 digits (12-digit ticket).
+// The check digit satisfies: (weighted_sum + check) ≡ 2 (mod 10).
 function parseLotteryBarcode(raw) {
   const clean = raw.replace(/[^0-9]/g, '');
-  if (clean.length === 12) {
+
+  if (clean.length === 14) {
+    // 13-digit ticket XXXX-XXXXXX-XXX + 1 check digit (discarded)
     return {
       raw, clean,
-      gameNumber:     clean.slice(0, 3),
-      packNumber:     clean.slice(3, 9),
-      ticketPosition: parseInt(clean.slice(9), 10),
-      formatted:      `${clean.slice(0,3)}-${clean.slice(3,9)}-${clean.slice(9)}`
+      gameNumber:     clean.slice(0, 4),
+      packNumber:     clean.slice(4, 10),
+      ticketPosition: parseInt(clean.slice(10, 13), 10),
+      formatted:      `${clean.slice(0,4)}-${clean.slice(4,10)}-${clean.slice(10,13)}`
     };
   }
   if (clean.length === 13) {
+    // Either: 13-digit ticket without check, OR 12-digit ticket + check.
+    // Treat as 13-digit ticket (game 4 digits) — adjust if 12-digit games appear.
     return {
       raw, clean,
       gameNumber:     clean.slice(0, 4),
       packNumber:     clean.slice(4, 10),
       ticketPosition: parseInt(clean.slice(10), 10),
       formatted:      `${clean.slice(0,4)}-${clean.slice(4,10)}-${clean.slice(10)}`
+    };
+  }
+  if (clean.length === 12) {
+    // 12-digit ticket XXX-XXXXXX-XXX without check
+    return {
+      raw, clean,
+      gameNumber:     clean.slice(0, 3),
+      packNumber:     clean.slice(3, 9),
+      ticketPosition: parseInt(clean.slice(9), 10),
+      formatted:      `${clean.slice(0,3)}-${clean.slice(3,9)}-${clean.slice(9)}`
     };
   }
   return null;
@@ -43,7 +58,7 @@ async function lookupLotteryTicket(raw) {
 
   const parsed = parseLotteryBarcode(raw);
   if (!parsed) {
-    renderLotteryResult({ type: 'error', msg: `Cannot parse "${raw}" — expected 12 or 13 digits (got ${raw.replace(/[^0-9]/g,'').length}).` });
+    renderLotteryResult({ type: 'error', msg: `Cannot parse "${raw}" — expected 12–14 digits (got ${raw.replace(/[^0-9]/g,'').length}).` });
     refocusLottery();
     return;
   }
