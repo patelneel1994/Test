@@ -223,8 +223,8 @@
   <div class="stat-row" style="margin-bottom:14px">
     <div class="stat"><div class="stat-val" id="lottery-stat-session">0</div><div class="stat-label">Session packs</div></div>
     <div class="stat"><div class="stat-val" id="lottery-stat-tickets">0</div><div class="stat-label">Session tickets</div></div>
-    <div class="stat"><div class="stat-val" id="lottery-stat-db-packs">—</div><div class="stat-label">DB packs</div></div>
-    <div class="stat"><div class="stat-val" id="lottery-stat-games">—</div><div class="stat-label">Active games</div></div>
+    <div class="stat"><div class="stat-val" id="lottery-stat-db-packs">—</div><div class="stat-label">Total packs</div></div>
+    <div class="stat"><div class="stat-val" id="lottery-stat-games">—</div><div class="stat-label">Active books</div></div>
   </div>
 
   <!-- STOCK OVERVIEW -->
@@ -236,7 +236,7 @@
           <button class="view-toggle-btn active" id="stock-view-game" onclick="setStockView('game')">By Game</button>
           <button class="view-toggle-btn" id="stock-view-loc" onclick="setStockView('location')">By Loc</button>
         </div>
-        <button class="log-act-btn" onclick="openShiftClose()">Close Shift</button>
+        <div id="day-shift-btns" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"></div>
         <button class="log-act-btn" onclick="loadLotteryStock()">Refresh</button>
       </div>
     </div>
@@ -287,14 +287,84 @@
 <div class="modal-overlay" id="shift-modal">
   <div class="modal">
     <div class="modal-handle"></div>
-    <div class="modal-title">Close Books</div>
+    <div class="modal-title" id="shift-modal-title">Shift Close</div>
     <div id="shift-modal-body" style="overflow-y:auto;margin-bottom:2px"></div>
     <div style="display:flex;gap:8px;margin-top:14px">
       <button class="modal-close" style="flex:1;margin:0;padding:11px" onclick="closeShiftModal()">Cancel</button>
-      <button class="modal-add-btn" id="shift-confirm-btn" style="flex:1;margin:0"
-        onmousedown="confirmShiftClose('shift',event)" ontouchstart="confirmShiftClose('shift',event)">Shift Close</button>
-      <button class="modal-add-btn" id="shift-day-btn" style="flex:1;margin:0;background:var(--amber-bg);color:var(--amber-text);border:1.5px solid var(--amber-border)"
-        onmousedown="confirmShiftClose('day',event)" ontouchstart="confirmShiftClose('day',event)">Day Close</button>
+      <button class="modal-add-btn" id="shift-confirm-btn" style="flex:2;margin:0"
+        onmousedown="confirmShiftClose(event)" ontouchstart="confirmShiftClose(event)">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- ACTIVATION MODAL -->
+<div class="modal-overlay" id="activation-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="activation-modal-title">Activate Book</div>
+    <div id="activation-book-info"></div>
+    <div style="margin-bottom:14px">
+      <div class="lottery-form-label" style="display:block;margin-bottom:8px">Loading Direction</div>
+      <div class="view-toggle" style="width:100%">
+        <button class="view-toggle-btn active" id="act-dir-asc-btn" onclick="setActDir('asc')">↑ ASC (low → high)</button>
+        <button class="view-toggle-btn" id="act-dir-desc-btn" onclick="setActDir('desc')">↓ DESC (high → low)</button>
+      </div>
+    </div>
+    <div style="margin-bottom:14px">
+      <div class="lottery-form-label" style="display:block;margin-bottom:8px">Load Type</div>
+      <div class="view-toggle" style="width:100%">
+        <button class="view-toggle-btn active" id="act-type-full-btn" onclick="setActType('full')">Full Book</button>
+        <button class="view-toggle-btn" id="act-type-partial-btn" onclick="setActType('partial')">Partial</button>
+      </div>
+    </div>
+    <div id="act-start-wrap" style="display:none;margin-bottom:14px">
+      <label class="lottery-form-label" style="display:block;margin-bottom:4px">Start at ticket #</label>
+      <input class="modal-input" id="act-start-input" type="number" min="0" placeholder="e.g. 47" style="margin-bottom:0" />
+    </div>
+    <button class="modal-add-btn" id="activation-confirm-btn" style="margin-bottom:8px"
+      onmousedown="confirmActivation(event)" ontouchstart="confirmActivation(event)">Activate</button>
+    <button class="modal-close" onclick="closeActivationModal()">Cancel</button>
+  </div>
+</div>
+
+<!-- INVENTORY MODAL (open day optional / open shift, close shift, close day mandatory) -->
+<div class="modal-overlay" id="inventory-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="inv-modal-title">Inventory</div>
+
+    <!-- Progress bar -->
+    <div class="inv-progress-wrap">
+      <div class="inv-progress-track">
+        <div class="inv-progress-fill" id="inv-progress-fill" style="width:0%"></div>
+      </div>
+      <div class="inv-progress-label">
+        <span id="inv-done-count">0</span> / <span id="inv-total-count">0</span> books scanned
+        &nbsp;<span id="inv-todo-label" class="inv-todo">(<span id="inv-todo-count">0</span> remaining)</span>
+      </div>
+    </div>
+
+    <!-- Barcode scan input -->
+    <input class="modal-input" id="inv-scan-input" type="text" inputmode="text"
+      placeholder="Scan a ticket to record its position…"
+      autocomplete="off" autocorrect="off" spellcheck="false"
+      style="margin-bottom:10px" />
+
+    <!-- Book list -->
+    <div id="inv-book-list" style="overflow-y:auto;max-height:36vh;margin-bottom:4px"></div>
+
+    <!-- Totals row (close contexts only) -->
+    <div id="inv-totals-row" class="inv-totals-row" style="display:none">
+      <span>Total: <strong id="inv-total-tickets">0</strong> tickets sold</span>
+      <span class="shift-total-rev" id="inv-total-revenue">$0.00</span>
+    </div>
+
+    <!-- Buttons -->
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="modal-close" style="flex:1;margin:0;padding:11px" onclick="closeInventoryModal()">Cancel</button>
+      <button class="modal-close" id="inv-skip-btn" style="flex:1;margin:0;padding:11px;display:none" onclick="skipInventory()">Skip</button>
+      <button class="modal-add-btn" id="inv-confirm-btn" style="flex:2;margin:0"
+        onmousedown="confirmInventory(event)" ontouchstart="confirmInventory(event)">Confirm</button>
     </div>
   </div>
 </div>

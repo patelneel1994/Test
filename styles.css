@@ -335,6 +335,65 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 .pack-remove-btn { font-size: 15px; background: none; border: none; cursor: pointer; color: var(--text-hint); padding: 4px 5px; touch-action: manipulation; line-height: 1; }
 .pack-remove-btn:hover { color: var(--red-text); }
 
+/* Direction pills */
+.pack-dir-pill { font-size: 10px; font-weight: 700; border-radius: 4px; padding: 2px 5px; border: 1px solid; white-space: nowrap; }
+.dir-asc  { background: var(--primary-bg); color: var(--primary);   border-color: var(--primary-border); }
+.dir-desc { background: var(--red-bg);     color: var(--red-text);  border-color: var(--red-border); }
+
+/* Day Close button variant */
+.log-act-day { background: var(--amber-bg) !important; color: var(--amber-text) !important; border-color: var(--amber-border) !important; }
+
+/* Day/Shift open status badges */
+.day-status-badge { display: inline-flex; align-items: center; font-size: 11px; font-weight: 700; border-radius: 4px; padding: 3px 8px; border: 1px solid; white-space: nowrap; }
+.day-status-day   { background: var(--amber-bg);  color: var(--amber-text);  border-color: var(--amber-border); }
+.day-status-shift { background: var(--green-bg);   color: var(--green-text);  border-color: var(--green-border); }
+
+/* Activation modal info line */
+#activation-book-info { font-size: 13px; color: var(--text-muted); }
+
+/* Shift history — daily grouping */
+.shift-day-group { margin-bottom: 14px; }
+.shift-day-header { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 2px solid var(--border); margin-bottom: 2px; }
+.shift-day-label { font-size: 13px; font-weight: 700; color: var(--text); }
+.shift-day-closed-badge { font-size: 10px; font-weight: 700; background: var(--green-bg); color: var(--green-text); border: 1px solid var(--green-border); border-radius: 4px; padding: 2px 6px; }
+.shift-day-rev { font-size: 12px; font-weight: 700; color: var(--text-muted); }
+.shift-day-total { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: var(--bg); border-radius: var(--radius-xs); margin-top: 4px; font-size: 12px; font-weight: 700; color: var(--text-muted); }
+.shift-day-total-rev { font-weight: 800; color: var(--green-text); font-size: 13px; }
+.shift-today-banner { background: var(--green-bg); border: 1.5px solid var(--green-border); border-radius: var(--radius-sm); padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+
+/* ── INVENTORY MODAL ────────────────────────────────────────────────────────── */
+.inv-progress-wrap  { margin-bottom: 12px; }
+.inv-progress-track { height: 7px; background: var(--border); border-radius: 4px; overflow: hidden; margin-bottom: 5px; }
+.inv-progress-fill  { height: 100%; background: var(--green); border-radius: 4px; transition: width .25s ease; }
+.inv-progress-label { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.inv-todo           { color: var(--text-hint); font-weight: 500; }
+.inv-book-row { display: flex; align-items: flex-start; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+.inv-book-row:last-child { border-bottom: none; }
+.inv-book-row.inv-scanned .inv-status { color: var(--green); }
+.inv-status   { width: 18px; text-align: center; font-size: 16px; color: var(--text-hint); flex-shrink: 0; padding-top: 1px; }
+.inv-book-main { flex: 1; min-width: 0; }
+.inv-book-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.inv-book-num  { font-weight: 400; color: var(--text-muted); font-size: 11px; }
+.inv-book-meta { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+.inv-book-calc { font-size: 11px; font-weight: 700; color: var(--green-text); margin-top: 2px; }
+.inv-disc      { font-size: 11px; font-weight: 600; margin-top: 3px; padding: 2px 6px; border-radius: 4px; border: 1px solid; }
+.inv-disc-warn { background: var(--amber-bg); color: var(--amber-text); border-color: var(--amber-border); }
+.inv-disc-ok   { background: var(--green-bg);  color: var(--green-text);  border-color: var(--green-border); }
+.inv-totals-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--bg); border-radius: var(--radius-xs); font-size: 13px; font-weight: 700; color: var(--text-muted); margin-top: 4px; }
+.inv-scan-err { border-color: var(--red-border) !important; background: var(--red-bg) !important; }
+
+/* ── LAST CLOSE SUMMARY CARDS ──────────────────────────────────────────────── */
+.last-close-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+.last-close-card { background: var(--bg); border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; min-width: 0; }
+.last-close-empty { opacity: 0.6; }
+.last-close-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-bottom: 4px; }
+.last-close-date { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.last-close-time { font-size: 11px; color: var(--text-muted); margin-bottom: 5px; }
+.last-close-rev  { font-size: 20px; font-weight: 800; color: var(--green-text); line-height: 1.15; }
+.last-close-sub  { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.last-close-entries { margin-top: 6px; display: flex; flex-direction: column; gap: 2px; border-top: 1px solid var(--border); padding-top: 5px; }
+.last-close-entry { display: flex; justify-content: space-between; gap: 4px; font-size: 10px; color: var(--text-muted); flex-wrap: wrap; }
+
 /* ── SHIFT CLOSE MODAL ─────────────────────────────────────────────────────── */
 .shift-loc-section { margin-bottom: 12px; }
 .shift-loc-header { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; padding: 6px 0 5px; border-bottom: 1.5px solid var(--border); margin-bottom: 4px; }
