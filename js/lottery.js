@@ -18,10 +18,14 @@ const _dbCaps            = { hasLoadingDirection: false, hasFullDayTracking: fal
 const _packInfoCache     = {};
 
 // ---- Inventory state ----
-let _invContext     = null;   // 'open-day' | 'open-shift' | 'close-shift' | 'close-day'
-let _invPacks       = [];     // active packs for this inventory session
-let _invData        = {};     // pack_id → ticket number
-let _invScanCleanup = null;   // teardown function for scan input listeners
+let _invContext       = null;
+let _invPacks         = [];     // active packs
+let _invReceivedPacks = [];     // received (not yet activated) packs — shown in open-day/shift
+let _invData          = {};     // pack_id → ticket number
+let _invScanCleanup   = null;
+
+// ---- DB-state load guard ----
+let _lotteryDbStateReady = false;
 
 // ===== DB CAPABILITIES CHECK =====
 // Run once; determines which columns/tables exist so queries don't crash.
@@ -44,18 +48,16 @@ async function checkDbCapabilities() {
 const _INV_OPTIONAL = new Set(['open-day']);
 const _INV_TITLES   = {
   'open-day':    'Day Open — Inventory Check',
-  'open-shift':  'Shift Start — Inventory (Required)',
-  'close-shift': 'Shift End — Inventory (Required)',
+  'close-shift': 'Change Shift — Inventory (Required)',
   'close-day':   'Day Close — Inventory (Required)',
 };
 
 async function openInventory(context) {
   if (_dbCaps.hasFullDayTracking) {
-    if ((context === 'open-shift' || context.startsWith('close')) && !_currentDay) {
+    if (context.startsWith('close') && !_currentDay) {
       showError('No day open', 'Open a day first.'); return;
     }
-    if (context === 'open-shift' && _currentShift)  { showError('Shift already open', 'Close the current shift first.'); return; }
-    if (context === 'close-shift' && !_currentShift) { showError('No shift open', 'Open a shift first.'); return; }
+    if (context === 'close-shift' && !_currentShift) { showError('No shift open', 'Cannot change shift — no shift is currently open.'); return; }
   }
 
   _invContext = context;
@@ -66,7 +68,7 @@ async function openInventory(context) {
   document.getElementById('inv-modal-title').textContent     = _INV_TITLES[context] || 'Inventory';
   document.getElementById('inv-skip-btn').style.display      = isOptional ? '' : 'none';
   document.getElementById('inv-totals-row').style.display    = isClose    ? '' : 'none';
-  const confirmLbl = { 'open-day':'Open Day', 'open-shift':'Open Shift', 'close-shift':'Confirm Shift Close', 'close-day':'Confirm Day Close' };
+  const confirmLbl = { 'open-day':'Open Day', 'close-shift':'Confirm & Change Shift', 'close-day':'Confirm Day Close' };
   document.getElementById('inv-confirm-btn').textContent = confirmLbl[context] || 'Confirm';
 
   const listEl = document.getElementById('inv-book-list');
@@ -77,11 +79,14 @@ async function openInventory(context) {
     const sel = _dbCaps.hasLoadingDirection
       ? `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,loading_direction,location,lottery_games(game_name,price,tickets_per_pack)`
       : `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,location,lottery_games(game_name,price,tickets_per_pack)`;
-    const res = await sbFetch(
-      `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=${sel}&status=eq.activated&order=location.asc,pack_number.asc&limit=200`
-    );
-    const packs = await res.json();
-    _invPacks = Array.isArray(packs) ? packs : [];
+    const base   = `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=${sel}&order=location.asc,pack_number.asc&limit=200`;
+    const isOpenDay = context === 'open-day';
+    const fetches = [sbFetch(`${base}&status=eq.activated`)];
+    if (isOpenDay) fetches.push(sbFetch(`${base}&status=eq.received`));
+    const results  = await Promise.all(fetches);
+    const jsons    = await Promise.all(results.map(r => r.json()));
+    _invPacks         = Array.isArray(jsons[0]) ? jsons[0] : [];
+    _invReceivedPacks = isOpenDay && Array.isArray(jsons[1]) ? jsons[1] : [];
     _renderInvList();
     _updateInvProgress();
   } catch (err) {
@@ -100,10 +105,34 @@ async function openInventory(context) {
   setTimeout(() => scanInp.focus(), 120);
 }
 
+// Opens activation modal for a received pack while the inventory modal is open.
+// After activation the inventory list refreshes automatically.
+function loadReceivedPack(packId, location, e) {
+  if (e) e.preventDefault();
+  openActivationForm(packId, location, e);
+}
+
+async function _refreshInvAfterLoad() {
+  if (!document.getElementById('inventory-modal').classList.contains('open')) return;
+  const sel    = _dbCaps.hasLoadingDirection
+    ? `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,loading_direction,location,lottery_games(game_name,price,tickets_per_pack)`
+    : `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,location,lottery_games(game_name,price,tickets_per_pack)`;
+  const base   = `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=${sel}&order=location.asc,pack_number.asc&limit=200`;
+  const isOpenDay = _invContext === 'open-day';
+  const fetches = [sbFetch(`${base}&status=eq.activated`)];
+  if (isOpenDay) fetches.push(sbFetch(`${base}&status=eq.received`));
+  const results = await Promise.all(fetches);
+  const jsons   = await Promise.all(results.map(r => r.json()));
+  _invPacks         = Array.isArray(jsons[0]) ? jsons[0] : [];
+  _invReceivedPacks = isOpenDay && Array.isArray(jsons[1]) ? jsons[1] : [];
+  _renderInvList();
+  _updateInvProgress();
+}
+
 function closeInventoryModal() {
   document.getElementById('inventory-modal').classList.remove('open');
   if (_invScanCleanup) { _invScanCleanup(); _invScanCleanup = null; }
-  _invContext = null; _invPacks = []; _invData = {};
+  _invContext = null; _invPacks = []; _invReceivedPacks = []; _invData = {};
 }
 
 function _renderInvList() {
@@ -162,6 +191,37 @@ function _renderInvList() {
     }
     html += '</div>';
   }
+  // ── Received books section (open-day only) ───────────────────────────────
+  if (_invContext === 'open-day' && _invReceivedPacks.length) {
+    html += `<div class="inv-rec-section">
+      <div class="inv-rec-header">Load received books into this day</div>`;
+    for (const p of _invReceivedPacks) {
+      const game = p.lottery_games || {};
+      html += `
+        <div class="inv-rec-row" id="inv-rec-${p.id}">
+          <div class="inv-book-main">
+            <div class="inv-book-name">${game.game_name || `Game #${p.game_number}`}
+              <span class="inv-book-num">#${p.pack_number}</span>
+            </div>
+            <div class="inv-book-meta">Received · not yet active</div>
+          </div>
+          <div style="display:flex;gap:5px;flex-shrink:0">
+            <button class="pack-act-btn act-station"
+              onmousedown="loadReceivedPack('${p.id}','Station Booth',event)"
+              ontouchstart="loadReceivedPack('${p.id}','Station Booth',event)">Station</button>
+            <button class="pack-act-btn act-front"
+              onmousedown="loadReceivedPack('${p.id}','Front - Extra',event)"
+              ontouchstart="loadReceivedPack('${p.id}','Front - Extra',event)">Front</button>
+            <button class="pack-act-btn"
+              onmousedown="loadReceivedPack('${p.id}','Office',event)"
+              ontouchstart="loadReceivedPack('${p.id}','Office',event)"
+              style="background:var(--bg);color:var(--text-muted);border-color:var(--border)">Office</button>
+          </div>
+        </div>`;
+    }
+    html += `</div>`;
+  }
+
   el.innerHTML = html;
 
   if (isClose) {
@@ -315,8 +375,7 @@ async function confirmInventory(e) {
   const btn = document.getElementById('inv-confirm-btn');
   if (btn) btn.disabled = true;
   try {
-    if (_invContext === 'open-day')    await _invCommitOpenDay();
-    else if (_invContext === 'open-shift')  await _invCommitOpenShift();
+    if (_invContext === 'open-day')         await _invCommitOpenDay();
     else if (_invContext === 'close-shift') await _invCommitClose('shift');
     else if (_invContext === 'close-day')   await _invCommitClose('day');
     closeInventoryModal();
@@ -339,38 +398,38 @@ function skipInventory() {
 }
 
 async function _invCommitOpenDay() {
+  // Create day
   const dayRes = await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_days`,
     { method: 'POST', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
       body: JSON.stringify({ status: 'open' }) });
   const days = await dayRes.json();
   _currentDay = Array.isArray(days) && days[0] ? days[0] : null;
   _currentShift = null;
+
+  // Update baselines from inventory scan
   if (Object.keys(_invData).length) {
     await Promise.all(Object.entries(_invData).map(([id, ticket]) =>
       sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(id)}`,
         { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
           body: JSON.stringify({ start_ticket: ticket, last_shift_ticket: ticket }) })));
   }
+
+  // Auto-open first shift
+  if (_currentDay) {
+    const shiftRes = await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_shifts`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
+        body: JSON.stringify({ day_id: _currentDay.id, shift_type: 'shift',
+          opened_at: new Date().toISOString(), status: 'open', total_tickets_sold: 0, total_revenue: 0 }) });
+    const shifts = await shiftRes.json();
+    _currentShift = Array.isArray(shifts) && shifts[0] ? shifts[0] : null;
+  }
+
   updateDayShiftButtons();
   await loadLotteryStock();
 }
 
 async function _invCommitOpenShift() {
-  if (!_currentDay) { showError('No day open', 'Open a day first.'); return; }
-  if (Object.keys(_invData).length) {
-    await Promise.all(Object.entries(_invData).map(([id, ticket]) =>
-      sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(id)}`,
-        { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-          body: JSON.stringify({ start_ticket: ticket, last_shift_ticket: ticket }) })));
-  }
-  const res = await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_shifts`,
-    { method: 'POST', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
-      body: JSON.stringify({ day_id: _currentDay.id, shift_type: 'shift',
-        opened_at: new Date().toISOString(), status: 'open', total_tickets_sold: 0, total_revenue: 0 }) });
-  const shifts = await res.json();
-  _currentShift = Array.isArray(shifts) && shifts[0] ? shifts[0] : null;
-  updateDayShiftButtons();
-  await loadLotteryStock();
+  // No longer used — shift opens automatically after day open and after each shift close.
 }
 
 async function _invCommitClose(type) {
@@ -418,6 +477,17 @@ async function _invCommitClose(type) {
   }));
 
   _currentShift = null;
+
+  // Change Shift: auto-open next shift immediately after closing
+  if (type === 'shift' && _currentDay) {
+    const newShiftRes = await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_shifts`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
+        body: JSON.stringify({ day_id: _currentDay.id, shift_type: 'shift',
+          opened_at: new Date().toISOString(), status: 'open', total_tickets_sold: 0, total_revenue: 0 }) });
+    const newShifts = await newShiftRes.json();
+    _currentShift = Array.isArray(newShifts) && newShifts[0] ? newShifts[0] : null;
+  }
+
   if (type === 'day' && _currentDay) {
     const dShiftsRes = await sbFetch(
       `${CONFIG.supabaseUrl}/rest/v1/lottery_shifts?day_id=eq.${_currentDay.id}&select=total_tickets_sold,total_revenue`
@@ -476,15 +546,10 @@ function updateDayShiftButtons() {
 
   if (!_currentDay) {
     el.innerHTML = `<button class="log-act-btn log-act-day" onclick="openInventory('open-day')">Open Day</button>`;
-  } else if (!_currentShift) {
-    el.innerHTML = `
-      <span class="day-status-badge day-status-day">Day Open</span>
-      <button class="log-act-btn" onclick="openInventory('open-shift')">Open Shift</button>
-      <button class="log-act-btn log-act-day" onclick="openInventory('close-day')">Close Day</button>`;
   } else {
     el.innerHTML = `
       <span class="day-status-badge day-status-shift">Shift Open</span>
-      <button class="log-act-btn" onclick="openInventory('close-shift')">Close Shift</button>
+      <button class="log-act-btn" onclick="openInventory('close-shift')">Change Shift</button>
       <button class="log-act-btn log-act-day" onclick="openInventory('close-day')">Close Day</button>`;
   }
 }
@@ -793,18 +858,35 @@ function renderLotteryLog() {
 }
 
 function renderLotteryStats() {
-  document.getElementById('lottery-stat-session').textContent = _lotterySession.length;
-  document.getElementById('lottery-stat-tickets').textContent = _lotterySession.reduce((s, e) => s + e.ticketsPerPack, 0);
+  const s = document.getElementById('lottery-stat-session');
+  const t = document.getElementById('lottery-stat-tickets');
+  if (s) s.textContent = _lotterySession.length;
+  if (t) t.textContent = _lotterySession.reduce((sum, e) => sum + e.ticketsPerPack, 0);
 }
 
 async function loadLotteryDbStats() {
   try {
-    const [pr, ar] = await Promise.all([
-      sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=id&limit=1`, { headers: { 'Prefer': 'count=exact' } }),
-      sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=id&status=eq.activated&limit=1`, { headers: { 'Prefer': 'count=exact' } }),
+    const cnt = url => sbFetch(`${CONFIG.supabaseUrl}/rest/v1/${url}&limit=1`, { headers: { 'Prefer': 'count=exact' } })
+      .then(r => (r.headers.get('content-range') || '').split('/')[1] || '0');
+    const [active, received, soldout, total] = await Promise.all([
+      cnt('lottery_packs?select=id&status=eq.activated'),
+      cnt('lottery_packs?select=id&status=eq.received'),
+      cnt('lottery_packs?select=id&status=eq.soldout'),
+      cnt('lottery_packs?select=id'),
     ]);
-    document.getElementById('lottery-stat-db-packs').textContent = (pr.headers.get('content-range') || '').split('/')[1] || '0';
-    document.getElementById('lottery-stat-games').textContent    = (ar.headers.get('content-range') || '').split('/')[1] || '0';
+    document.getElementById('lottery-stat-db-packs').textContent = active;
+    document.getElementById('lottery-stat-games').textContent    = received;
+    const soEl = document.getElementById('lottery-stat-soldout');
+    const totEl = document.getElementById('lottery-stat-total');
+    if (soEl)  soEl.textContent  = soldout;
+    if (totEl) totEl.textContent = total;
+    // Update filter badge counts
+    const sfA = document.getElementById('sf-active');
+    const sfR = document.getElementById('sf-received');
+    const sfS = document.getElementById('sf-soldout');
+    if (sfA) sfA.textContent = active;
+    if (sfR) sfR.textContent = received;
+    if (sfS) sfS.textContent = soldout;
   } catch (_) {}
 }
 
@@ -826,18 +908,42 @@ const PACK_LOC_CSS = {
   'Front - Extra': 'loc-front',
 };
 
-async function removePackAtTicket(id, currentTicket, e) {
+let _pendingRemoveId = null;
+
+function removePackAtTicket(id, currentTicket, e) {
   if (e) e.preventDefault();
-  const val = window.prompt('Remove at ticket #:', String(currentTicket));
-  if (val === null) return;
-  const ticketNum = parseInt(val, 10);
+  _pendingRemoveId = id;
+  const info = _packInfoCache[id] || {};
+  const infoEl = document.getElementById('remove-book-info');
+  if (infoEl) infoEl.textContent = info.gameName ? `${info.gameName} · Book #${info.packNumber}` : `Book ID: ${id}`;
+  const inp = document.getElementById('remove-ticket-input');
+  if (inp) inp.value = currentTicket != null ? String(currentTicket) : '';
+  document.getElementById('remove-modal').classList.add('open');
+  setTimeout(() => { if (inp) inp.focus(); inp?.select(); }, 120);
+}
+
+function closeRemoveModal() {
+  document.getElementById('remove-modal').classList.remove('open');
+  _pendingRemoveId = null;
+}
+
+async function confirmRemovePack(e) {
+  if (e) e.preventDefault();
+  if (!_pendingRemoveId) return;
+  const inp = document.getElementById('remove-ticket-input');
+  const ticketNum = parseInt(inp?.value, 10);
   if (isNaN(ticketNum) || ticketNum < 0) { showError('Invalid input', 'Enter a valid ticket number.'); return; }
+  const btn = document.getElementById('remove-confirm-btn');
+  if (btn) btn.disabled = true;
   try {
-    await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(id)}`,
+    await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(_pendingRemoveId)}`,
       { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ status: 'removed', start_ticket: ticketNum }) });
+        body: JSON.stringify({ status: 'removed', start_ticket: ticketNum, last_shift_ticket: ticketNum }) });
+    closeRemoveModal();
     await loadLotteryStock(); loadLotteryDbStats();
-  } catch (err) { showError('Remove failed', err.message); }
+  } catch (err) {
+    showError('Remove failed', err.message);
+  } finally { if (btn) btn.disabled = false; }
 }
 
 async function updatePackStatus(id, status, location, e) {
@@ -913,6 +1019,7 @@ async function confirmActivation(e) {
         body: JSON.stringify(update) });
     closeActivationModal();
     await loadLotteryStock(); loadLotteryDbStats();
+    await _refreshInvAfterLoad();
   } catch (err) { showError('Activation failed', err.message); }
   finally { if (btn) btn.disabled = false; }
 }
@@ -938,7 +1045,7 @@ function _packRemoveBtn(p) {
   if (p.status === 'activated') return `
     <button class="pack-remove-btn"
       onmousedown="removePackAtTicket('${p.id}',${p.start_ticket},event)"
-      ontouchstart="removePackAtTicket('${p.id}',${p.start_ticket},event)" title="Remove">✕</button>`;
+      ontouchstart="removePackAtTicket('${p.id}',${p.start_ticket},event)" title="Remove at ticket #">✕</button>`;
   if (p.status === 'received') return `
     <button class="pack-remove-btn"
       onmousedown="updatePackStatus('${p.id}','removed',null,event)"
@@ -948,20 +1055,24 @@ function _packRemoveBtn(p) {
 
 function renderPackRow(p, ticketsPerPack, gameName) {
   _packInfoCache[p.id] = { ticketsPerPack, gameName: gameName || '', packNumber: p.pack_number, startTicket: p.start_ticket };
-  const st      = PACK_STATUS[p.status] || { label: p.status, css: '' };
-  const locCss  = PACK_LOC_CSS[p.location] || 'loc-office';
+  const st       = PACK_STATUS[p.status] || { label: p.status, css: '' };
+  const locCss   = PACK_LOC_CSS[p.location] || 'loc-office';
   const isActive = p.status === 'activated';
-  const dir     = p.loading_direction;
-  const pct     = (isActive && ticketsPerPack > 0) ? Math.round((p.start_ticket / ticketsPerPack) * 100) : 0;
-  const dirPill = (isActive && dir) ? `<span class="pack-dir-pill ${dir === 'desc' ? 'dir-desc' : 'dir-asc'}">${dir === 'desc' ? '↓' : '↑'}</span>` : '';
+  const dir      = p.loading_direction;
+  const pct      = (isActive && ticketsPerPack > 0) ? Math.round((p.start_ticket / ticketsPerPack) * 100) : 0;
+  const dirPill  = (isActive && dir) ? `<span class="pack-dir-pill ${dir === 'desc' ? 'dir-desc' : 'dir-asc'}">${dir === 'desc' ? '↓' : '↑'}</span>` : '';
+  const ticketInfo = (p.status === 'activated')
+    ? `<span class="lottery-book-at">Ticket #${p.start_ticket}</span>`
+    : (p.status === 'soldout' || p.status === 'removed')
+      ? `<span class="lottery-book-at" style="color:var(--text-hint)">At #${p.start_ticket}</span>`
+      : '';
   return `
     <div class="lottery-stock-book">
       <div class="lottery-book-info">
         <span class="lottery-book-label">#${p.pack_number}</span>
         <span class="pack-status-pill ${st.css}">${st.label}</span>
-        ${p.location ? `<span class="pack-loc-pill ${locCss}">${p.location}</span>` : ''}
-        ${dirPill}
-        ${isActive ? `<span class="lottery-book-at">Ticket #${p.start_ticket}</span>` : ''}
+        ${p.location && isActive ? `<span class="pack-loc-pill ${locCss}">${p.location}</span>` : ''}
+        ${dirPill}${ticketInfo}
       </div>
       ${isActive && ticketsPerPack > 0 ? `<div class="lottery-book-bar-wrap"><div class="lottery-book-bar" style="width:${pct}%"></div></div>` : ''}
       <div class="lottery-book-actions">${_packActionHtml(p)}${_packRemoveBtn(p)}</div>
@@ -996,6 +1107,16 @@ function renderPackRowByLoc(p) {
 
 // ===== STOCK VIEW =====
 
+let _stockStatusFilter = 'active';
+
+function setStockFilter(filter) {
+  _stockStatusFilter = filter;
+  document.querySelectorAll('.stock-filter-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.filter === filter)
+  );
+  loadLotteryStock();
+}
+
 function setStockView(mode) {
   _stockViewMode = mode;
   document.getElementById('stock-view-game').classList.toggle('active', mode === 'game');
@@ -1006,13 +1127,19 @@ function setStockView(mode) {
 async function loadLotteryStock() {
   const el = document.getElementById('lottery-stock-container');
   el.innerHTML = '<div class="summary-loading">Loading…</div>';
-  // Only include loading_direction if the column exists
   const select = _dbCaps.hasLoadingDirection
     ? `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,loading_direction,status,location,lottery_games(game_name,price,tickets_per_pack)`
     : `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,status,location,lottery_games(game_name,price,tickets_per_pack)`;
+  const statusQ = {
+    active:   'status=eq.activated',
+    received: 'status=eq.received',
+    soldout:  'status=eq.soldout',
+    removed:  'status=eq.removed',
+    all:      'status=in.(received,activated,soldout,removed)',
+  }[_stockStatusFilter] || 'status=in.(received,activated,soldout)';
   try {
     const res = await sbFetch(
-      `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=${select}&status=in.(received,activated,soldout)&order=game_number.asc,status.asc,pack_number.asc&limit=500`
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=${select}&${statusQ}&order=game_number.asc,status.asc,pack_number.asc&limit=500`
     );
     const rows = await res.json();
     if (!res.ok) throw new Error(rows?.message || `[${res.status}]`);
@@ -1044,31 +1171,31 @@ function renderLotteryStockByGame(rows) {
     games[gn].packs.push(row);
   }
   const sorted       = Object.values(games).sort((a, b) => parseFloat(a.price) - parseFloat(b.price));
-  const totInStock   = sorted.reduce((s, g) => s + g.packs.filter(p => p.status !== 'soldout').length, 0);
-  const totActivated = sorted.reduce((s, g) => s + g.packs.filter(p => p.status === 'activated').length, 0);
+  const totActive    = sorted.reduce((s, g) => s + g.packs.filter(p => p.status === 'activated').length, 0);
+  const totAll       = sorted.reduce((s, g) => s + g.packs.length, 0);
   el.innerHTML = `
     <div class="lottery-stock-table">
       ${sorted.map(g => {
-        const activated  = g.packs.filter(p => p.status === 'activated');
-        const received   = g.packs.filter(p => p.status === 'received');
-        const soldOut    = g.packs.filter(p => p.status === 'soldout').length;
-        const inStock    = activated.length + received.length;
+        const activated = g.packs.filter(p => p.status === 'activated');
+        const received  = g.packs.filter(p => p.status === 'received');
+        const soldOut   = g.packs.filter(p => p.status === 'soldout');
+        const removed   = g.packs.filter(p => p.status === 'removed');
+        const visible   = [...activated, ...received, ...soldOut, ...removed];
         return `
           <div class="lottery-stock-game">
             <div class="lottery-stock-row">
               <div class="lottery-stock-name">${g.gameName}
                 <span class="item-badge lottery-price-badge">$${parseFloat(g.price).toFixed(2)}</span>
               </div>
-              <div class="lottery-stock-packs">${inStock} book${inStock !== 1 ? 's' : ''}</div>
-              <div class="lottery-stock-open-pill ${activated.length > 0 ? 'is-open' : ''}">${activated.length} activated</div>
+              <div class="lottery-stock-packs">${visible.length} book${visible.length !== 1 ? 's' : ''}</div>
+              <div class="lottery-stock-open-pill ${activated.length > 0 ? 'is-open' : ''}">${activated.length} active</div>
             </div>
             <div class="lottery-stock-books">
-              ${[...activated, ...received].map(p => renderPackRow(p, g.ticketsPerPack, g.gameName)).join('')}
-              ${soldOut > 0 ? `<div class="lottery-soldout-note">${soldOut} sold out</div>` : ''}
+              ${visible.map(p => renderPackRow(p, g.ticketsPerPack, g.gameName)).join('')}
             </div>
           </div>`;
       }).join('')}
-      <div class="lottery-stock-total"><span>${totInStock} book${totInStock !== 1 ? 's' : ''} in stock</span><span>${totActivated} activated</span></div>
+      <div class="lottery-stock-total"><span>${totAll} book${totAll !== 1 ? 's' : ''}</span><span>${totActive} active</span></div>
     </div>`;
 }
 
@@ -1583,21 +1710,32 @@ function renderShiftHistory(shifts) {
 
 // ===== TAB INIT =====
 
-async function initLotteryTab() {
+async function _ensureLotteryDbState() {
+  if (_lotteryDbStateReady) return;
+  _lotteryDbStateReady = true;
+  await checkDbCapabilities();
+  await loadCurrentDayShift();
+}
+
+// Receive tab — scan input lives here
+function initReceiveTab() {
   if (!_lotteryEventsReady) {
     _lotteryEventsReady = true;
     const inp = document.getElementById('lottery-input');
-    inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); submitLotteryInput(); } });
-    inp.addEventListener('paste',   () => { setTimeout(() => { const v = inp.value.trim(); if (v) lookupLotteryTicket(v); }, 50); });
-
-    // One-time capability check + load current day state
-    await checkDbCapabilities();
-    await loadCurrentDayShift();
+    if (inp) {
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); submitLotteryInput(); } });
+      inp.addEventListener('paste',   () => { setTimeout(() => { const v = inp.value.trim(); if (v) lookupLotteryTicket(v); }, 50); });
+    }
   }
   renderLotteryLog();
   renderLotteryStats();
+  refocusLottery();
+}
+
+// Lottery tab — inventory management + day/shift
+async function initLotteryTab() {
+  await _ensureLotteryDbState();
   loadLotteryDbStats();
   loadLotteryStock();
   loadShiftHistory();
-  refocusLottery();
 }

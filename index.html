@@ -31,6 +31,7 @@
   <button class="tab" id="tab-summary" onclick="switchTab('summary')">DB Summary</button>
   <button class="tab" id="tab-search" onclick="switchTab('search')">Search</button>
   <button class="tab active" id="tab-lottery" onclick="switchTab('lottery')">Lottery</button>
+  <button class="tab" id="tab-receive" onclick="switchTab('receive')">Receive</button>
 </div>
 
 <!-- LOCATION BAR (scan tab only) -->
@@ -221,16 +222,16 @@
 
   <!-- STATS -->
   <div class="stat-row" style="margin-bottom:14px">
-    <div class="stat"><div class="stat-val" id="lottery-stat-session">0</div><div class="stat-label">Session packs</div></div>
-    <div class="stat"><div class="stat-val" id="lottery-stat-tickets">0</div><div class="stat-label">Session tickets</div></div>
-    <div class="stat"><div class="stat-val" id="lottery-stat-db-packs">—</div><div class="stat-label">Total packs</div></div>
-    <div class="stat"><div class="stat-val" id="lottery-stat-games">—</div><div class="stat-label">Active books</div></div>
+    <div class="stat"><div class="stat-val" id="lottery-stat-db-packs">—</div><div class="stat-label">Active</div></div>
+    <div class="stat"><div class="stat-val" id="lottery-stat-games">—</div><div class="stat-label">Received</div></div>
+    <div class="stat"><div class="stat-val" id="lottery-stat-soldout">—</div><div class="stat-label">Sold Out</div></div>
+    <div class="stat"><div class="stat-val" id="lottery-stat-total">—</div><div class="stat-label">Total Books</div></div>
   </div>
 
-  <!-- STOCK OVERVIEW -->
+  <!-- LOTTERY INVENTORY -->
   <div class="scan-card" style="margin-bottom:14px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;flex-wrap:wrap">
-      <div class="card-label" style="margin:0">Current Stock</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px;flex-wrap:wrap">
+      <div class="card-label" style="margin:0">Lottery Inventory</div>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
         <div class="view-toggle">
           <button class="view-toggle-btn active" id="stock-view-game" onclick="setStockView('game')">By Game</button>
@@ -240,15 +241,43 @@
         <button class="log-act-btn" onclick="loadLotteryStock()">Refresh</button>
       </div>
     </div>
+    <div class="stock-filter-row">
+      <button class="stock-filter-btn active" data-filter="active" onclick="setStockFilter('active')">Active <span class="sf-count" id="sf-active">—</span></button>
+      <button class="stock-filter-btn" data-filter="received" onclick="setStockFilter('received')">Received <span class="sf-count" id="sf-received">—</span></button>
+      <button class="stock-filter-btn" data-filter="soldout" onclick="setStockFilter('soldout')">Sold Out <span class="sf-count" id="sf-soldout">—</span></button>
+      <button class="stock-filter-btn" data-filter="removed" onclick="setStockFilter('removed')">Removed</button>
+      <button class="stock-filter-btn" data-filter="all" onclick="setStockFilter('all')">All</button>
+    </div>
     <div id="lottery-stock-container"><div class="summary-loading">Loading…</div></div>
   </div>
 
-  <!-- TWO-COLUMN (reuses scan-layout) -->
+  <!-- SHIFT HISTORY -->
+  <div class="scan-card" style="margin-top:14px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div class="card-label" style="margin:0">Shift History</div>
+      <button class="log-act-btn" onclick="loadShiftHistory()">Refresh</button>
+    </div>
+    <div id="shift-history-container"><div class="summary-loading">Loading…</div></div>
+  </div>
+
+</div><!-- /screen-lottery -->
+
+<!-- ===== RECEIVE TAB ===== -->
+<div class="main" id="screen-receive" style="display:none">
+
+  <!-- Session stats -->
+  <div class="stat-row" style="margin-bottom:14px">
+    <div class="stat"><div class="stat-val" id="lottery-stat-session">0</div><div class="stat-label">This session</div></div>
+    <div class="stat"><div class="stat-val" id="lottery-stat-tickets">0</div><div class="stat-label">Tickets in</div></div>
+  </div>
+
   <div class="scan-layout">
   <div class="scan-col-left">
-
     <div class="scan-card">
       <div class="card-label">Receive lottery pack</div>
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">
+        Scans go to <strong>Office</strong> by default. Activate from the Lottery tab.
+      </div>
       <div class="scan-row">
         <input class="scan-input" id="lottery-input" type="text" inputmode="text"
           placeholder="Scan any ticket from pack…" autocomplete="off" autocorrect="off" spellcheck="false" />
@@ -261,7 +290,6 @@
       </div>
       <div id="lottery-result"></div>
     </div>
-
   </div><!-- /scan-col-left -->
 
   <div class="scan-col-right">
@@ -272,16 +300,7 @@
   </div><!-- /scan-col-right -->
   </div><!-- /scan-layout -->
 
-  <!-- SHIFT HISTORY -->
-  <div class="scan-card" style="margin-top:14px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-      <div class="card-label" style="margin:0">Shift History</div>
-      <button class="log-act-btn" onclick="loadShiftHistory()">Refresh</button>
-    </div>
-    <div id="shift-history-container"><div class="summary-loading">Loading…</div></div>
-  </div>
-
-</div><!-- /screen-lottery -->
+</div><!-- /screen-receive -->
 
 <!-- SHIFT CLOSE MODAL -->
 <div class="modal-overlay" id="shift-modal">
@@ -365,6 +384,22 @@
       <button class="modal-close" id="inv-skip-btn" style="flex:1;margin:0;padding:11px;display:none" onclick="skipInventory()">Skip</button>
       <button class="modal-add-btn" id="inv-confirm-btn" style="flex:2;margin:0"
         onmousedown="confirmInventory(event)" ontouchstart="confirmInventory(event)">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- REMOVE BOOK MODAL -->
+<div class="modal-overlay" id="remove-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Remove Book</div>
+    <div id="remove-book-info" style="font-size:13px;color:var(--text-muted);margin-bottom:14px"></div>
+    <label class="lottery-form-label" style="display:block;margin-bottom:6px">Removed at ticket #</label>
+    <input class="modal-input" id="remove-ticket-input" type="number" min="0" placeholder="e.g. 142" />
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="modal-close" style="flex:1;margin:0;padding:11px" onclick="closeRemoveModal()">Cancel</button>
+      <button class="modal-add-btn" id="remove-confirm-btn" style="flex:2;margin:0;background:var(--red-text);border-color:var(--red-border)"
+        onmousedown="confirmRemovePack(event)" ontouchstart="confirmRemovePack(event)">Remove</button>
     </div>
   </div>
 </div>

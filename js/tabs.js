@@ -1,11 +1,12 @@
 // ===== TAB NAVIGATION =====
 function switchTab(tab) {
-  const tabs    = ['scan', 'summary', 'search', 'lottery'];
+  const tabs    = ['scan', 'summary', 'search', 'lottery', 'receive'];
   const screens = {
     scan:    document.getElementById('screen-scan'),
     summary: document.getElementById('screen-summary'),
     search:  document.getElementById('screen-search'),
     lottery: document.getElementById('screen-lottery'),
+    receive: document.getElementById('screen-receive'),
   };
   const locBar = document.getElementById('loc-bar');
 
@@ -20,7 +21,8 @@ function switchTab(tab) {
   if (tab === 'search') {
     const si = document.getElementById('search-input');
     si.focus();
-    si.click(); // prompt keyboard on iOS
+    si.click();
   }
   if (tab === 'lottery') initLotteryTab();
+  if (tab === 'receive') initReceiveTab();
 }
