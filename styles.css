@@ -270,7 +270,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 .modal-title { font-size: 16px; font-weight: 700; margin-bottom: 14px; }
 .modal-input { width: 100%; border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 11px 12px; font-size: 15px; color: var(--text); background: var(--bg); margin-bottom: 8px; }
 .modal-input:focus { outline: none; border-color: var(--primary); }
-.modal-add-btn { width: 100%; background: var(--primary); border: none; border-radius: var(--radius-sm); padding: 12px; font-size: 14px; font-weight: 700; color: #fff; cursor: pointer; margin-bottom: 16px; }
+.modal-add-btn { width: 100%; display: flex; align-items: center; justify-content: center; background: var(--primary); border: none; border-radius: var(--radius-sm); padding: 12px; font-size: 14px; font-weight: 700; color: #fff; cursor: pointer; margin-bottom: 16px; }
 .location-list { display: flex; flex-direction: column; gap: 6px; }
 .location-item { display: flex; align-items: center; justify-content: space-between; background: var(--bg); border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 11px 12px; }
 .location-name { font-size: 14px; font-weight: 600; }
@@ -297,6 +297,52 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 .stock-filter-btn { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 20px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text-muted); cursor: pointer; transition: all .15s; display: inline-flex; align-items: center; gap: 4px; }
 .stock-filter-btn.active { background: var(--primary-bg); color: var(--primary); border-color: var(--primary-border); }
 .sf-count { font-size: 10px; font-weight: 800; opacity: .75; }
+.lottery-subtab-bar { display: flex; gap: 0; background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; margin-bottom: 14px; }
+.lottery-subtab { flex: 1; border: none; background: none; padding: 10px 14px; font-size: 13px; font-weight: 700; color: var(--text-muted); cursor: pointer; transition: background .15s, color .15s; }
+.lottery-subtab.active { background: var(--primary); color: #fff; }
+.catalog-table { display: flex; flex-direction: column; gap: 10px; }
+.catalog-row { border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; background: var(--bg); }
+.catalog-row-top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.catalog-game-num { font-size: 11px; font-weight: 800; color: var(--text-muted); background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 2px 7px; }
+.catalog-game-name { font-size: 14px; font-weight: 700; color: var(--text); flex: 1; min-width: 0; }
+.catalog-meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin-bottom: 10px; }
+.catalog-meta-cell { display: flex; flex-direction: column; gap: 1px; }
+.catalog-meta-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-hint); }
+.catalog-meta-val { font-size: 14px; font-weight: 700; color: var(--text); }
+.catalog-cnt-active { color: var(--green-text); }
+.catalog-cnt-rcvd   { color: var(--amber-text); }
+.catalog-cnt-sold   { color: var(--text-muted); }
+.catalog-row-actions { margin-left: auto; display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+.catalog-edit-btn { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 6px; border: 1.5px solid var(--primary-border); background: var(--primary-bg); color: var(--primary); cursor: pointer; transition: opacity .15s; }
+.catalog-edit-btn:hover { opacity: .8; }
+.catalog-del-btn  { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 6px; border: 1.5px solid var(--red-border); background: var(--red-bg); color: var(--red-text); cursor: pointer; transition: opacity .15s; }
+.catalog-del-btn:hover  { opacity: .8; }
+.catalog-in-use   { font-size: 11px; font-weight: 600; color: var(--text-hint); font-style: italic; }
+.catalog-barcode-section { border-top: 1px solid var(--border); padding-top: 9px; }
+/* Barcode display */
+.bc-full { font-family: 'Courier New', Courier, monospace; font-size: 20px; font-weight: 800; letter-spacing: .08em; margin-bottom: 8px; display: flex; align-items: center; flex-wrap: wrap; gap: 0; }
+.bc-sep  { color: var(--text-hint); margin: 0 1px; font-weight: 400; }
+.bc-seg  { padding: 2px 4px; border-radius: 3px; }
+.bc-game   { background: #dbeafe; color: #1d4ed8; }
+.bc-pack   { background: #dcfce7; color: #15803d; }
+.bc-ticket { background: #fef9c3; color: #854d0e; }
+.bc-check  { background: #f3e8ff; color: #7e22ce; }
+.bc-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 4px; }
+.bc-legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; }
+.bc-legend-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+.bc-legend-dot.bc-game   { background: #dbeafe; border: 1.5px solid #93c5fd; }
+.bc-legend-dot.bc-pack   { background: #dcfce7; border: 1.5px solid #86efac; }
+.bc-legend-dot.bc-ticket { background: #fef9c3; border: 1.5px solid #fde047; }
+.bc-legend-dot.bc-check  { background: #f3e8ff; border: 1.5px solid #d8b4fe; }
+.bc-legend-label { color: var(--text-muted); font-weight: 600; }
+.bc-legend-val   { font-family: 'Courier New', Courier, monospace; font-weight: 800; color: var(--text); }
+.bc-none { font-size: 12px; color: var(--text-hint); font-style: italic; }
+.bc-raw  { font-family: 'Courier New', Courier, monospace; font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+.bc-full-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.bc-copy-btn { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 5px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text-muted); cursor: pointer; flex-shrink: 0; transition: background .1s; }
+.bc-copy-btn:active { background: var(--primary-bg); color: var(--primary); }
+.pack-edit-btn { font-size: 13px; padding: 4px 7px; border-radius: 6px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text-muted); cursor: pointer; line-height: 1; transition: background .1s; }
+.pack-edit-btn:hover { background: var(--primary-bg); color: var(--primary); border-color: var(--primary-border); }
 
 .lottery-stock-table { display: flex; flex-direction: column; }
 .lottery-stock-game { border-bottom: 1px solid var(--border); }
@@ -348,6 +394,19 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 
 /* Day Close button variant */
 .log-act-day { background: var(--amber-bg) !important; color: var(--amber-text) !important; border-color: var(--amber-border) !important; }
+
+/* Reset trigger button */
+.reset-trigger-btn { color: var(--red-text) !important; border-color: var(--red-border) !important; opacity: .7; }
+.reset-trigger-btn:hover { opacity: 1; }
+
+/* Reset modal option buttons */
+.reset-packs-btn { background: var(--surface) !important; color: var(--text-main) !important; border-color: var(--border) !important; display: flex !important; }
+
+/* Received stock bar */
+.received-stock-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; padding: 8px 12px; background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius-sm); }
+.recv-stock-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; margin-right: 4px; }
+.recv-loc-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-muted); background: var(--bg); border: 1px solid var(--border); border-radius: 20px; padding: 3px 10px; }
+.recv-loc-pill strong { color: var(--text-main); font-weight: 700; }
 
 /* Day/Shift open status badges */
 .day-status-badge { display: inline-flex; align-items: center; font-size: 11px; font-weight: 700; border-radius: 4px; padding: 3px 8px; border: 1px solid; white-space: nowrap; }
@@ -433,6 +492,20 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 .shift-history-entry { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
 .shift-history-entry-game   { font-size: 12px; font-weight: 600; color: var(--text); }
 .shift-history-entry-detail { font-size: 11px; color: var(--text-muted); font-family: monospace; }
+/* Pack events inside shift history */
+.shift-events-list { border-top: 1px dashed var(--border); margin-top: 6px; padding-top: 6px; display: flex; flex-direction: column; gap: 3px; }
+.shift-event-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 11px; }
+.shift-event-badge { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; padding: 1px 5px; border-radius: 3px; flex-shrink: 0; }
+.shift-event-pack   { font-weight: 600; color: var(--text); }
+.shift-event-detail { color: var(--text-muted); }
+.shift-event-time   { color: var(--text-hint); font-size: 10px; margin-left: auto; }
+/* Badge colours per action */
+.ev-badge-received  { background: #dbeafe; color: #1d4ed8; }
+.ev-badge-activated { background: #dcfce7; color: #15803d; }
+.ev-badge-moved     { background: #f3e8ff; color: #7e22ce; }
+.ev-badge-removed   { background: var(--red-bg);   color: var(--red-text);   }
+.ev-badge-soldout   { background: var(--amber-bg);  color: var(--amber-text); }
+.ev-badge-adjusted  { background: var(--surface);   color: var(--text-muted); border: 1px solid var(--border); }
 
 /* ── MOBILE (< 500px): compact stats ──────────────────────────────────────── */
 @media (max-width: 499px) {

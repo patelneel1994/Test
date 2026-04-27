@@ -1,12 +1,11 @@
 // ===== TAB NAVIGATION =====
 function switchTab(tab) {
-  const tabs    = ['scan', 'summary', 'search', 'lottery', 'receive'];
+  const tabs    = ['scan', 'summary', 'search', 'lottery'];
   const screens = {
     scan:    document.getElementById('screen-scan'),
     summary: document.getElementById('screen-summary'),
     search:  document.getElementById('screen-search'),
     lottery: document.getElementById('screen-lottery'),
-    receive: document.getElementById('screen-receive'),
   };
   const locBar = document.getElementById('loc-bar');
 
@@ -24,5 +23,13 @@ function switchTab(tab) {
     si.click();
   }
   if (tab === 'lottery') initLotteryTab();
-  if (tab === 'receive') initReceiveTab();
+}
+
+function switchLotterySection(section) {
+  ['tracking', 'catalog', 'receive'].forEach(s => {
+    document.getElementById('lsub-' + s).classList.toggle('active', s === section);
+    document.getElementById('lsection-' + s).style.display = s === section ? '' : 'none';
+  });
+  if (section === 'receive') initReceiveTab();
+  if (section === 'catalog') loadLotteryCatalog();
 }

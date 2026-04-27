@@ -11,10 +11,14 @@ let _pendingActivation   = null;
 let _actDir              = 'asc';
 let _actType             = 'full';
 let _pendingShiftType    = 'shift';
+let _receiveLocation     = 'Office';
+let _pendingMoveId       = null;
+let _showInactiveGames   = false;
+let _pendingEditPackId   = null;
 let _currentDay          = null;
 let _currentShift        = null;
 let _dbCapsChecked       = false;
-const _dbCaps            = { hasLoadingDirection: false, hasFullDayTracking: false };
+const _dbCaps            = { hasLoadingDirection: false, hasFullDayTracking: false, hasPackEvents: false };
 const _packInfoCache     = {};
 
 // ---- Inventory state ----
@@ -33,14 +37,33 @@ async function checkDbCapabilities() {
   if (_dbCapsChecked) return;
   _dbCapsChecked = true;
   try {
-    const [lRes, dRes, sRes] = await Promise.all([
+    const [lRes, dRes, sRes, eRes] = await Promise.all([
       sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=loading_direction&limit=0`),
       sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_days?limit=0`),
       sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_shifts?select=day_id,opened_at,status&limit=0`),
+      sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_pack_events?limit=0`),
     ]);
     _dbCaps.hasLoadingDirection = lRes.ok;
     _dbCaps.hasFullDayTracking  = dRes.ok && sRes.ok;
+    _dbCaps.hasPackEvents       = eRes.ok;
   } catch (_) {}
+}
+
+// ===== PACK EVENT LOGGER =====
+
+function _logPackEvent(packId, action, details = {}) {
+  if (!_dbCaps.hasPackEvents || !packId) return;
+  const event = {
+    pack_id: packId,
+    action,
+    ...(_currentShift?.id ? { shift_id: _currentShift.id } : {}),
+    ...(_currentDay?.id   ? { day_id:   _currentDay.id   } : {}),
+    ...details,
+  };
+  // fire-and-forget — does not block the main action
+  sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_pack_events`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify(event) }).catch(() => {});
 }
 
 // ===== INVENTORY SCAN =====
@@ -52,12 +75,20 @@ const _INV_TITLES   = {
   'close-day':   'Day Close — Inventory (Required)',
 };
 
-async function openInventory(context) {
+async function openInventory(context, skipPrompt = false) {
   if (_dbCaps.hasFullDayTracking) {
     if (context.startsWith('close') && !_currentDay) {
       showError('No day open', 'Open a day first.'); return;
     }
-    if (context === 'close-shift' && !_currentShift) { showError('No shift open', 'Cannot change shift — no shift is currently open.'); return; }
+    if (context === 'close-shift' && !skipPrompt) {
+      if (!_currentShift) {
+        showError('No active shift', 'No shift is open for this day. Close and reopen the day to start a fresh shift.');
+        return;
+      }
+      // Prompt user whether to audit inventory first
+      document.getElementById('shift-audit-modal').classList.add('open');
+      return;
+    }
   }
 
   _invContext = context;
@@ -72,24 +103,34 @@ async function openInventory(context) {
   document.getElementById('inv-confirm-btn').textContent = confirmLbl[context] || 'Confirm';
 
   const listEl = document.getElementById('inv-book-list');
-  listEl.innerHTML = '<div class="summary-loading">Loading…</div>';
-  document.getElementById('inventory-modal').classList.add('open');
 
   try {
     const sel = _dbCaps.hasLoadingDirection
       ? `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,loading_direction,location,lottery_games(game_name,price,tickets_per_pack)`
       : `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,location,lottery_games(game_name,price,tickets_per_pack)`;
-    const base   = `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=${sel}&order=location.asc,pack_number.asc&limit=200`;
-    const isOpenDay = context === 'open-day';
-    const fetches = [sbFetch(`${base}&status=eq.activated`)];
-    if (isOpenDay) fetches.push(sbFetch(`${base}&status=eq.received`));
-    const results  = await Promise.all(fetches);
-    const jsons    = await Promise.all(results.map(r => r.json()));
-    _invPacks         = Array.isArray(jsons[0]) ? jsons[0] : [];
-    _invReceivedPacks = isOpenDay && Array.isArray(jsons[1]) ? jsons[1] : [];
+    const base = `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=${sel}&order=location.asc,pack_number.asc&limit=200`;
+    const [activeRes, receivedRes] = await Promise.all([
+      sbFetch(`${base}&status=eq.activated`),
+      sbFetch(`${base}&status=eq.received`),
+    ]);
+    const [activeJson, receivedJson] = await Promise.all([activeRes.json(), receivedRes.json()]);
+    _invPacks         = Array.isArray(activeJson)   ? activeJson   : [];
+    _invReceivedPacks = Array.isArray(receivedJson) ? receivedJson : [];
+
+    // Auto-commit when nothing to audit (no active AND no received to load)
+    if (!_invPacks.length && !_invReceivedPacks.length) {
+      if (context === 'open-day')               await _invCommitOpenDay();
+      else if (context.startsWith('close'))     await _invCommitClose(context === 'close-day' ? 'day' : 'shift');
+      return;
+    }
+
+    // Only open the modal once we know there's something to show
+    listEl.innerHTML = '';
+    document.getElementById('inventory-modal').classList.add('open');
     _renderInvList();
     _updateInvProgress();
   } catch (err) {
+    document.getElementById('inventory-modal').classList.add('open');
     listEl.innerHTML = `<div class="item-nf-sub">Load failed: ${err.message}</div>`;
   }
 
@@ -114,17 +155,17 @@ function loadReceivedPack(packId, location, e) {
 
 async function _refreshInvAfterLoad() {
   if (!document.getElementById('inventory-modal').classList.contains('open')) return;
-  const sel    = _dbCaps.hasLoadingDirection
+  const sel  = _dbCaps.hasLoadingDirection
     ? `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,loading_direction,location,lottery_games(game_name,price,tickets_per_pack)`
     : `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,location,lottery_games(game_name,price,tickets_per_pack)`;
-  const base   = `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=${sel}&order=location.asc,pack_number.asc&limit=200`;
-  const isOpenDay = _invContext === 'open-day';
-  const fetches = [sbFetch(`${base}&status=eq.activated`)];
-  if (isOpenDay) fetches.push(sbFetch(`${base}&status=eq.received`));
-  const results = await Promise.all(fetches);
-  const jsons   = await Promise.all(results.map(r => r.json()));
-  _invPacks         = Array.isArray(jsons[0]) ? jsons[0] : [];
-  _invReceivedPacks = isOpenDay && Array.isArray(jsons[1]) ? jsons[1] : [];
+  const base = `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=${sel}&order=location.asc,pack_number.asc&limit=200`;
+  const [activeRes, receivedRes] = await Promise.all([
+    sbFetch(`${base}&status=eq.activated`),
+    sbFetch(`${base}&status=eq.received`),
+  ]);
+  const [activeJson, receivedJson] = await Promise.all([activeRes.json(), receivedRes.json()]);
+  _invPacks         = Array.isArray(activeJson)   ? activeJson   : [];
+  _invReceivedPacks = Array.isArray(receivedJson) ? receivedJson : [];
   _renderInvList();
   _updateInvProgress();
 }
@@ -135,12 +176,106 @@ function closeInventoryModal() {
   _invContext = null; _invPacks = []; _invReceivedPacks = []; _invData = {};
 }
 
+// ===== SHIFT AUDIT PROMPT =====
+function closeShiftAuditModal() {
+  document.getElementById('shift-audit-modal').classList.remove('open');
+}
+
+function doAuditShiftChange(e) {
+  if (e) e.preventDefault();
+  closeShiftAuditModal();
+  openInventory('close-shift', true);
+}
+
+async function doSkipShiftChange(e) {
+  if (e) e.preventDefault();
+  const btn = e && e.currentTarget;
+  if (btn) btn.disabled = true;
+  closeShiftAuditModal();
+  try {
+    _invContext = 'close-shift';
+    _invPacks   = [];
+    _invData    = {};
+    await _invCommitClose('shift');
+  } catch (err) {
+    showError('Shift change failed', err.message);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// ===== RESET DATA =====
+function openResetModal() {
+  document.getElementById('reset-data-modal').classList.add('open');
+}
+function closeResetModal() {
+  document.getElementById('reset-data-modal').classList.remove('open');
+}
+
+async function confirmReset(_mode, e) {
+  if (e) e.preventDefault();
+  const btn = e && e.currentTarget;
+  if (btn) btn.disabled = true;
+  closeResetModal();
+  try {
+    const base = CONFIG.supabaseUrl + '/rest/v1/';
+
+    // 1. Reset activated packs → received
+    await sbFetch(`${base}lottery_packs?status=eq.activated`,
+      { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ status: 'received', location: null, start_ticket: null,
+          last_shift_ticket: null, loading_direction: null }) });
+
+    const dayId = _currentDay?.id;
+    if (dayId) {
+      // 2. Get all shift IDs for this day (needed to delete child rows)
+      const shiftsRes = await sbFetch(`${base}lottery_shifts?select=id&day_id=eq.${dayId}`);
+      const shifts    = await shiftsRes.json();
+      const shiftIds  = Array.isArray(shifts) ? shifts.map(s => s.id).filter(Boolean) : [];
+
+      // 3. Delete child rows before shifts (FK constraints)
+      const childDeletes = [];
+      if (shiftIds.length) {
+        childDeletes.push(
+          sbFetch(`${base}lottery_shift_entries?shift_id=in.(${shiftIds.join(',')})`, { method: 'DELETE' })
+        );
+        if (_dbCaps.hasPackEvents) {
+          childDeletes.push(
+            sbFetch(`${base}lottery_pack_events?shift_id=in.(${shiftIds.join(',')})`, { method: 'DELETE' })
+          );
+        }
+      }
+      // Also delete any day-level pack events not tied to a specific shift
+      if (_dbCaps.hasPackEvents) {
+        childDeletes.push(
+          sbFetch(`${base}lottery_pack_events?day_id=eq.${dayId}&shift_id=is.null`, { method: 'DELETE' })
+        );
+      }
+      if (childDeletes.length) await Promise.all(childDeletes);
+
+      // 4. Delete shifts, then the day
+      await sbFetch(`${base}lottery_shifts?day_id=eq.${dayId}`, { method: 'DELETE' });
+      await sbFetch(`${base}lottery_days?id=eq.${dayId}`,       { method: 'DELETE' });
+    }
+
+    _currentDay   = null;
+    _currentShift = null;
+    updateDayShiftButtons();
+    await Promise.all([loadLotteryStock(), loadShiftHistory()]);
+    loadLotteryDbStats();
+  } catch (err) {
+    showError('Reset failed', err.message);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 function _renderInvList() {
   const el      = document.getElementById('inv-book-list');
   const isClose = _invContext && _invContext.startsWith('close');
   const isOpenDay = _invContext === 'open-day';
 
-  if (!_invPacks.length) {
+  if (!_invPacks.length && !_invReceivedPacks.length) {
     el.innerHTML = '<div class="log-empty" style="border:none;padding:8px 0">No active books — proceed.</div>';
     return;
   }
@@ -153,7 +288,9 @@ function _renderInvList() {
     byLoc[loc].push(p);
   }
 
-  let html = '';
+  let html = !_invPacks.length
+    ? '<div class="log-empty" style="border:none;padding:4px 0 8px">No active books.</div>'
+    : '';
   for (const loc of locOrder) {
     const packs = byLoc[loc];
     if (!packs || !packs.length) continue;
@@ -191,10 +328,11 @@ function _renderInvList() {
     }
     html += '</div>';
   }
-  // ── Received books section (open-day only) ───────────────────────────────
-  if (_invContext === 'open-day' && _invReceivedPacks.length) {
+  // ── Received books section (any audit context) ───────────────────────────
+  if (_invReceivedPacks.length) {
+    const recLabel = isClose ? 'Load received books into this shift' : 'Load received books into this day';
     html += `<div class="inv-rec-section">
-      <div class="inv-rec-header">Load received books into this day</div>`;
+      <div class="inv-rec-header">${recLabel}</div>`;
     for (const p of _invReceivedPacks) {
       const game = p.lottery_games || {};
       html += `
@@ -548,7 +686,7 @@ function updateDayShiftButtons() {
     el.innerHTML = `<button class="log-act-btn log-act-day" onclick="openInventory('open-day')">Open Day</button>`;
   } else {
     el.innerHTML = `
-      <span class="day-status-badge day-status-shift">Shift Open</span>
+      <span class="day-status-badge day-status-day">Day Open</span>
       <button class="log-act-btn" onclick="openInventory('close-shift')">Change Shift</button>
       <button class="log-act-btn log-act-day" onclick="openInventory('close-day')">Close Day</button>`;
   }
@@ -737,17 +875,26 @@ async function fetchLotteryPack(gameNumber, packNumber) {
   return Array.isArray(d) && d.length ? d[0] : null;
 }
 
+function setReceiveLocation(loc) {
+  _receiveLocation = loc;
+  document.getElementById('recv-loc-office').classList.toggle('active', loc === 'Office');
+  document.getElementById('recv-loc-front').classList.toggle('active',  loc === 'Front - Extra');
+}
+
 async function doReceivePack(parsed, game) {
   renderLotteryResult({ type: 'loading' });
   try {
-    await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs`,
-      { method: 'POST', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+    const newPackRes = await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
         body: JSON.stringify({
           game_number: parsed.gameNumber, pack_number: parsed.packNumber,
           raw_barcode: parsed.raw, start_ticket: parsed.ticketPosition,
           end_ticket: game.tickets_per_pack - 1, last_shift_ticket: parsed.ticketPosition,
-          status: 'received', location: 'Office',
+          status: 'received', location: _receiveLocation,
         }) });
+    const newPacks = await newPackRes.json();
+    const newPackId = Array.isArray(newPacks) && newPacks[0] ? newPacks[0].id : null;
+    _logPackEvent(newPackId, 'received', { location_to: _receiveLocation, ticket_after: parsed.ticketPosition });
     _lotterySession.unshift({
       gameNumber: parsed.gameNumber, packNumber: parsed.packNumber,
       gameName: game.game_name, price: game.price, ticketsPerPack: game.tickets_per_pack,
@@ -868,11 +1015,13 @@ async function loadLotteryDbStats() {
   try {
     const cnt = url => sbFetch(`${CONFIG.supabaseUrl}/rest/v1/${url}&limit=1`, { headers: { 'Prefer': 'count=exact' } })
       .then(r => (r.headers.get('content-range') || '').split('/')[1] || '0');
-    const [active, received, soldout, total] = await Promise.all([
+    const [active, received, soldout, total, recPacks] = await Promise.all([
       cnt('lottery_packs?select=id&status=eq.activated'),
       cnt('lottery_packs?select=id&status=eq.received'),
       cnt('lottery_packs?select=id&status=eq.soldout'),
       cnt('lottery_packs?select=id'),
+      sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=id,location&status=eq.received&order=location.asc&limit=200`)
+        .then(r => r.json()).catch(() => []),
     ]);
     document.getElementById('lottery-stat-db-packs').textContent = active;
     document.getElementById('lottery-stat-games').textContent    = received;
@@ -887,7 +1036,32 @@ async function loadLotteryDbStats() {
     if (sfA) sfA.textContent = active;
     if (sfR) sfR.textContent = received;
     if (sfS) sfS.textContent = soldout;
+    // Received stock by location
+    _renderReceivedStockBar(Array.isArray(recPacks) ? recPacks : []);
   } catch (_) {}
+}
+
+function _renderReceivedStockBar(packs) {
+  const el = document.getElementById('received-stock-bar');
+  if (!el) return;
+  if (!packs.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  const byLoc = {};
+  for (const p of packs) {
+    const loc = p.location || 'Unassigned';
+    byLoc[loc] = (byLoc[loc] || 0) + 1;
+  }
+  const locOrder = ['Station Booth', 'Front - Extra', 'Office', 'Unassigned'];
+  const pills = locOrder
+    .filter(l => byLoc[l])
+    .map(l => `<span class="recv-loc-pill">${l}<strong>${byLoc[l]}</strong></span>`)
+    .join('');
+  // Any locations not in locOrder
+  const extra = Object.entries(byLoc)
+    .filter(([l]) => !locOrder.includes(l))
+    .map(([l, n]) => `<span class="recv-loc-pill">${l}<strong>${n}</strong></span>`)
+    .join('');
+  el.innerHTML = `<span class="recv-stock-label">In Stock</span>${pills}${extra}`;
+  el.style.display = 'flex';
 }
 
 function refocusLottery() {
@@ -916,10 +1090,16 @@ function removePackAtTicket(id, currentTicket, e) {
   const info = _packInfoCache[id] || {};
   const infoEl = document.getElementById('remove-book-info');
   if (infoEl) infoEl.textContent = info.gameName ? `${info.gameName} · Book #${info.packNumber}` : `Book ID: ${id}`;
-  const inp = document.getElementById('remove-ticket-input');
-  if (inp) inp.value = currentTicket != null ? String(currentTicket) : '';
+  const inp   = document.getElementById('remove-ticket-input');
+  const label = document.querySelector('#remove-modal .lottery-form-label');
+  const hasTicket = currentTicket != null;
+  if (inp) {
+    inp.value = hasTicket ? String(currentTicket) : '';
+    inp.style.display = hasTicket ? '' : 'none';
+  }
+  if (label) label.style.display = hasTicket ? '' : 'none';
   document.getElementById('remove-modal').classList.add('open');
-  setTimeout(() => { if (inp) inp.focus(); inp?.select(); }, 120);
+  setTimeout(() => { if (inp && hasTicket) { inp.focus(); inp.select(); } }, 120);
 }
 
 function closeRemoveModal() {
@@ -931,18 +1111,67 @@ async function confirmRemovePack(e) {
   if (e) e.preventDefault();
   if (!_pendingRemoveId) return;
   const inp = document.getElementById('remove-ticket-input');
-  const ticketNum = parseInt(inp?.value, 10);
-  if (isNaN(ticketNum) || ticketNum < 0) { showError('Invalid input', 'Enter a valid ticket number.'); return; }
   const btn = document.getElementById('remove-confirm-btn');
+  const update = { status: 'removed' };
+  const prevTicket = (_packInfoCache[_pendingRemoveId] || {}).startTicket;
+  let removedAtTicket = null;
+  if (inp && inp.style.display !== 'none') {
+    const ticketNum = parseInt(inp.value, 10);
+    if (isNaN(ticketNum) || ticketNum < 0) { showError('Invalid input', 'Enter a valid ticket number.'); return; }
+    update.start_ticket = ticketNum;
+    update.last_shift_ticket = ticketNum;
+    removedAtTicket = ticketNum;
+  }
   if (btn) btn.disabled = true;
   try {
     await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(_pendingRemoveId)}`,
       { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ status: 'removed', start_ticket: ticketNum, last_shift_ticket: ticketNum }) });
+        body: JSON.stringify(update) });
+    _logPackEvent(_pendingRemoveId, 'removed', { ticket_before: prevTicket ?? null, ticket_after: removedAtTicket });
     closeRemoveModal();
     await loadLotteryStock(); loadLotteryDbStats();
   } catch (err) {
     showError('Remove failed', err.message);
+  } finally { if (btn) btn.disabled = false; }
+}
+
+let _pendingSoldOutId = null;
+
+function openSoldOutModal(id, currentTicket, e) {
+  if (e) e.preventDefault();
+  _pendingSoldOutId = id;
+  const info  = _packInfoCache[id] || {};
+  const infoEl = document.getElementById('soldout-book-info');
+  if (infoEl) infoEl.textContent = info.gameName ? `${info.gameName} · Book #${info.packNumber}` : `Book ID: ${id}`;
+  const inp = document.getElementById('soldout-ticket-input');
+  if (inp) { inp.value = currentTicket != null ? String(currentTicket) : ''; }
+  document.getElementById('soldout-modal').classList.add('open');
+  setTimeout(() => { if (inp) { inp.focus(); inp.select(); } }, 120);
+}
+
+function closeSoldOutModal() {
+  document.getElementById('soldout-modal').classList.remove('open');
+  _pendingSoldOutId = null;
+}
+
+async function confirmSoldOut(e) {
+  if (e) e.preventDefault();
+  if (!_pendingSoldOutId) return;
+  const inp = document.getElementById('soldout-ticket-input');
+  const ticketNum = parseInt(inp?.value, 10);
+  if (isNaN(ticketNum) || ticketNum < 0) { showError('Invalid input', 'Enter the last ticket number sold.'); return; }
+  const btn = document.getElementById('soldout-confirm-btn');
+  if (btn) btn.disabled = true;
+  try {
+    const prevTicket = (_packInfoCache[_pendingSoldOutId] || {}).startTicket;
+    await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(_pendingSoldOutId)}`,
+      { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ status: 'soldout', start_ticket: ticketNum, last_shift_ticket: ticketNum }) });
+    _logPackEvent(_pendingSoldOutId, 'soldout', { ticket_before: prevTicket ?? null, ticket_after: ticketNum });
+    closeSoldOutModal();
+    await loadLotteryStock(); loadLotteryDbStats();
+  } catch (err) {
+    showError('Sold out failed', err.message);
   } finally { if (btn) btn.disabled = false; }
 }
 
@@ -958,7 +1187,95 @@ async function updatePackStatus(id, status, location, e) {
   } catch (err) { showError('Status update failed', err.message); }
 }
 
+// ===== MOVE PACK LOCATION =====
+
+function openMovePackModal(id, e) {
+  if (e) e.preventDefault();
+  _pendingMoveId = id;
+  const info  = _packInfoCache[id] || {};
+  const infoEl = document.getElementById('move-pack-info');
+  if (infoEl) infoEl.textContent = info.gameName ? `${info.gameName} · Book #${info.packNumber}` : `Book ID: ${id}`;
+  document.getElementById('move-pack-modal').classList.add('open');
+}
+
+function closeMovePackModal() {
+  document.getElementById('move-pack-modal').classList.remove('open');
+  _pendingMoveId = null;
+}
+
+async function confirmMovePack(newLocation, e) {
+  if (e) e.preventDefault();
+  if (!_pendingMoveId) return;
+  const prevLocation = (_packInfoCache[_pendingMoveId] || {}).location;
+  try {
+    await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(_pendingMoveId)}`,
+      { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ location: newLocation }) });
+    _logPackEvent(_pendingMoveId, 'moved', { location_from: prevLocation || null, location_to: newLocation });
+    closeMovePackModal();
+    await loadLotteryStock();
+  } catch (err) { showError('Move failed', err.message); }
+}
+
 // ===== ACTIVATION MODAL =====
+
+// ===== EDIT PACK POSITION / END =====
+
+function openEditPackModal(id, startTicket, endTicket, e) {
+  if (e) e.preventDefault();
+  _pendingEditPackId = id;
+  const info = _packInfoCache[id] || {};
+  const infoEl = document.getElementById('edit-pack-info');
+  if (infoEl) infoEl.textContent = info.gameName ? `${info.gameName} · Book #${info.packNumber}` : `Book ID: ${id}`;
+  const sInp = document.getElementById('edit-pack-start');
+  const eInp = document.getElementById('edit-pack-end');
+  if (sInp) sInp.value = startTicket != null ? String(startTicket) : '';
+  if (eInp) eInp.value = endTicket   != null ? String(endTicket)   : '';
+  document.getElementById('edit-pack-modal').classList.add('open');
+  setTimeout(() => sInp?.focus(), 120);
+}
+
+function closeEditPackModal() {
+  document.getElementById('edit-pack-modal').classList.remove('open');
+  _pendingEditPackId = null;
+}
+
+async function confirmEditPack(e) {
+  if (e) e.preventDefault();
+  if (!_pendingEditPackId) return;
+  const sVal = document.getElementById('edit-pack-start').value;
+  const eVal = document.getElementById('edit-pack-end').value;
+  const update = {};
+  if (sVal !== '') {
+    const s = parseInt(sVal, 10);
+    if (isNaN(s) || s < 0) { showError('Invalid', 'Enter a valid current position.'); return; }
+    update.start_ticket = s;
+    update.last_shift_ticket = s;
+  }
+  if (eVal !== '') {
+    const en = parseInt(eVal, 10);
+    if (isNaN(en) || en < 0) { showError('Invalid', 'Enter a valid end ticket number.'); return; }
+    update.end_ticket = en;
+  }
+  if (!Object.keys(update).length) { closeEditPackModal(); return; }
+  const btn = document.getElementById('edit-pack-confirm-btn');
+  if (btn) btn.disabled = true;
+  const prevTicket = (_packInfoCache[_pendingEditPackId] || {}).startTicket;
+  try {
+    await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(_pendingEditPackId)}`,
+      { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify(update) });
+    _logPackEvent(_pendingEditPackId, 'adjusted', {
+      ticket_before: prevTicket ?? null,
+      ticket_after:  update.start_ticket ?? null,
+      notes: update.end_ticket != null ? `end set to ${update.end_ticket}` : null,
+    });
+    closeEditPackModal();
+    await loadLotteryStock();
+  } catch (err) {
+    showError('Save failed', err.message);
+  } finally { if (btn) btn.disabled = false; }
+}
 
 function openActivationForm(id, location, e) {
   if (e) e.preventDefault();
@@ -1017,6 +1334,8 @@ async function confirmActivation(e) {
     await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(id)}`,
       { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
         body: JSON.stringify(update) });
+    _logPackEvent(id, 'activated', { location_to: location, ticket_after: startTicket,
+      notes: `${_actType} · ${_actDir}` });
     closeActivationModal();
     await loadLotteryStock(); loadLotteryDbStats();
     await _refreshInvAfterLoad();
@@ -1027,34 +1346,51 @@ async function confirmActivation(e) {
 // ===== PACK ROW RENDERERS =====
 
 function _packActionHtml(p) {
+  if (!_currentDay) return '';
   if (p.status === 'received') return `
     <button class="pack-act-btn act-station"
       onmousedown="openActivationForm('${p.id}','Station Booth',event)"
       ontouchstart="openActivationForm('${p.id}','Station Booth',event)">Station</button>
     <button class="pack-act-btn act-front"
       onmousedown="openActivationForm('${p.id}','Front - Extra',event)"
-      ontouchstart="openActivationForm('${p.id}','Front - Extra',event)">Front</button>`;
+      ontouchstart="openActivationForm('${p.id}','Front - Extra',event)">Front</button>
+    <button class="pack-act-btn"
+      onmousedown="openActivationForm('${p.id}','Office',event)"
+      ontouchstart="openActivationForm('${p.id}','Office',event)">Office</button>`;
   if (p.status === 'activated') return `
+    <button class="pack-act-btn"
+      onmousedown="openMovePackModal('${p.id}',event)"
+      ontouchstart="openMovePackModal('${p.id}',event)">Move</button>
     <button class="pack-act-btn act-soldout"
-      onmousedown="updatePackStatus('${p.id}','soldout',null,event)"
-      ontouchstart="updatePackStatus('${p.id}','soldout',null,event)">Sold Out</button>`;
+      onmousedown="openSoldOutModal('${p.id}',${p.start_ticket},event)"
+      ontouchstart="openSoldOutModal('${p.id}',${p.start_ticket},event)">Sold Out</button>`;
   return '';
 }
 
 function _packRemoveBtn(p) {
+  if (!_currentDay) return '';
   if (p.status === 'activated') return `
     <button class="pack-remove-btn"
       onmousedown="removePackAtTicket('${p.id}',${p.start_ticket},event)"
       ontouchstart="removePackAtTicket('${p.id}',${p.start_ticket},event)" title="Remove at ticket #">✕</button>`;
   if (p.status === 'received') return `
     <button class="pack-remove-btn"
-      onmousedown="updatePackStatus('${p.id}','removed',null,event)"
-      ontouchstart="updatePackStatus('${p.id}','removed',null,event)" title="Remove">✕</button>`;
+      onmousedown="removePackAtTicket('${p.id}',null,event)"
+      ontouchstart="removePackAtTicket('${p.id}',null,event)" title="Remove">✕</button>`;
   return '';
 }
 
+function _packEditBtn(p) {
+  if (!_currentDay) return '';
+  if (p.status !== 'activated' && p.status !== 'received') return '';
+  return `<button class="pack-edit-btn"
+    onmousedown="openEditPackModal('${p.id}',${p.start_ticket},${p.end_ticket != null ? p.end_ticket : 'null'},event)"
+    ontouchstart="openEditPackModal('${p.id}',${p.start_ticket},${p.end_ticket != null ? p.end_ticket : 'null'},event)"
+    title="Edit position / end">✎</button>`;
+}
+
 function renderPackRow(p, ticketsPerPack, gameName) {
-  _packInfoCache[p.id] = { ticketsPerPack, gameName: gameName || '', packNumber: p.pack_number, startTicket: p.start_ticket };
+  _packInfoCache[p.id] = { ticketsPerPack, gameName: gameName || '', packNumber: p.pack_number, startTicket: p.start_ticket, location: p.location };
   const st       = PACK_STATUS[p.status] || { label: p.status, css: '' };
   const locCss   = PACK_LOC_CSS[p.location] || 'loc-office';
   const isActive = p.status === 'activated';
@@ -1075,7 +1411,7 @@ function renderPackRow(p, ticketsPerPack, gameName) {
         ${dirPill}${ticketInfo}
       </div>
       ${isActive && ticketsPerPack > 0 ? `<div class="lottery-book-bar-wrap"><div class="lottery-book-bar" style="width:${pct}%"></div></div>` : ''}
-      <div class="lottery-book-actions">${_packActionHtml(p)}${_packRemoveBtn(p)}</div>
+      <div class="lottery-book-actions">${_packActionHtml(p)}${_packEditBtn(p)}${_packRemoveBtn(p)}</div>
     </div>`;
 }
 
@@ -1084,7 +1420,7 @@ function renderPackRowByLoc(p) {
   const gName  = game.game_name || `Game #${p.game_number}`;
   const price  = parseFloat(game.price || 0);
   const tpp    = game.tickets_per_pack || 0;
-  _packInfoCache[p.id] = { ticketsPerPack: tpp, gameName: gName, packNumber: p.pack_number, startTicket: p.start_ticket };
+  _packInfoCache[p.id] = { ticketsPerPack: tpp, gameName: gName, packNumber: p.pack_number, startTicket: p.start_ticket, location: p.location };
   const st      = PACK_STATUS[p.status] || { label: p.status, css: '' };
   const isActive = p.status === 'activated';
   const dir     = p.loading_direction;
@@ -1101,8 +1437,239 @@ function renderPackRowByLoc(p) {
         <span style="font-size:11px;color:var(--text-muted)">${gName}</span>
       </div>
       ${isActive && tpp > 0 ? `<div class="lottery-book-bar-wrap"><div class="lottery-book-bar" style="width:${pct}%"></div></div>` : ''}
-      <div class="lottery-book-actions">${_packActionHtml(p)}${_packRemoveBtn(p)}</div>
+      <div class="lottery-book-actions">${_packActionHtml(p)}${_packEditBtn(p)}${_packRemoveBtn(p)}</div>
     </div>`;
+}
+
+// ===== LOTTERY CATALOG (game definitions) =====
+
+function copyToClipboard(text, btn) {
+  navigator.clipboard.writeText(text).then(() => {
+    if (btn) { const orig = btn.textContent; btn.textContent = 'Copied!'; setTimeout(() => { btn.textContent = orig; }, 1500); }
+  }).catch(() => { if (btn) btn.textContent = 'Failed'; });
+}
+
+function _renderBarcodeBreakdown(raw) {
+  if (!raw) return '<div class="bc-none">No barcode on file</div>';
+  const clean = raw.replace(/[^0-9]/g, '');
+  let segments;
+  if (clean.length === 14) {
+    segments = [
+      { val: clean.slice(0, 4),  label: 'Game #',   cls: 'bc-game'   },
+      { val: clean.slice(4, 10), label: 'Pack #',   cls: 'bc-pack'   },
+      { val: clean.slice(10,13), label: 'Ticket #', cls: 'bc-ticket' },
+      { val: clean.slice(13),    label: 'Check',    cls: 'bc-check'  },
+    ];
+  } else if (clean.length === 13) {
+    segments = [
+      { val: clean.slice(0, 4),  label: 'Game #',   cls: 'bc-game'   },
+      { val: clean.slice(4, 10), label: 'Pack #',   cls: 'bc-pack'   },
+      { val: clean.slice(10),    label: 'Ticket #', cls: 'bc-ticket' },
+    ];
+  } else if (clean.length === 12) {
+    segments = [
+      { val: clean.slice(0, 3),  label: 'Game #',   cls: 'bc-game'   },
+      { val: clean.slice(3, 9),  label: 'Pack #',   cls: 'bc-pack'   },
+      { val: clean.slice(9),     label: 'Ticket #', cls: 'bc-ticket' },
+    ];
+  } else {
+    return `<div class="bc-raw">${raw}</div><div class="bc-none">Unrecognized format (${clean.length} digits)</div>`;
+  }
+
+  const fullDisplay = segments.map(s => `<span class="bc-seg ${s.cls}">${s.val}</span>`).join('<span class="bc-sep">-</span>');
+  const legend = segments.map(s =>
+    `<div class="bc-legend-item"><span class="bc-legend-dot ${s.cls}"></span><span class="bc-legend-label">${s.label}</span><span class="bc-legend-val">${s.val}</span></div>`
+  ).join('');
+  // raw is all-digits so safe in onclick attribute
+  return `
+    <div class="bc-full-row">
+      <div class="bc-full">${fullDisplay}</div>
+      <button class="bc-copy-btn" onclick="copyToClipboard('${clean}',this)" title="Copy barcode">Copy</button>
+    </div>
+    <div class="bc-legend">${legend}</div>`;
+}
+
+const _catalogGameCache = {};
+
+function toggleInactiveGames() {
+  _showInactiveGames = !_showInactiveGames;
+  const btn = document.getElementById('catalog-inactive-btn');
+  if (btn) btn.classList.toggle('active', _showInactiveGames);
+  loadLotteryCatalog();
+}
+
+async function loadLotteryCatalog() {
+  const el = document.getElementById('lottery-catalog-container');
+  if (!el) return;
+  el.innerHTML = '<div class="summary-loading">Loading…</div>';
+  const activeFilter = _showInactiveGames ? '' : '&active=eq.true';
+  try {
+    const [gRes, pRes] = await Promise.all([
+      sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_games?select=game_number,game_name,price,tickets_per_pack,active&order=game_number.asc${activeFilter}&limit=200`),
+      sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=game_number,status,raw_barcode&order=game_number.asc,id.asc&limit=1000`),
+    ]);
+    const games = await gRes.json();
+    const packs = await pRes.json();
+    if (!gRes.ok) throw new Error(games?.message || `[${gRes.status}]`);
+
+    if (!Array.isArray(games) || !games.length) {
+      el.innerHTML = '<div class="log-empty">No games in catalog yet.</div>';
+      return;
+    }
+
+    // Count packs per game by status; grab first raw_barcode seen per game
+    const packCounts  = {};
+    const sampleBarcode = {};
+    for (const p of (Array.isArray(packs) ? packs : [])) {
+      const gn = p.game_number;
+      if (!packCounts[gn]) packCounts[gn] = { activated: 0, received: 0, soldout: 0, removed: 0, total: 0 };
+      packCounts[gn].total++;
+      if (packCounts[gn][p.status] !== undefined) packCounts[gn][p.status]++;
+      if (!sampleBarcode[gn] && p.raw_barcode) sampleBarcode[gn] = p.raw_barcode;
+    }
+
+    // Cache game data for edit modal lookup (avoids encoding in onclick)
+    for (const g of games) _catalogGameCache[g.game_number] = g;
+
+    let html = '<div class="catalog-table">';
+    for (const g of games) {
+      const price    = parseFloat(g.price || 0);
+      const tpp      = parseInt(g.tickets_per_pack || 0, 10);
+      const bookCost = price * tpp;
+      const cnts     = packCounts[g.game_number] || {};
+      const active   = cnts.activated || 0;
+      const received = cnts.received  || 0;
+      const soldout  = cnts.soldout   || 0;
+      const total    = cnts.total     || 0;
+      const stockParts = [
+        total ? `${total} total` : '0',
+        active   ? `<span class="catalog-cnt-active">${active} active</span>`   : '',
+        received ? `<span class="catalog-cnt-rcvd">${received} received</span>` : '',
+        soldout  ? `<span class="catalog-cnt-sold">${soldout} sold out</span>`  : '',
+      ].filter(Boolean).join(' · ');
+
+      const canEdit = total === 0;
+      const gn = g.game_number;
+      const editBtns = canEdit
+        ? `<button class="catalog-edit-btn" onclick="openEditGame('${gn}')">Edit</button>
+           ${g.active
+             ? `<button class="catalog-del-btn" onclick="softDeleteGame('${gn}')">Deactivate</button>`
+             : `<button class="catalog-edit-btn" onclick="reactivateGame('${gn}')">Reactivate</button>`}`
+        : `<span class="catalog-in-use">In use — ${total} book${total !== 1 ? 's' : ''}</span>`;
+
+      html += `
+        <div class="catalog-row" id="catalog-row-${g.game_number}">
+          <div class="catalog-row-top">
+            <div class="catalog-game-num">#${g.game_number}</div>
+            <div class="catalog-game-name">${g.game_name || '—'}</div>
+            ${g.active ? '<span class="pack-status-pill st-activated">Active</span>' : '<span class="pack-status-pill st-removed">Inactive</span>'}
+            <div class="catalog-row-actions">${editBtns}</div>
+          </div>
+          <div class="catalog-meta-grid">
+            <div class="catalog-meta-cell">
+              <div class="catalog-meta-label">Ticket Price</div>
+              <div class="catalog-meta-val">$${price.toFixed(2)}</div>
+            </div>
+            <div class="catalog-meta-cell">
+              <div class="catalog-meta-label">Tickets / Roll</div>
+              <div class="catalog-meta-val">${tpp > 0 ? tpp.toLocaleString() : '—'}</div>
+            </div>
+            <div class="catalog-meta-cell">
+              <div class="catalog-meta-label">Book Cost</div>
+              <div class="catalog-meta-val">$${bookCost > 0 ? bookCost.toFixed(2) : '—'}</div>
+            </div>
+            <div class="catalog-meta-cell">
+              <div class="catalog-meta-label">Books in Stock</div>
+              <div class="catalog-meta-val" style="font-size:13px">${stockParts || '0'}</div>
+            </div>
+          </div>
+          <div class="catalog-barcode-section">
+            <div class="catalog-meta-label" style="margin-bottom:6px">Barcode</div>
+            ${_renderBarcodeBreakdown(sampleBarcode[g.game_number])}
+          </div>
+        </div>`;
+    }
+    html += '</div>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = `<div class="item-nf-sub" style="padding:10px 0">Load failed: ${e.message}</div>`;
+  }
+}
+
+// ===== CATALOG EDIT / SOFT DELETE =====
+
+let _editGameNumber = null;
+
+function openEditGame(gameNumber) {
+  const g = _catalogGameCache[gameNumber];
+  if (!g) return;
+  _editGameNumber = g.game_number;
+  document.getElementById('edit-game-info').textContent = `Game #${g.game_number}`;
+  document.getElementById('edit-game-name').value  = g.game_name  || '';
+  document.getElementById('edit-game-price').value = g.price      != null ? g.price : '';
+  document.getElementById('edit-game-tpp').value   = g.tickets_per_pack > 0 ? g.tickets_per_pack : '';
+  document.getElementById('edit-game-modal').classList.add('open');
+  setTimeout(() => document.getElementById('edit-game-name').focus(), 120);
+}
+
+function closeEditGameModal() {
+  document.getElementById('edit-game-modal').classList.remove('open');
+  _editGameNumber = null;
+}
+
+async function confirmEditGame(e) {
+  if (e) e.preventDefault();
+  if (!_editGameNumber) return;
+  const name  = (document.getElementById('edit-game-name').value || '').trim();
+  const price = parseFloat(document.getElementById('edit-game-price').value);
+  const tpp   = parseInt(document.getElementById('edit-game-tpp').value, 10);
+  if (!name)               { showError('Missing field', 'Game name is required.'); return; }
+  if (isNaN(price) || price <= 0) { showError('Missing field', 'Enter a valid ticket price.'); return; }
+  if (isNaN(tpp)   || tpp <= 0)   { showError('Missing field', 'Enter tickets per roll.'); return; }
+  const btn = document.getElementById('edit-game-confirm-btn');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await sbFetch(
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_games?game_number=eq.${encodeURIComponent(_editGameNumber)}`,
+      { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ game_name: name, price, tickets_per_pack: tpp }) }
+    );
+    if (!res.ok) { const d = await res.json(); throw new Error(d?.message || `[${res.status}]`); }
+    closeEditGameModal();
+    loadLotteryCatalog();
+  } catch (err) {
+    showError('Save failed', err.message);
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function softDeleteGame(gameNumber) {
+  if (!confirm(`Deactivate game #${gameNumber}? It will be hidden from active games but kept in history.`)) return;
+  try {
+    const res = await sbFetch(
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_games?game_number=eq.${encodeURIComponent(gameNumber)}`,
+      { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ active: false }) }
+    );
+    if (!res.ok) { const d = await res.json(); throw new Error(d?.message || `[${res.status}]`); }
+    loadLotteryCatalog();
+  } catch (err) {
+    showError('Deactivate failed', err.message);
+  }
+}
+
+async function reactivateGame(gameNumber) {
+  try {
+    const res = await sbFetch(
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_games?game_number=eq.${encodeURIComponent(gameNumber)}`,
+      { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ active: true }) }
+    );
+    if (!res.ok) { const d = await res.json(); throw new Error(d?.message || `[${res.status}]`); }
+    loadLotteryCatalog();
+  } catch (err) {
+    showError('Reactivate failed', err.message);
+  }
 }
 
 // ===== STOCK VIEW =====
@@ -1445,9 +2012,12 @@ async function loadShiftHistory() {
   try {
     if (_dbCaps.hasFullDayTracking) {
       // Query days with nested shifts and entries
+      const eventsSelect = _dbCaps.hasPackEvents
+        ? `,lottery_pack_events(id,action,location_from,location_to,ticket_before,ticket_after,notes,created_at,lottery_packs(pack_number,game_number,lottery_games(game_name)))`
+        : '';
       const res = await sbFetch(
         `${CONFIG.supabaseUrl}/rest/v1/lottery_days` +
-        `?select=id,opened_at,closed_at,status,total_tickets_sold,total_revenue,lottery_shifts(id,opened_at,closed_at,total_tickets_sold,total_revenue,status,lottery_shift_entries(pack_id,tickets_sold,revenue,ticket_at_open,ticket_at_close,lottery_packs(pack_number,game_number,lottery_games(game_name))))` +
+        `?select=id,opened_at,closed_at,status,total_tickets_sold,total_revenue,lottery_shifts(id,opened_at,closed_at,total_tickets_sold,total_revenue,status,lottery_shift_entries(pack_id,tickets_sold,revenue,ticket_at_open,ticket_at_close,lottery_packs(pack_number,game_number,lottery_games(game_name)))${eventsSelect})` +
         `&order=opened_at.desc&limit=20`
       );
       const days = await res.json();
@@ -1464,6 +2034,18 @@ async function loadShiftHistory() {
     }
   } catch (e) {
     if (el) el.innerHTML = `<div class="item-nf-sub" style="padding:10px 0">Load failed: ${e.message}</div>`;
+  }
+}
+
+function _packEventDetail(ev) {
+  switch (ev.action) {
+    case 'received':  return `received → ${ev.location_to || ''}${ev.ticket_after != null ? ` at #${ev.ticket_after}` : ''}`;
+    case 'activated': return `loaded to ${ev.location_to || '?'}${ev.ticket_after != null ? ` from #${ev.ticket_after}` : ''}${ev.notes ? ` (${ev.notes})` : ''}`;
+    case 'moved':     return `${ev.location_from || '?'} → ${ev.location_to || '?'}`;
+    case 'removed':   return `removed at #${ev.ticket_after ?? '?'}`;
+    case 'soldout':   return `sold out at #${ev.ticket_after ?? '?'}`;
+    case 'adjusted':  return `position ${ev.ticket_before ?? '?'} → ${ev.ticket_after ?? '?'}${ev.notes ? ` · ${ev.notes}` : ''}`;
+    default:          return ev.notes || '';
   }
 }
 
@@ -1574,6 +2156,8 @@ function renderDayHistory(days) {
       const openTime  = s.opened_at ? new Date(s.opened_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '?';
       const closeTime = s.closed_at ? new Date(s.closed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '?';
       const entries   = s.lottery_shift_entries || [];
+      const events    = (s.lottery_pack_events  || []).sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+
       const entriesHtml = entries.map(en => {
         const pack = en.lottery_packs || {}, game = pack.lottery_games || {};
         return `<div class="shift-history-entry">
@@ -1581,6 +2165,20 @@ function renderDayHistory(days) {
           <span class="shift-history-entry-detail">#${en.ticket_at_open}→#${en.ticket_at_close} · ${en.tickets_sold} sold · $${parseFloat(en.revenue).toFixed(2)}</span>
         </div>`;
       }).join('');
+
+      const eventsHtml = events.map(ev => {
+        const pack = ev.lottery_packs || {}, game = pack.lottery_games || {};
+        const packLabel = game.game_name ? `${game.game_name} #${pack.pack_number}` : (pack.pack_number ? `#${pack.pack_number}` : '');
+        const detail = _packEventDetail(ev);
+        const t = new Date(ev.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        return `<div class="shift-event-row ev-${ev.action}">
+          <span class="shift-event-badge ev-badge-${ev.action}">${ev.action}</span>
+          <span class="shift-event-pack">${packLabel}</span>
+          <span class="shift-event-detail">${detail}</span>
+          <span class="shift-event-time">${t}</span>
+        </div>`;
+      }).join('');
+
       html += `
         <div class="shift-history-item">
           <div class="shift-history-hdr">
@@ -1591,6 +2189,7 @@ function renderDayHistory(days) {
             <span class="shift-history-rev">$${parseFloat(s.total_revenue || 0).toFixed(2)}</span>
           </div>
           <div class="shift-history-sub">${s.total_tickets_sold || 0} tickets sold</div>
+          ${eventsHtml  ? `<div class="shift-events-list">${eventsHtml}</div>` : ''}
           ${entriesHtml ? `<div class="shift-history-entries">${entriesHtml}</div>` : ''}
         </div>`;
     }
@@ -1717,16 +2316,8 @@ async function _ensureLotteryDbState() {
   await loadCurrentDayShift();
 }
 
-// Receive tab — scan input lives here
+// Receive sub-section — called when switching to receive sub-tab
 function initReceiveTab() {
-  if (!_lotteryEventsReady) {
-    _lotteryEventsReady = true;
-    const inp = document.getElementById('lottery-input');
-    if (inp) {
-      inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); submitLotteryInput(); } });
-      inp.addEventListener('paste',   () => { setTimeout(() => { const v = inp.value.trim(); if (v) lookupLotteryTicket(v); }, 50); });
-    }
-  }
   renderLotteryLog();
   renderLotteryStats();
   refocusLottery();
@@ -1738,4 +2329,13 @@ async function initLotteryTab() {
   loadLotteryDbStats();
   loadLotteryStock();
   loadShiftHistory();
+  // Wire receive input events eagerly so they work without clicking sub-tab first
+  if (!_lotteryEventsReady) {
+    _lotteryEventsReady = true;
+    const inp = document.getElementById('lottery-input');
+    if (inp) {
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); submitLotteryInput(); } });
+      inp.addEventListener('paste',   () => { setTimeout(() => { const v = inp.value.trim(); if (v) lookupLotteryTicket(v); }, 50); });
+    }
+  }
 }
