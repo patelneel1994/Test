@@ -1725,10 +1725,11 @@ function copyToClipboard(text, btn) {
   }).catch(() => { if (btn) btn.textContent = 'Failed'; });
 }
 
-function _renderBarcodeBreakdown(raw) {
+function _renderBarcodeBreakdown(raw, knownGameNumber) {
   if (!raw) return '<div class="bc-none">No barcode on file</div>';
   const clean = raw.replace(/[^0-9]/g, '');
   let segments;
+
   if (clean.length === 14) {
     segments = [
       { val: clean.slice(0, 4),  label: 'Game #',   cls: 'bc-game'   },
@@ -1748,6 +1749,18 @@ function _renderBarcodeBreakdown(raw) {
       { val: clean.slice(3, 9),  label: 'Pack #',   cls: 'bc-pack'   },
       { val: clean.slice(9),     label: 'Ticket #', cls: 'bc-ticket' },
     ];
+  } else if (clean.length > 14) {
+    // Long barcode — determine game digit count from the known game number,
+    // falling back to 3-digit (legacy) if unknown.
+    const gd  = knownGameNumber && String(knownGameNumber).replace(/\D/g,'').length === 4 ? 4 : 3;
+    const pe  = gd + 6;   // pack end
+    const te  = pe + 3;   // ticket end
+    segments = [
+      { val: clean.slice(0, gd), label: 'Game #',   cls: 'bc-game'   },
+      { val: clean.slice(gd, pe),label: 'Pack #',   cls: 'bc-pack'   },
+      { val: clean.slice(pe, te),label: 'Ticket #', cls: 'bc-ticket' },
+      { val: clean.slice(te),    label: 'Scanner suffix', cls: 'bc-check' },
+    ];
   } else {
     return `<div class="bc-raw">${raw}</div><div class="bc-none">Unrecognized format (${clean.length} digits)</div>`;
   }
@@ -1756,7 +1769,6 @@ function _renderBarcodeBreakdown(raw) {
   const legend = segments.map(s =>
     `<div class="bc-legend-item"><span class="bc-legend-dot ${s.cls}"></span><span class="bc-legend-label">${s.label}</span><span class="bc-legend-val">${s.val}</span></div>`
   ).join('');
-  // raw is all-digits so safe in onclick attribute
   return `
     <div class="bc-full-row">
       <div class="bc-full">${fullDisplay}</div>
@@ -1861,7 +1873,7 @@ async function loadLotteryCatalog() {
           </div>
           <div class="catalog-barcode-section">
             <div class="catalog-meta-label" style="margin-bottom:6px">Barcode</div>
-            ${_renderBarcodeBreakdown(sampleBarcode[g.game_number])}
+            ${_renderBarcodeBreakdown(sampleBarcode[g.game_number], g.game_number)}
           </div>
         </div>`;
     }
