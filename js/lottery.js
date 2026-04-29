@@ -478,12 +478,22 @@ function _renderInvList() {
 function _handleInvBarcode(raw) {
   const scanInp = document.getElementById('inv-scan-input');
   if (scanInp) scanInp.value = '';
-  const parsed = parseLotteryBarcode(raw);
-  if (!parsed) {
-    _flashInvScanError(); return;
+  const result = parseLotteryBarcode(raw);
+  if (!result) { _flashInvScanError(); return; }
+
+  let parsed, pack;
+  if (result.ambiguous) {
+    // Resolve by matching against loaded pack list
+    for (const candidate of result.candidates) {
+      pack = _invPacks.find(p => p.game_number === candidate.gameNumber && p.pack_number === candidate.packNumber);
+      if (pack) { parsed = candidate; break; }
+    }
+    if (!pack) { _flashInvScanError('Book not in active list'); return; }
+  } else {
+    parsed = result;
+    pack = _invPacks.find(p => p.game_number === parsed.gameNumber && p.pack_number === parsed.packNumber);
+    if (!pack) { _flashInvScanError('Book not in active list'); return; }
   }
-  const pack = _invPacks.find(p => p.game_number === parsed.gameNumber && p.pack_number === parsed.packNumber);
-  if (!pack) { _flashInvScanError('Book not in active list'); return; }
 
   _invData[pack.id] = parsed.ticketPosition;
   const inp = document.getElementById(`inv-inp-${pack.id}`);
@@ -1019,25 +1029,36 @@ async function doOpenShift() {
 
 // ===== BARCODE PARSER =====
 // TN Lottery ITF-14: 14 digits = 13-digit ticket + check digit (discarded).
+function _parseSingleBarcode(raw, clean, gameDigits) {
+  const g = gameDigits, packEnd = g + 6, tickEnd = packEnd + 3;
+  if (clean.length < tickEnd) return null;
+  return {
+    raw, clean,
+    gameNumber:     clean.slice(0, g),
+    packNumber:     clean.slice(g, packEnd),
+    ticketPosition: parseInt(clean.slice(packEnd, tickEnd), 10),
+    formatted:      `${clean.slice(0, g)}-${clean.slice(g, packEnd)}-${clean.slice(packEnd, tickEnd)}`,
+  };
+}
+
 function parseLotteryBarcode(raw) {
   const clean = raw.replace(/[^0-9]/g, '');
-  if (clean.length === 14) {
-    return { raw, clean,
-      gameNumber: clean.slice(0,4), packNumber: clean.slice(4,10),
-      ticketPosition: parseInt(clean.slice(10,13),10),
-      formatted: `${clean.slice(0,4)}-${clean.slice(4,10)}-${clean.slice(10,13)}` };
-  }
-  if (clean.length === 13) {
-    return { raw, clean,
-      gameNumber: clean.slice(0,4), packNumber: clean.slice(4,10),
-      ticketPosition: parseInt(clean.slice(10),10),
-      formatted: `${clean.slice(0,4)}-${clean.slice(4,10)}-${clean.slice(10)}` };
-  }
-  if (clean.length === 12) {
-    return { raw, clean,
-      gameNumber: clean.slice(0,3), packNumber: clean.slice(3,9),
-      ticketPosition: parseInt(clean.slice(9),10),
-      formatted: `${clean.slice(0,3)}-${clean.slice(3,9)}-${clean.slice(9)}` };
+
+  // Unambiguous lengths: 12 → 3-digit game; 13–14 → 4-digit game
+  if (clean.length === 12) return _parseSingleBarcode(raw, clean, 3);
+  if (clean.length === 13 || clean.length === 14) return _parseSingleBarcode(raw, clean, 4);
+
+  // Long barcodes (≥15 digits, e.g. 22-digit scanner output):
+  // Legacy tickets use 3-digit game numbers, newer ones use 4-digit.
+  // Return both candidates — caller must resolve via DB or pack list.
+  if (clean.length > 14) {
+    return {
+      raw, clean, ambiguous: true,
+      candidates: [
+        _parseSingleBarcode(raw, clean, 3),  // legacy
+        _parseSingleBarcode(raw, clean, 4),  // new
+      ].filter(Boolean),
+    };
   }
   return null;
 }
@@ -1049,17 +1070,28 @@ function submitLotteryInput() {
   if (v) lookupLotteryTicket(v);
 }
 
+async function _resolveAmbiguousBarcode(result) {
+  // Try both candidates against DB; prefer 4-digit (new) if both exist, fall back to 3-digit (legacy)
+  const games = await Promise.all(result.candidates.map(c => fetchLotteryGame(c.gameNumber).catch(() => null)));
+  for (let i = games.length - 1; i >= 0; i--) {
+    if (games[i]) return result.candidates[i];
+  }
+  // Neither game exists — return 3-digit candidate so "no-game" flow can offer to create it
+  return result.candidates[0];
+}
+
 async function lookupLotteryTicket(raw) {
   const inp = document.getElementById('lottery-input');
   inp.value = '';
-  const parsed = parseLotteryBarcode(raw);
-  if (!parsed) {
-    renderLotteryResult({ type: 'error', msg: `Cannot parse "${raw}" — expected 12–14 digits.` });
+  const result = parseLotteryBarcode(raw);
+  if (!result) {
+    renderLotteryResult({ type: 'error', msg: `Cannot parse "${raw}" — expected 12+ digits.` });
     refocusLottery(); return;
   }
-  _currentLotteryParse = parsed;
   renderLotteryResult({ type: 'loading' });
   try {
+    const parsed = result.ambiguous ? await _resolveAmbiguousBarcode(result) : result;
+    _currentLotteryParse = parsed;
     const game = await fetchLotteryGame(parsed.gameNumber);
     if (!game) { renderLotteryResult({ type: 'no-game', parsed }); return; }
     const pack = await fetchLotteryPack(parsed.gameNumber, parsed.packNumber);
