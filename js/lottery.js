@@ -26,6 +26,7 @@ let _invContext       = null;
 let _invPacks         = [];     // active packs
 let _invReceivedPacks = [];     // received (not yet activated) packs — shown in open-day/shift
 let _invData          = {};     // pack_id → ticket number
+let _invSoldOut       = {};     // pack_id → finalTicket — staged sold-outs, committed on confirm
 let _invScanCleanup   = null;
 
 // ---- DB-state load guard ----
@@ -93,6 +94,7 @@ async function openInventory(context, skipPrompt = false) {
 
   _invContext = context;
   _invData    = {};
+  _invSoldOut = {};
   const isClose    = context.startsWith('close');
   const isOptional = _INV_OPTIONAL.has(context);
 
@@ -109,18 +111,18 @@ async function openInventory(context, skipPrompt = false) {
       ? `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,loading_direction,location,lottery_games(game_name,price,tickets_per_pack)`
       : `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,location,lottery_games(game_name,price,tickets_per_pack)`;
     const base = `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=${sel}&order=location.asc,pack_number.asc&limit=200`;
-    const [activeRes, receivedRes] = await Promise.all([
-      sbFetch(`${base}&status=eq.activated`),
-      sbFetch(`${base}&status=eq.received`),
-    ]);
-    const [activeJson, receivedJson] = await Promise.all([activeRes.json(), receivedRes.json()]);
-    _invPacks         = Array.isArray(activeJson)   ? activeJson   : [];
-    _invReceivedPacks = Array.isArray(receivedJson) ? receivedJson : [];
+    const isOpenDay = context === 'open-day';
+    const fetches = [sbFetch(`${base}&status=eq.activated`)];
+    if (isOpenDay) fetches.push(sbFetch(`${base}&status=eq.received`));
+    const results = await Promise.all(fetches);
+    const jsons   = await Promise.all(results.map(r => r.json()));
+    _invPacks         = Array.isArray(jsons[0]) ? jsons[0] : [];
+    _invReceivedPacks = isOpenDay && Array.isArray(jsons[1]) ? jsons[1] : [];
 
-    // Auto-commit when nothing to audit (no active AND no received to load)
+    // Auto-commit when nothing to audit
     if (!_invPacks.length && !_invReceivedPacks.length) {
-      if (context === 'open-day')               await _invCommitOpenDay();
-      else if (context.startsWith('close'))     await _invCommitClose(context === 'close-day' ? 'day' : 'shift');
+      if (context === 'open-day')           await _invCommitOpenDay();
+      else if (context.startsWith('close')) await _invCommitClose(context === 'close-day' ? 'day' : 'shift');
       return;
     }
 
@@ -155,17 +157,17 @@ function loadReceivedPack(packId, location, e) {
 
 async function _refreshInvAfterLoad() {
   if (!document.getElementById('inventory-modal').classList.contains('open')) return;
-  const sel  = _dbCaps.hasLoadingDirection
+  const sel     = _dbCaps.hasLoadingDirection
     ? `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,loading_direction,location,lottery_games(game_name,price,tickets_per_pack)`
     : `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,location,lottery_games(game_name,price,tickets_per_pack)`;
-  const base = `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=${sel}&order=location.asc,pack_number.asc&limit=200`;
-  const [activeRes, receivedRes] = await Promise.all([
-    sbFetch(`${base}&status=eq.activated`),
-    sbFetch(`${base}&status=eq.received`),
-  ]);
-  const [activeJson, receivedJson] = await Promise.all([activeRes.json(), receivedRes.json()]);
-  _invPacks         = Array.isArray(activeJson)   ? activeJson   : [];
-  _invReceivedPacks = Array.isArray(receivedJson) ? receivedJson : [];
+  const base    = `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=${sel}&order=location.asc,pack_number.asc&limit=200`;
+  const isOpenDay = _invContext === 'open-day';
+  const fetches = [sbFetch(`${base}&status=eq.activated`)];
+  if (isOpenDay) fetches.push(sbFetch(`${base}&status=eq.received`));
+  const results = await Promise.all(fetches);
+  const jsons   = await Promise.all(results.map(r => r.json()));
+  _invPacks         = Array.isArray(jsons[0]) ? jsons[0] : [];
+  _invReceivedPacks = isOpenDay && Array.isArray(jsons[1]) ? jsons[1] : [];
   _renderInvList();
   _updateInvProgress();
 }
@@ -173,7 +175,26 @@ async function _refreshInvAfterLoad() {
 function closeInventoryModal() {
   document.getElementById('inventory-modal').classList.remove('open');
   if (_invScanCleanup) { _invScanCleanup(); _invScanCleanup = null; }
-  _invContext = null; _invPacks = []; _invReceivedPacks = []; _invData = {};
+  _invContext = null; _invPacks = []; _invReceivedPacks = []; _invData = {}; _invSoldOut = {};
+}
+
+// ===== AUDIT SOLD-OUT STAGING =====
+
+function _invMarkSoldOut(packId) {
+  const info = _packInfoCache[packId] || {};
+  const finalTicket = _calcSoldOutFinalTicket(info);
+  if (finalTicket == null) { showError('Cannot mark sold out', 'Ticket count unknown for this book.'); return; }
+  _invSoldOut[packId] = finalTicket;
+  _invData[packId]    = finalTicket;
+  _renderInvList();
+  _updateInvProgress();
+}
+
+function _invUnmarkSoldOut(packId) {
+  delete _invSoldOut[packId];
+  delete _invData[packId];
+  _renderInvList();
+  _updateInvProgress();
 }
 
 // ===== SHIFT AUDIT PROMPT =====
@@ -205,14 +226,41 @@ async function doSkipShiftChange(e) {
 }
 
 // ===== RESET DATA =====
-function openResetModal() {
+async function openResetModal() {
   document.getElementById('reset-data-modal').classList.add('open');
+  const el = document.getElementById('reset-current-counts');
+  if (!el) return;
+  el.textContent = 'Loading…';
+  try {
+    const base = CONFIG.supabaseUrl + '/rest/v1/';
+    const cnt  = url => sbFetch(`${base}${url}&limit=1`, { headers: { 'Prefer': 'count=exact' } })
+      .then(r => parseInt((r.headers.get('content-range') || '0/0').split('/')[1] || '0', 10));
+    const [shifts, entries, events, books, games] = await Promise.all([
+      cnt('lottery_shifts?select=id'),
+      cnt('lottery_shift_entries?select=id'),
+      _dbCaps.hasPackEvents ? cnt('lottery_pack_events?select=id') : Promise.resolve(0),
+      cnt('lottery_packs?select=id'),
+      cnt('lottery_games?select=game_number'),
+    ]);
+    const item = (n, label) => n > 0
+      ? `<span class="reset-count-item reset-count-has">${n} ${label}</span>`
+      : `<span class="reset-count-item reset-count-none">0 ${label}</span>`;
+    el.innerHTML =
+      `<span class="reset-count-label">Currently:</span>` +
+      item(shifts,  shifts  === 1 ? 'shift'  : 'shifts')  +
+      item(entries, entries === 1 ? 'entry'  : 'entries') +
+      item(events,  events  === 1 ? 'event'  : 'events')  +
+      item(books,   books   === 1 ? 'book'   : 'books')   +
+      item(games,   games   === 1 ? 'game'   : 'games');
+  } catch (_) {
+    el.textContent = '';
+  }
 }
 function closeResetModal() {
   document.getElementById('reset-data-modal').classList.remove('open');
 }
 
-async function confirmReset(_mode, e) {
+async function confirmReset(mode, e) {
   if (e) e.preventDefault();
   const btn = e && e.currentTarget;
   if (btn) btn.disabled = true;
@@ -220,42 +268,46 @@ async function confirmReset(_mode, e) {
   try {
     const base = CONFIG.supabaseUrl + '/rest/v1/';
 
-    // 1. Reset activated packs → received
-    await sbFetch(`${base}lottery_packs?status=eq.activated`,
-      { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ status: 'received', location: null, start_ticket: null,
-          last_shift_ticket: null, loading_direction: null }) });
+    // Step 1 — reset all non-received packs back to received (books/catalog modes delete packs entirely instead)
+    if (mode !== 'catalog' && mode !== 'books') {
+      await sbFetch(`${base}lottery_packs?status=in.(activated,soldout,removed)`,
+        { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ status: 'received', location: null, start_ticket: null,
+            last_shift_ticket: null, loading_direction: null }) });
+    }
 
-    const dayId = _currentDay?.id;
-    if (dayId) {
-      // 2. Get all shift IDs for this day (needed to delete child rows)
-      const shiftsRes = await sbFetch(`${base}lottery_shifts?select=id&day_id=eq.${dayId}`);
-      const shifts    = await shiftsRes.json();
-      const shiftIds  = Array.isArray(shifts) ? shifts.map(s => s.id).filter(Boolean) : [];
+    // Step 2 — fetch all shift IDs (needed to cascade-delete entries)
+    const allShiftsRes = await sbFetch(`${base}lottery_shifts?select=id&limit=1000`);
+    const allShifts    = await allShiftsRes.json();
+    const allShiftIds  = Array.isArray(allShifts) ? allShifts.map(s => s.id).filter(Boolean) : [];
 
-      // 3. Delete child rows before shifts (FK constraints)
-      const childDeletes = [];
-      if (shiftIds.length) {
-        childDeletes.push(
-          sbFetch(`${base}lottery_shift_entries?shift_id=in.(${shiftIds.join(',')})`, { method: 'DELETE' })
-        );
-        if (_dbCaps.hasPackEvents) {
-          childDeletes.push(
-            sbFetch(`${base}lottery_pack_events?shift_id=in.(${shiftIds.join(',')})`, { method: 'DELETE' })
-          );
-        }
-      }
-      // Also delete any day-level pack events not tied to a specific shift
-      if (_dbCaps.hasPackEvents) {
-        childDeletes.push(
-          sbFetch(`${base}lottery_pack_events?day_id=eq.${dayId}&shift_id=is.null`, { method: 'DELETE' })
-        );
-      }
-      if (childDeletes.length) await Promise.all(childDeletes);
+    // Step 3 — delete shift entries + pack events (all/books/catalog modes) in parallel
+    const childDeletes = [];
+    if (allShiftIds.length) {
+      childDeletes.push(
+        sbFetch(`${base}lottery_shift_entries?shift_id=in.(${allShiftIds.join(',')})`, { method: 'DELETE' })
+      );
+    }
+    if ((mode === 'all' || mode === 'books' || mode === 'catalog') && _dbCaps.hasPackEvents) {
+      childDeletes.push(sbFetch(`${base}lottery_pack_events?id=not.is.null`, { method: 'DELETE' }));
+    }
+    if (childDeletes.length) await Promise.all(childDeletes);
 
-      // 4. Delete shifts, then the day
-      await sbFetch(`${base}lottery_shifts?day_id=eq.${dayId}`, { method: 'DELETE' });
-      await sbFetch(`${base}lottery_days?id=eq.${dayId}`,       { method: 'DELETE' });
+    // Step 4 — delete shifts then days
+    if (allShiftIds.length) {
+      await sbFetch(`${base}lottery_shifts?id=in.(${allShiftIds.join(',')})`, { method: 'DELETE' });
+    }
+    await sbFetch(`${base}lottery_days?id=not.is.null`, { method: 'DELETE' });
+
+    // Step 5 — books: delete all packs but keep game catalog
+    if (mode === 'books') {
+      await sbFetch(`${base}lottery_packs?id=not.is.null`, { method: 'DELETE' });
+    }
+
+    // Step 6 — catalog: delete all packs then all games
+    if (mode === 'catalog') {
+      await sbFetch(`${base}lottery_packs?id=not.is.null`, { method: 'DELETE' });
+      await sbFetch(`${base}lottery_games?game_number=not.is.null`, { method: 'DELETE' });
     }
 
     _currentDay   = null;
@@ -263,6 +315,8 @@ async function confirmReset(_mode, e) {
     updateDayShiftButtons();
     await Promise.all([loadLotteryStock(), loadShiftHistory()]);
     loadLotteryDbStats();
+    loadReceiveQueue();
+    if (mode === 'books' || mode === 'catalog') loadLotteryCatalog();
   } catch (err) {
     showError('Reset failed', err.message);
   } finally {
@@ -300,41 +354,101 @@ function _renderInvList() {
       const baseline = p.last_shift_ticket != null ? p.last_shift_ticket : p.start_ticket;
       const hasVal   = p.id in _invData;
       const scanned  = _invData[p.id];
-      // Discrepancy for open-day: scanned ticket differs from baseline
+      const dir      = (p.loading_direction || 'asc').toLowerCase();
+      // Populate cache so remove/soldout modals have game name + pack info
+      _packInfoCache[p.id] = {
+        ticketsPerPack:    game.tickets_per_pack || 0,
+        gameName:          game.game_name || '',
+        packNumber:        p.pack_number,
+        startTicket:       p.start_ticket,
+        endTicket:         p.end_ticket ?? null,
+        lastShiftTicket:   p.last_shift_ticket ?? null,
+        loadingDirection:  (p.loading_direction || 'asc').toLowerCase(),
+        location:          p.location,
+      };
+      const dirPill   = `<span class="pack-dir-pill ${dir === 'desc' ? 'dir-desc' : 'dir-asc'}">${dir === 'desc' ? '↓ DESC' : '↑ ASC'}</span>`;
+      const baseLabel = isClose ? 'Last close' : 'Last at';
+
+      // ── Sold-out staged in this audit session ──
+      if (p.id in _invSoldOut) {
+        const finalTicket = _invSoldOut[p.id];
+        const sold = _soldTickets(finalTicket, baseline, dir);
+        html += `
+          <div class="inv-book-row inv-scanned inv-row-soldout" id="inv-row-${p.id}">
+            <div class="inv-status" id="inv-status-${p.id}">✓</div>
+            <div class="inv-book-main">
+              <div class="inv-book-name">${game.game_name || `Game #${p.game_number}`}
+                <span class="inv-book-num">#${p.pack_number}</span>
+                <span class="pack-status-pill status-soldout">Sold Out</span>
+                ${dirPill}
+              </div>
+              <div class="inv-book-meta">${baseLabel} <strong>#${baseline}</strong> → Final <strong>#${finalTicket}</strong> · ${sold} ticket${sold !== 1 ? 's' : ''} sold</div>
+            </div>
+            <div class="inv-row-right">
+              <button class="pack-act-btn"
+                onmousedown="_invUnmarkSoldOut('${p.id}')"
+                ontouchstart="_invUnmarkSoldOut('${p.id}')">Undo</button>
+            </div>
+          </div>`;
+        continue;
+      }
+
+      // ── Normal row ──
+      const constraint = dir === 'desc' ? `enter ≤ ${baseline}` : `enter ≥ ${baseline}`;
       let discHtml = '';
       if (isOpenDay && hasVal && scanned !== baseline) {
-        const dir  = (p.loading_direction || 'asc').toLowerCase();
-        const diff = dir === 'desc' ? (baseline - scanned) : (scanned - baseline);
+        const diff   = dir === 'desc' ? (baseline - scanned) : (scanned - baseline);
         const isLoss = diff > 0;
         discHtml = `<div class="inv-disc ${isLoss ? 'inv-disc-warn' : 'inv-disc-ok'}">
           Expected #${baseline} — got #${scanned}${isLoss ? ` · ⚠ ${diff} ticket${diff !== 1 ? 's' : ''} unaccounted` : ' · OK'}
         </div>`;
       }
+      const soldOutBtn = `<button class="pack-act-btn act-soldout"
+            onmousedown="_invMarkSoldOut('${p.id}')"
+            ontouchstart="_invMarkSoldOut('${p.id}')">Sold Out</button>`;
+      const removeBtn = isOpenDay ? `<button class="pack-remove-btn"
+            onmousedown="removePackAtTicket('${p.id}',${p.start_ticket ?? 0},event)"
+            ontouchstart="removePackAtTicket('${p.id}',${p.start_ticket ?? 0},event)" title="Remove">✕</button>` : '';
+      const actionsHtml = `<div class="inv-row-actions">${soldOutBtn}${removeBtn}</div>`;
       html += `
         <div class="inv-book-row${hasVal ? ' inv-scanned' : ''}" id="inv-row-${p.id}">
           <div class="inv-status" id="inv-status-${p.id}">${hasVal ? '✓' : '○'}</div>
           <div class="inv-book-main">
             <div class="inv-book-name">${game.game_name || `Game #${p.game_number}`}
               <span class="inv-book-num">#${p.pack_number}</span>
+              ${dirPill}
             </div>
-            <div class="inv-book-meta">${isClose ? `Was #${baseline}` : `Last at #${baseline}`}</div>
+            <div class="inv-book-meta">${baseLabel} <strong>#${baseline}</strong> · <span class="inv-constraint">${constraint}</span></div>
             ${discHtml}
             <div class="inv-book-calc" id="inv-calc-${p.id}"></div>
           </div>
-          <input type="number" class="shift-ticket-input" id="inv-inp-${p.id}"
-            value="${hasVal ? scanned : ''}" placeholder="#"
-            min="0" oninput="_handleInvManual('${p.id}')" />
+          <div class="inv-row-right">
+            <input type="number" class="shift-ticket-input" id="inv-inp-${p.id}"
+              value="${hasVal ? scanned : ''}" placeholder="#"
+              min="0" oninput="_handleInvManual('${p.id}')" />
+            ${actionsHtml}
+          </div>
         </div>`;
     }
     html += '</div>';
   }
-  // ── Received books section (any audit context) ───────────────────────────
-  if (_invReceivedPacks.length) {
-    const recLabel = isClose ? 'Load received books into this shift' : 'Load received books into this day';
+  // ── Received books section (open-day only — load during shift via Receive tab) ──
+  if (isOpenDay && _invReceivedPacks.length) {
+    const recLabel = 'Load received books into this day';
     html += `<div class="inv-rec-section">
       <div class="inv-rec-header">${recLabel}</div>`;
     for (const p of _invReceivedPacks) {
       const game = p.lottery_games || {};
+      _packInfoCache[p.id] = {
+        ticketsPerPack:   game.tickets_per_pack || 0,
+        gameName:         game.game_name || '',
+        packNumber:       p.pack_number,
+        startTicket:      p.start_ticket ?? null,
+        endTicket:        p.end_ticket ?? null,
+        lastShiftTicket:  p.last_shift_ticket ?? null,
+        loadingDirection: (p.loading_direction || 'asc').toLowerCase(),
+        location:         null,
+      };
       html += `
         <div class="inv-rec-row" id="inv-rec-${p.id}">
           <div class="inv-book-main">
@@ -346,14 +460,7 @@ function _renderInvList() {
           <div style="display:flex;gap:5px;flex-shrink:0">
             <button class="pack-act-btn act-station"
               onmousedown="loadReceivedPack('${p.id}','Station Booth',event)"
-              ontouchstart="loadReceivedPack('${p.id}','Station Booth',event)">Station</button>
-            <button class="pack-act-btn act-front"
-              onmousedown="loadReceivedPack('${p.id}','Front - Extra',event)"
-              ontouchstart="loadReceivedPack('${p.id}','Front - Extra',event)">Front</button>
-            <button class="pack-act-btn"
-              onmousedown="loadReceivedPack('${p.id}','Office',event)"
-              ontouchstart="loadReceivedPack('${p.id}','Office',event)"
-              style="background:var(--bg);color:var(--text-muted);border-color:var(--border)">Office</button>
+              ontouchstart="loadReceivedPack('${p.id}','Station Booth',event)">Load to Station</button>
           </div>
         </div>`;
     }
@@ -443,21 +550,32 @@ function _handleInvManual(packId) {
   const inp = document.getElementById(`inv-inp-${packId}`);
   if (!inp) return;
   const val = parseInt(inp.value, 10);
+  const row = document.getElementById(`inv-row-${packId}`);
+  const st  = document.getElementById(`inv-status-${packId}`);
   if (!isNaN(val) && val >= 0) {
     _invData[packId] = val;
-    const row = document.getElementById(`inv-row-${packId}`);
-    const st  = document.getElementById(`inv-status-${packId}`);
-    if (row) row.classList.add('inv-scanned');
-    if (st)  st.textContent = '✓';
+    const isClose = _invContext && _invContext.startsWith('close');
+    const violation = isClose ? _invDirectionViolation(packId, val) : false;
+    inp.classList.toggle('inv-input-error', violation);
+    if (row) { row.classList.toggle('inv-scanned', !violation); row.classList.toggle('inv-row-violation', violation); }
+    if (st)  st.textContent = violation ? '⚠' : '✓';
   } else {
     delete _invData[packId];
-    const row = document.getElementById(`inv-row-${packId}`);
-    const st  = document.getElementById(`inv-status-${packId}`);
-    if (row) row.classList.remove('inv-scanned');
+    inp.classList.remove('inv-input-error');
+    if (row) { row.classList.remove('inv-scanned'); row.classList.remove('inv-row-violation'); }
     if (st)  st.textContent = '○';
   }
   if (_invContext && _invContext.startsWith('close')) { _updateInvCalc(packId); _updateInvTotals(); }
   _updateInvProgress();
+}
+
+function _invDirectionViolation(packId, val) {
+  const p = _invPacks.find(x => x.id === packId);
+  if (!p) return false;
+  const baseline = p.last_shift_ticket != null ? p.last_shift_ticket : p.start_ticket;
+  if (baseline == null) return false;
+  const dir = (p.loading_direction || 'asc').toLowerCase();
+  return dir === 'desc' ? val > baseline : val < baseline;
 }
 
 function _updateInvCalc(packId) {
@@ -466,8 +584,14 @@ function _updateInvCalc(packId) {
   if (!p || !calcEl || !(packId in _invData)) { if (calcEl) calcEl.textContent = ''; return; }
   const baseline = p.last_shift_ticket != null ? p.last_shift_ticket : p.start_ticket;
   const dir      = (p.loading_direction || 'asc').toLowerCase();
-  const price    = parseFloat(p.lottery_games?.price || 0);
-  const sold     = _soldTickets(_invData[packId], baseline, dir);
+  const val      = _invData[packId];
+  if (_invDirectionViolation(packId, val)) {
+    const expected = dir === 'desc' ? `≤ ${baseline}` : `≥ ${baseline}`;
+    calcEl.innerHTML = `<span class="inv-dir-error">⚠ Ticket must be ${expected} (${dir.toUpperCase()})</span>`;
+    return;
+  }
+  const price = parseFloat(p.lottery_games?.price || 0);
+  const sold  = _soldTickets(val, baseline, dir);
   calcEl.textContent = sold > 0 ? `→ ${sold} sold · $${(sold * price).toFixed(2)}` : '→ no change';
 }
 
@@ -504,8 +628,56 @@ function _updateInvProgress() {
   if (todoLbl) todoLbl.style.display = done >= total ? 'none' : '';
   if (todoCt)  todoCt.textContent   = total - done;
 
+  const isClose   = _invContext && _invContext.startsWith('close');
+  const isOpenDay = _invContext === 'open-day';
+
+  // Violation check (close contexts)
+  let hasViolation = false;
+  if (isClose) {
+    for (const p of _invPacks) {
+      if (!(p.id in _invData) || (p.id in _invSoldOut)) continue;
+      if (_invDirectionViolation(p.id, _invData[p.id])) { hasViolation = true; break; }
+    }
+  }
+
+  // Discrepancy panel (open-day only)
+  const discEl = document.getElementById('inv-disc-summary');
+  if (discEl) {
+    if (isOpenDay) {
+      const mismatches = _invPacks.filter(p => {
+        if (!(p.id in _invData) || (p.id in _invSoldOut)) return false;
+        const baseline = p.last_shift_ticket != null ? p.last_shift_ticket : p.start_ticket;
+        return baseline != null && _invData[p.id] !== baseline;
+      });
+      if (mismatches.length) {
+        const rows = mismatches.map(p => {
+          const game     = p.lottery_games || {};
+          const baseline = p.last_shift_ticket != null ? p.last_shift_ticket : p.start_ticket;
+          const scanned  = _invData[p.id];
+          const dir      = (p.loading_direction || 'asc').toLowerCase();
+          const diff     = dir === 'desc' ? baseline - scanned : scanned - baseline;
+          return `<div class="inv-disc-row">
+            <span><strong>${game.game_name || `Game #${p.game_number}`}</strong> #${p.pack_number}</span>
+            <span>Expected <strong>#${baseline}</strong> · Got <strong>#${scanned}</strong> · ⚠ ${Math.abs(diff)} ticket${Math.abs(diff) !== 1 ? 's' : ''} unaccounted</span>
+          </div>`;
+        }).join('');
+        discEl.style.display = '';
+        discEl.innerHTML = `<div class="inv-disc-summary-box">
+          <div class="inv-disc-summary-hdr">⚠ ${mismatches.length} discrepanc${mismatches.length !== 1 ? 'ies' : 'y'} — numbers don't match last close</div>
+          ${rows}
+        </div>`;
+      } else {
+        discEl.style.display = 'none';
+        discEl.innerHTML = '';
+      }
+    } else {
+      discEl.style.display = 'none';
+      discEl.innerHTML = '';
+    }
+  }
+
   const confirmBtn = document.getElementById('inv-confirm-btn');
-  if (confirmBtn) confirmBtn.disabled = !_INV_OPTIONAL.has(_invContext) && done < total && total > 0;
+  if (confirmBtn) confirmBtn.disabled = (!_INV_OPTIONAL.has(_invContext) && done < total && total > 0) || hasViolation;
 }
 
 async function confirmInventory(e) {
@@ -544,12 +716,39 @@ async function _invCommitOpenDay() {
   _currentDay = Array.isArray(days) && days[0] ? days[0] : null;
   _currentShift = null;
 
-  // Update baselines from inventory scan
-  if (Object.keys(_invData).length) {
-    await Promise.all(Object.entries(_invData).map(([id, ticket]) =>
+  // Log discrepancies (scanned ticket ≠ last close baseline) before updating baselines
+  for (const p of _invPacks) {
+    if (!(p.id in _invData) || (p.id in _invSoldOut)) continue;
+    const baseline = p.last_shift_ticket != null ? p.last_shift_ticket : p.start_ticket;
+    if (baseline != null && _invData[p.id] !== baseline) {
+      _logPackEvent(p.id, 'discrepancy', {
+        ticket_before: baseline,
+        ticket_after:  _invData[p.id],
+        notes: `open-day mismatch: expected #${baseline}, scanned #${_invData[p.id]}`,
+      });
+    }
+  }
+
+  // Update baselines from inventory scan (skip staged sold-outs — handled separately below)
+  const nonSoldOutEntries = Object.entries(_invData).filter(([id]) => !(id in _invSoldOut));
+  if (nonSoldOutEntries.length) {
+    await Promise.all(nonSoldOutEntries.map(([id, ticket]) =>
       sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(id)}`,
         { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
           body: JSON.stringify({ start_ticket: ticket, last_shift_ticket: ticket }) })));
+  }
+
+  // Commit staged sold-outs
+  if (Object.keys(_invSoldOut).length) {
+    await Promise.all(Object.entries(_invSoldOut).map(([id, finalTicket]) => {
+      _logPackEvent(id, 'soldout', {
+        ticket_before: (_packInfoCache[id] || {}).lastShiftTicket ?? (_packInfoCache[id] || {}).startTicket ?? null,
+        ticket_after: finalTicket, context: 'open-day',
+      });
+      return sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(id)}`,
+        { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ status: 'soldout', start_ticket: finalTicket, last_shift_ticket: finalTicket }) });
+    }));
   }
 
   // Auto-open first shift
@@ -607,11 +806,20 @@ async function _invCommitClose(type) {
         body: JSON.stringify(entries.map(en => ({ ...en, shift_id: shiftId }))) });
   }
 
+  // Log and commit sold-out packs, update ticket position for all others
+  for (const [id, finalTicket] of Object.entries(_invSoldOut)) {
+    _logPackEvent(id, 'soldout', {
+      ticket_before: (_packInfoCache[id] || {}).lastShiftTicket ?? (_packInfoCache[id] || {}).startTicket ?? null,
+      ticket_after: finalTicket, context: _invContext,
+    });
+  }
   await Promise.all(_invPacks.map(p => {
-    const tick = _invData[p.id] != null ? _invData[p.id] : p.start_ticket;
+    const tick      = _invData[p.id] != null ? _invData[p.id] : p.start_ticket;
+    const isSoldOut = p.id in _invSoldOut;
+    const extra     = isSoldOut ? { status: 'soldout' } : {};
     return sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(p.id)}`,
       { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ start_ticket: tick, last_shift_ticket: tick }) });
+        body: JSON.stringify({ start_ticket: tick, last_shift_ticket: tick, ...extra }) });
   }));
 
   _currentShift = null;
@@ -902,6 +1110,7 @@ async function doReceivePack(parsed, game) {
     });
     renderLotteryResult({ type: 'success', parsed, game });
     renderLotteryLog(); renderLotteryStats(); loadLotteryDbStats();
+    loadReceiveQueue();
     beepSuccess();
     if (navigator.vibrate) navigator.vibrate(40);
   } catch (e) { renderLotteryResult({ type: 'error', msg: e.message }); }
@@ -1130,6 +1339,7 @@ async function confirmRemovePack(e) {
     _logPackEvent(_pendingRemoveId, 'removed', { ticket_before: prevTicket ?? null, ticket_after: removedAtTicket });
     closeRemoveModal();
     await loadLotteryStock(); loadLotteryDbStats();
+    await _refreshInvAfterLoad(); loadReceiveQueue();
   } catch (err) {
     showError('Remove failed', err.message);
   } finally { if (btn) btn.disabled = false; }
@@ -1137,39 +1347,74 @@ async function confirmRemovePack(e) {
 
 let _pendingSoldOutId = null;
 
-function openSoldOutModal(id, currentTicket, e) {
+let _pendingSoldOutFinalTicket = null;
+
+function _calcSoldOutFinalTicket(info) {
+  const dir = info.loadingDirection || 'asc';
+  const tpp = info.ticketsPerPack || 0;
+  if (tpp <= 0) return null;
+  // Use game's tickets_per_pack as the source of truth for the absolute end of the book.
+  // ASC books run 0 → tpp-1; DESC books run tpp-1 → 0.
+  return dir === 'desc' ? 0 : tpp - 1;
+}
+
+function openSoldOutModal(id, _unused, e) {
   if (e) e.preventDefault();
   _pendingSoldOutId = id;
-  const info  = _packInfoCache[id] || {};
+  const info = _packInfoCache[id] || {};
+  const dir  = info.loadingDirection || 'asc';
+
+  const finalTicket = _calcSoldOutFinalTicket(info);
+  _pendingSoldOutFinalTicket = finalTicket;
+
+  const baseline  = info.lastShiftTicket != null ? info.lastShiftTicket : info.startTicket;
+  const sold      = (finalTicket != null && baseline != null) ? _soldTickets(finalTicket, baseline, dir) : null;
+  const dirLabel  = dir === 'desc' ? '↓ DESC' : '↑ ASC';
+
   const infoEl = document.getElementById('soldout-book-info');
   if (infoEl) infoEl.textContent = info.gameName ? `${info.gameName} · Book #${info.packNumber}` : `Book ID: ${id}`;
-  const inp = document.getElementById('soldout-ticket-input');
-  if (inp) { inp.value = currentTicket != null ? String(currentTicket) : ''; }
+
+  const detailEl = document.getElementById('soldout-detail');
+  if (detailEl) {
+    if (finalTicket != null) {
+      const soldLine = sold != null ? `${sold} ticket${sold !== 1 ? 's' : ''} sold` : '';
+      detailEl.innerHTML = `
+        <div class="soldout-calc-row">
+          <span class="pack-dir-pill ${dir === 'desc' ? 'dir-desc' : 'dir-asc'}">${dirLabel}</span>
+          ${baseline != null ? `Last at <strong>#${baseline}</strong> →` : ''}
+          Final ticket <strong>#${finalTicket}</strong>
+        </div>
+        ${soldLine ? `<div class="soldout-sold-line">${soldLine}</div>` : ''}`;
+    } else {
+      detailEl.innerHTML = `<div class="soldout-calc-row" style="color:var(--text-hint)">End ticket unknown — cannot auto-calculate</div>`;
+    }
+  }
+
   document.getElementById('soldout-modal').classList.add('open');
-  setTimeout(() => { if (inp) { inp.focus(); inp.select(); } }, 120);
 }
 
 function closeSoldOutModal() {
   document.getElementById('soldout-modal').classList.remove('open');
   _pendingSoldOutId = null;
+  _pendingSoldOutFinalTicket = null;
 }
 
 async function confirmSoldOut(e) {
   if (e) e.preventDefault();
   if (!_pendingSoldOutId) return;
-  const inp = document.getElementById('soldout-ticket-input');
-  const ticketNum = parseInt(inp?.value, 10);
-  if (isNaN(ticketNum) || ticketNum < 0) { showError('Invalid input', 'Enter the last ticket number sold.'); return; }
+  const finalTicket = _pendingSoldOutFinalTicket;
+  if (finalTicket == null) { showError('Cannot mark sold out', 'End ticket is unknown for this pack.'); return; }
   const btn = document.getElementById('soldout-confirm-btn');
   if (btn) btn.disabled = true;
   try {
     const prevTicket = (_packInfoCache[_pendingSoldOutId] || {}).startTicket;
     await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(_pendingSoldOutId)}`,
       { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ status: 'soldout', start_ticket: ticketNum, last_shift_ticket: ticketNum }) });
-    _logPackEvent(_pendingSoldOutId, 'soldout', { ticket_before: prevTicket ?? null, ticket_after: ticketNum });
+        body: JSON.stringify({ status: 'soldout', start_ticket: finalTicket, last_shift_ticket: finalTicket }) });
+    _logPackEvent(_pendingSoldOutId, 'soldout', { ticket_before: prevTicket ?? null, ticket_after: finalTicket });
     closeSoldOutModal();
     await loadLotteryStock(); loadLotteryDbStats();
+    await _refreshInvAfterLoad(); loadReceiveQueue();
   } catch (err) {
     showError('Sold out failed', err.message);
   } finally { if (btn) btn.disabled = false; }
@@ -1339,6 +1584,7 @@ async function confirmActivation(e) {
     closeActivationModal();
     await loadLotteryStock(); loadLotteryDbStats();
     await _refreshInvAfterLoad();
+    loadReceiveQueue();
   } catch (err) { showError('Activation failed', err.message); }
   finally { if (btn) btn.disabled = false; }
 }
@@ -1350,20 +1596,23 @@ function _packActionHtml(p) {
   if (p.status === 'received') return `
     <button class="pack-act-btn act-station"
       onmousedown="openActivationForm('${p.id}','Station Booth',event)"
-      ontouchstart="openActivationForm('${p.id}','Station Booth',event)">Station</button>
-    <button class="pack-act-btn act-front"
-      onmousedown="openActivationForm('${p.id}','Front - Extra',event)"
-      ontouchstart="openActivationForm('${p.id}','Front - Extra',event)">Front</button>
-    <button class="pack-act-btn"
-      onmousedown="openActivationForm('${p.id}','Office',event)"
-      ontouchstart="openActivationForm('${p.id}','Office',event)">Office</button>`;
-  if (p.status === 'activated') return `
+      ontouchstart="openActivationForm('${p.id}','Station Booth',event)">Load to Station</button>`;
+  if (p.status === 'activated') {
+    const atStation = p.location === 'Station Booth';
+    const moveBtn = atStation ? '' : `
     <button class="pack-act-btn"
       onmousedown="openMovePackModal('${p.id}',event)"
-      ontouchstart="openMovePackModal('${p.id}',event)">Move</button>
+      ontouchstart="openMovePackModal('${p.id}',event)">Move</button>`;
+    return `${moveBtn}
     <button class="pack-act-btn act-soldout"
       onmousedown="openSoldOutModal('${p.id}',${p.start_ticket},event)"
       ontouchstart="openSoldOutModal('${p.id}',${p.start_ticket},event)">Sold Out</button>`;
+  }
+  // Removed packs can be re-activated at station only
+  if (p.status === 'removed') return `
+    <button class="pack-act-btn act-station"
+      onmousedown="openActivationForm('${p.id}','Station Booth',event)"
+      ontouchstart="openActivationForm('${p.id}','Station Booth',event)">Load to Station</button>`;
   return '';
 }
 
@@ -1380,17 +1629,12 @@ function _packRemoveBtn(p) {
   return '';
 }
 
-function _packEditBtn(p) {
-  if (!_currentDay) return '';
-  if (p.status !== 'activated' && p.status !== 'received') return '';
-  return `<button class="pack-edit-btn"
-    onmousedown="openEditPackModal('${p.id}',${p.start_ticket},${p.end_ticket != null ? p.end_ticket : 'null'},event)"
-    ontouchstart="openEditPackModal('${p.id}',${p.start_ticket},${p.end_ticket != null ? p.end_ticket : 'null'},event)"
-    title="Edit position / end">✎</button>`;
+function _packEditBtn(_p) {
+  return '';
 }
 
 function renderPackRow(p, ticketsPerPack, gameName) {
-  _packInfoCache[p.id] = { ticketsPerPack, gameName: gameName || '', packNumber: p.pack_number, startTicket: p.start_ticket, location: p.location };
+  _packInfoCache[p.id] = { ticketsPerPack, gameName: gameName || '', packNumber: p.pack_number, startTicket: p.start_ticket, endTicket: p.end_ticket ?? null, lastShiftTicket: p.last_shift_ticket ?? null, loadingDirection: (p.loading_direction || 'asc').toLowerCase(), location: p.location };
   const st       = PACK_STATUS[p.status] || { label: p.status, css: '' };
   const locCss   = PACK_LOC_CSS[p.location] || 'loc-office';
   const isActive = p.status === 'activated';
@@ -1420,7 +1664,7 @@ function renderPackRowByLoc(p) {
   const gName  = game.game_name || `Game #${p.game_number}`;
   const price  = parseFloat(game.price || 0);
   const tpp    = game.tickets_per_pack || 0;
-  _packInfoCache[p.id] = { ticketsPerPack: tpp, gameName: gName, packNumber: p.pack_number, startTicket: p.start_ticket, location: p.location };
+  _packInfoCache[p.id] = { ticketsPerPack: tpp, gameName: gName, packNumber: p.pack_number, startTicket: p.start_ticket, endTicket: p.end_ticket ?? null, lastShiftTicket: p.last_shift_ticket ?? null, loadingDirection: (p.loading_direction || 'asc').toLowerCase(), location: p.location };
   const st      = PACK_STATUS[p.status] || { label: p.status, css: '' };
   const isActive = p.status === 'activated';
   const dir     = p.loading_direction;
@@ -2005,29 +2249,80 @@ async function confirmShiftClose(e) {
 
 // ===== SHIFT / DAY HISTORY =====
 
+function _historyDateFilters() {
+  const from = document.getElementById('history-date-from')?.value;
+  const to   = document.getElementById('history-date-to')?.value;
+  const parts = [];
+  if (from) parts.push(`opened_at=gte.${from}T00:00:00`);
+  if (to)   parts.push(`opened_at=lte.${to}T23:59:59`);
+  return parts.length ? '&' + parts.join('&') : '';
+}
+
+function _initHistoryFilter() {
+  // Only initialize once (inputs already have values → already set)
+  const fromEl = document.getElementById('history-date-from');
+  if (!fromEl || fromEl.value) return;
+  setHistoryPreset('month');
+}
+
+function _onHistoryDateChange() {
+  // Clear preset highlight when user manually edits dates
+  ['month', 'lastmonth', 'all'].forEach(p => {
+    document.getElementById(`hpreset-${p}`)?.classList.remove('active');
+  });
+  loadShiftHistory();
+}
+
+function setHistoryPreset(preset) {
+  const now  = new Date();
+  const y    = now.getFullYear();
+  const m    = now.getMonth(); // 0-based
+  let from, to;
+
+  if (preset === 'month') {
+    from = new Date(y, m, 1);
+    to   = new Date(y, m + 1, 0); // last day of this month
+  } else if (preset === 'lastmonth') {
+    from = new Date(y, m - 1, 1);
+    to   = new Date(y, m, 0); // last day of last month
+  } else {
+    from = null; to = null; // all time
+  }
+
+  const fmt = d => d ? `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` : '';
+  const fromEl = document.getElementById('history-date-from');
+  const toEl   = document.getElementById('history-date-to');
+  if (fromEl) fromEl.value = fmt(from);
+  if (toEl)   toEl.value   = fmt(to);
+
+  ['month', 'lastmonth', 'all'].forEach(p => {
+    document.getElementById(`hpreset-${p}`)?.classList.toggle('active', p === preset);
+  });
+  loadShiftHistory();
+}
+
 async function loadShiftHistory() {
   const el = document.getElementById('shift-history-container');
   if (!el) return;
   el.innerHTML = '<div class="summary-loading">Loading…</div>';
+  const dateFilter = _historyDateFilters();
   try {
     if (_dbCaps.hasFullDayTracking) {
-      // Query days with nested shifts and entries
       const eventsSelect = _dbCaps.hasPackEvents
         ? `,lottery_pack_events(id,action,location_from,location_to,ticket_before,ticket_after,notes,created_at,lottery_packs(pack_number,game_number,lottery_games(game_name)))`
         : '';
       const res = await sbFetch(
         `${CONFIG.supabaseUrl}/rest/v1/lottery_days` +
         `?select=id,opened_at,closed_at,status,total_tickets_sold,total_revenue,lottery_shifts(id,opened_at,closed_at,total_tickets_sold,total_revenue,status,lottery_shift_entries(pack_id,tickets_sold,revenue,ticket_at_open,ticket_at_close,lottery_packs(pack_number,game_number,lottery_games(game_name)))${eventsSelect})` +
-        `&order=opened_at.desc&limit=20`
+        `&order=opened_at.desc&limit=60${dateFilter}`
       );
       const days = await res.json();
       renderDayHistory(Array.isArray(days) ? days : []);
     } else {
-      // Legacy: flat shift list
       const res = await sbFetch(
         `${CONFIG.supabaseUrl}/rest/v1/lottery_shifts` +
         `?select=id,shift_type,closed_at,total_tickets_sold,total_revenue,lottery_shift_entries(pack_id,tickets_sold,revenue,ticket_at_open,ticket_at_close,lottery_packs(pack_number,game_number,lottery_games(game_name,price)))` +
-        `&order=closed_at.desc&limit=30`
+        `&order=closed_at.desc&limit=60${dateFilter.replace(/opened_at/g, 'closed_at')}`
       );
       const shifts = await res.json();
       renderShiftHistory(Array.isArray(shifts) ? shifts : []);
@@ -2321,6 +2616,61 @@ function initReceiveTab() {
   renderLotteryLog();
   renderLotteryStats();
   refocusLottery();
+  loadReceiveQueue();
+}
+
+async function loadReceiveQueue() {
+  const el = document.getElementById('receive-queue-container');
+  if (!el) return;
+  try {
+    const res = await sbFetch(
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_packs` +
+      `?select=id,pack_number,location,lottery_games(game_name,price,tickets_per_pack)` +
+      `&status=eq.received&order=location.asc,pack_number.asc&limit=200`
+    );
+    const packs = await res.json();
+    if (!Array.isArray(packs) || !packs.length) {
+      el.innerHTML = '<div class="log-empty" style="border:none">No received packs — scan a barcode above to receive one.</div>';
+      return;
+    }
+    const locOrder = ['Station Booth', 'Front - Extra', 'Office'];
+    const byLoc = {};
+    for (const p of packs) {
+      const loc = p.location || 'Unassigned';
+      if (!byLoc[loc]) byLoc[loc] = [];
+      byLoc[loc].push(p);
+    }
+    const allLocs = [...locOrder, ...Object.keys(byLoc).filter(l => !locOrder.includes(l))];
+    const canLoad = !!_currentDay && !!_currentShift;
+    let html = '';
+    for (const loc of allLocs) {
+      const ps = byLoc[loc];
+      if (!ps) continue;
+      html += `<div class="shift-loc-section"><div class="shift-loc-header">${loc} <span style="font-weight:400;opacity:.55">(${ps.length})</span></div>`;
+      for (const p of ps) {
+        const game = p.lottery_games || {};
+        html += `
+          <div class="inv-rec-row">
+            <div class="inv-book-main">
+              <div class="inv-book-name">${game.game_name || `Pack #${p.pack_number}`}
+                <span class="inv-book-num">#${p.pack_number}</span>
+              </div>
+              <div class="inv-book-meta">$${parseFloat(game.price || 0).toFixed(2)} · ${game.tickets_per_pack || '?'} tickets</div>
+            </div>
+            ${canLoad ? `
+              <div style="display:flex;gap:5px;flex-shrink:0">
+                <button class="pack-act-btn act-station"
+                  onmousedown="openActivationForm('${p.id}','Station Booth',event)"
+                  ontouchstart="openActivationForm('${p.id}','Station Booth',event)">Load to Station</button>
+              </div>` : `<span style="font-size:11px;color:var(--text-hint);flex-shrink:0">${_currentDay ? 'Open a shift to load' : 'Open day to load'}</span>`}
+          </div>`;
+      }
+      html += '</div>';
+    }
+    el.innerHTML = html;
+  } catch (err) {
+    el.innerHTML = `<div class="item-nf-sub">Load failed: ${err.message}</div>`;
+  }
 }
 
 // Lottery tab — inventory management + day/shift
@@ -2328,6 +2678,7 @@ async function initLotteryTab() {
   await _ensureLotteryDbState();
   loadLotteryDbStats();
   loadLotteryStock();
+  _initHistoryFilter();
   loadShiftHistory();
   // Wire receive input events eagerly so they work without clicking sub-tab first
   if (!_lotteryEventsReady) {

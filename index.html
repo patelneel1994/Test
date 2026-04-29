@@ -270,6 +270,18 @@
         <div class="card-label" style="margin:0">Shift History</div>
         <button class="log-act-btn" onclick="loadShiftHistory()">Refresh</button>
       </div>
+      <div class="history-filter-bar">
+        <div class="history-filter-presets">
+          <button class="hpreset-btn" id="hpreset-month"     onclick="setHistoryPreset('month')">This Month</button>
+          <button class="hpreset-btn" id="hpreset-lastmonth" onclick="setHistoryPreset('lastmonth')">Last Month</button>
+          <button class="hpreset-btn" id="hpreset-all"       onclick="setHistoryPreset('all')">All Time</button>
+        </div>
+        <div class="history-filter-dates">
+          <input type="date" id="history-date-from" class="history-date-input" onchange="_onHistoryDateChange()" />
+          <span class="history-date-sep">–</span>
+          <input type="date" id="history-date-to"   class="history-date-input" onchange="_onHistoryDateChange()" />
+        </div>
+      </div>
       <div id="shift-history-container"><div class="summary-loading">Loading…</div></div>
     </div>
 
@@ -330,6 +342,15 @@
       <div id="lottery-log-container"></div>
     </div><!-- /scan-col-right -->
     </div><!-- /scan-layout -->
+
+    <!-- Received packs ready to load -->
+    <div class="scan-card" style="margin-top:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div class="card-label" style="margin:0">Ready to Load</div>
+        <button class="log-act-btn" onclick="loadReceiveQueue()">Refresh</button>
+      </div>
+      <div id="receive-queue-container"><div class="summary-loading">Loading…</div></div>
+    </div>
 
   </div><!-- /lsection-receive -->
 
@@ -405,6 +426,9 @@
     <!-- Book list -->
     <div id="inv-book-list" style="overflow-y:auto;max-height:36vh;margin-bottom:4px"></div>
 
+    <!-- Discrepancy warning (open-day only) -->
+    <div id="inv-disc-summary" style="display:none"></div>
+
     <!-- Totals row (close contexts only) -->
     <div id="inv-totals-row" class="inv-totals-row" style="display:none">
       <span>Total: <strong id="inv-total-tickets">0</strong> tickets sold</span>
@@ -426,20 +450,72 @@
   <div class="modal">
     <div class="modal-handle"></div>
     <div class="modal-title" style="color:var(--red-text)">⚠ Reset Data</div>
-    <p style="font-size:13px;color:var(--text-muted);margin:0 0 16px">Choose what to clear. <strong style="color:var(--text-main)">This cannot be undone.</strong></p>
-    <div style="display:flex;flex-direction:column;gap:8px">
-      <button class="modal-add-btn reset-packs-btn" style="margin:0;text-align:left;flex-direction:column;align-items:flex-start;gap:2px;padding:10px 14px"
-        onmousedown="confirmReset('packs',event)" ontouchstart="confirmReset('packs',event)">
-        <span style="font-weight:600">Reset Shift</span>
-        <span style="font-size:11px;opacity:.75;font-weight:400">Resets packs to received &amp; clears current day/shift records</span>
+    <p style="font-size:13px;color:var(--text-muted);margin:0 0 10px">Choose what to clear. <strong style="color:var(--text-main)">This cannot be undone.</strong></p>
+    <div id="reset-current-counts" class="reset-counts-bar">Loading counts…</div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+
+      <button class="reset-opt reset-opt-1" onmousedown="confirmReset('packs',event)" ontouchstart="confirmReset('packs',event)">
+        <div class="reset-opt-header">
+          <span class="reset-opt-level">L1</span>
+          <span class="reset-opt-name">Reset Shift</span>
+        </div>
+        <div class="reset-opt-desc">Returns all books to received state, clears day / shift / audit records</div>
+        <div class="reset-opt-tags">
+          <span class="reset-tag rt-del">Shifts</span>
+          <span class="reset-tag rt-del">Audit</span>
+          <span class="reset-tag rt-keep">Events</span>
+          <span class="reset-tag rt-keep">Books</span>
+          <span class="reset-tag rt-keep">Catalog</span>
+        </div>
       </button>
-      <button class="modal-add-btn" style="margin:0;background:var(--red-bg,#2a1515);color:var(--red-text);border-color:var(--red-border);text-align:left;flex-direction:column;align-items:flex-start;gap:2px;padding:10px 14px"
-        onmousedown="confirmReset('all',event)" ontouchstart="confirmReset('all',event)">
-        <span style="font-weight:600">Reset Everything</span>
-        <span style="font-size:11px;opacity:.75;font-weight:400">Same as above + also deletes pack event history</span>
+
+      <button class="reset-opt reset-opt-2" onmousedown="confirmReset('all',event)" ontouchstart="confirmReset('all',event)">
+        <div class="reset-opt-header">
+          <span class="reset-opt-level">L2</span>
+          <span class="reset-opt-name">Reset Everything</span>
+        </div>
+        <div class="reset-opt-desc">Same as above + wipes all pack event history</div>
+        <div class="reset-opt-tags">
+          <span class="reset-tag rt-del">Shifts</span>
+          <span class="reset-tag rt-del">Audit</span>
+          <span class="reset-tag rt-del">Events</span>
+          <span class="reset-tag rt-keep">Books</span>
+          <span class="reset-tag rt-keep">Catalog</span>
+        </div>
       </button>
+
+      <button class="reset-opt reset-opt-3" onmousedown="confirmReset('books',event)" ontouchstart="confirmReset('books',event)">
+        <div class="reset-opt-header">
+          <span class="reset-opt-level">L3</span>
+          <span class="reset-opt-name">Reset Books</span>
+        </div>
+        <div class="reset-opt-desc">Deletes all book records — keeps game catalog (names, prices, ticket counts)</div>
+        <div class="reset-opt-tags">
+          <span class="reset-tag rt-del">Shifts</span>
+          <span class="reset-tag rt-del">Audit</span>
+          <span class="reset-tag rt-del">Events</span>
+          <span class="reset-tag rt-del">Books</span>
+          <span class="reset-tag rt-keep">Catalog</span>
+        </div>
+      </button>
+
+      <button class="reset-opt reset-opt-4" onmousedown="confirmReset('catalog',event)" ontouchstart="confirmReset('catalog',event)">
+        <div class="reset-opt-header">
+          <span class="reset-opt-level">L4</span>
+          <span class="reset-opt-name">Reset Catalog</span>
+        </div>
+        <div class="reset-opt-desc">Wipes everything — all books, history, and game definitions</div>
+        <div class="reset-opt-tags">
+          <span class="reset-tag rt-del">Shifts</span>
+          <span class="reset-tag rt-del">Audit</span>
+          <span class="reset-tag rt-del">Events</span>
+          <span class="reset-tag rt-del">Books</span>
+          <span class="reset-tag rt-del">Catalog</span>
+        </div>
+      </button>
+
     </div>
-    <button class="modal-close" style="margin-top:10px" onclick="closeResetModal()">Cancel</button>
+    <button class="modal-close" style="margin-top:12px" onclick="closeResetModal()">Cancel</button>
   </div>
 </div>
 
@@ -480,9 +556,8 @@
   <div class="modal">
     <div class="modal-handle"></div>
     <div class="modal-title">Mark Sold Out</div>
-    <div id="soldout-book-info" style="font-size:13px;color:var(--text-muted);margin-bottom:14px"></div>
-    <label class="lottery-form-label" style="display:block;margin-bottom:6px">Last ticket sold #</label>
-    <input class="modal-input" id="soldout-ticket-input" type="number" min="0" placeholder="e.g. 299" />
+    <div id="soldout-book-info" style="font-size:13px;color:var(--text-muted);margin-bottom:10px"></div>
+    <div id="soldout-detail" style="margin-bottom:16px"></div>
     <div style="display:flex;gap:8px;margin-top:4px">
       <button class="modal-close" style="flex:1;margin:0;padding:11px" onclick="closeSoldOutModal()">Cancel</button>
       <button class="modal-add-btn" id="soldout-confirm-btn" style="flex:2;margin:0"
