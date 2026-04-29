@@ -221,12 +221,12 @@
 
   <!-- SUB-TAB BAR -->
   <div class="lottery-subtab-bar">
-    <button class="lottery-subtab active" id="lsub-tracking" onclick="switchLotterySection('tracking')">Ticket Tracking</button>
-    <button class="lottery-subtab" id="lsub-catalog" onclick="switchLotterySection('catalog')">Inventory</button>
-    <button class="lottery-subtab" id="lsub-receive" onclick="switchLotterySection('receive')">Receive</button>
+    <button class="lottery-subtab active" id="lsub-tracking" onclick="switchLotterySection('tracking')">History</button>
+    <button class="lottery-subtab" id="lsub-catalog" onclick="switchLotterySection('catalog')">Catalog</button>
+    <button class="lottery-subtab" id="lsub-receive" onclick="switchLotterySection('receive')">Stock</button>
   </div>
 
-  <!-- ── TICKET TRACKING SECTION ───────────────────────────────── -->
+  <!-- ── HISTORY SECTION ──────────────────────────────────────── -->
   <div id="lsection-tracking">
 
     <!-- Stats -->
@@ -237,10 +237,9 @@
       <div class="stat"><div class="stat-val" id="lottery-stat-total">—</div><div class="stat-label">Total Books</div></div>
     </div>
 
-    <!-- Received stock summary -->
     <div id="received-stock-bar" class="received-stock-bar" style="display:none"></div>
 
-    <!-- Day / Shift controls + Inventory list -->
+    <!-- Lottery Inventory -->
     <div class="scan-card" style="margin-bottom:14px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px;flex-wrap:wrap">
         <div class="card-label" style="margin:0">Lottery Inventory</div>
@@ -251,7 +250,7 @@
           </div>
           <div id="day-shift-btns" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"></div>
           <button class="log-act-btn" onclick="loadLotteryStock()">Refresh</button>
-          <button class="log-act-btn reset-trigger-btn" onclick="openResetModal()" title="Clear shift data / reset for testing">⚠ Reset</button>
+          <button class="log-act-btn reset-trigger-btn" onclick="openResetModal()">⚠ Reset</button>
         </div>
       </div>
       <div class="stock-filter-row">
@@ -261,11 +260,12 @@
         <button class="stock-filter-btn" data-filter="removed" onclick="setStockFilter('removed')">Removed</button>
         <button class="stock-filter-btn" data-filter="all" onclick="setStockFilter('all')">All</button>
       </div>
+      <div id="bulk-move-bar" style="display:none"></div>
       <div id="lottery-stock-container"><div class="summary-loading">Loading…</div></div>
     </div>
 
     <!-- Shift History -->
-    <div class="scan-card" style="margin-top:14px">
+    <div class="scan-card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <div class="card-label" style="margin:0">Shift History</div>
         <button class="log-act-btn" onclick="loadShiftHistory()">Refresh</button>
@@ -301,50 +301,51 @@
     </div>
   </div><!-- /lsection-catalog -->
 
-  <!-- ── RECEIVE SECTION ──────────────────────────────────────── -->
+  <!-- ── STOCK SECTION ────────────────────────────────────────── -->
   <div id="lsection-receive" style="display:none">
 
-    <!-- Session stats -->
-    <div class="stat-row" style="margin-bottom:14px">
-      <div class="stat"><div class="stat-val" id="lottery-stat-session">0</div><div class="stat-label">This session</div></div>
-      <div class="stat"><div class="stat-val" id="lottery-stat-tickets">0</div><div class="stat-label">Tickets in</div></div>
+    <!-- Books by Location -->
+    <div class="scan-card" style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div class="card-label" style="margin:0">Books by Location</div>
+        <div style="display:flex;gap:6px">
+          <button class="log-act-btn" onclick="loadLocationView()">Refresh</button>
+          <button class="pack-act-btn act-move-tva" style="font-size:12px;padding:5px 10px" onmousedown="openMoveBooksModal()" ontouchstart="openMoveBooksModal()">Move Books…</button>
+        </div>
+      </div>
+      <div id="location-view-container"><div class="summary-loading">Loading…</div></div>
     </div>
 
-    <div class="scan-layout">
-    <div class="scan-col-left">
-      <div class="scan-card">
-        <div class="card-label">Receive lottery pack</div>
-        <div style="margin-bottom:10px">
-          <div class="lottery-form-label" style="display:block;margin-bottom:6px">Receive to location</div>
-          <div class="view-toggle" style="width:100%">
-            <button class="view-toggle-btn active" id="recv-loc-office"  onclick="setReceiveLocation('Office')">Office</button>
-            <button class="view-toggle-btn"         id="recv-loc-front"   onclick="setReceiveLocation('Front - Extra')">Front</button>
-          </div>
+    <!-- Receive new pack -->
+    <div class="scan-card" style="margin-bottom:14px">
+      <div class="card-label">Receive New Pack</div>
+      <div style="margin-bottom:10px">
+        <div class="lottery-form-label" style="display:block;margin-bottom:6px">Receive to location</div>
+        <div class="view-toggle" style="width:100%">
+          <button class="view-toggle-btn active" id="recv-loc-office"  onclick="setReceiveLocation('Office')">Office</button>
+          <button class="view-toggle-btn"         id="recv-loc-front"   onclick="setReceiveLocation('Front - Extra')">Front</button>
+          <button class="view-toggle-btn"         id="recv-loc-tva"     onclick="setReceiveLocation('TVA')">TVA</button>
         </div>
-        <div class="scan-row">
-          <input class="scan-input" id="lottery-input" type="text" inputmode="text"
-            placeholder="Scan any ticket from pack…" autocomplete="off" autocorrect="off" spellcheck="false" />
-          <button class="camera-btn" onclick="submitLotteryInput()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
-              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-            </svg>
-            Go
-          </button>
-        </div>
-        <div id="lottery-result"></div>
       </div>
-    </div><!-- /scan-col-left -->
-
-    <div class="scan-col-right">
-      <div class="log-header">
+      <div class="scan-row">
+        <input class="scan-input" id="lottery-input" type="text" inputmode="text"
+          placeholder="Scan any ticket from pack…" autocomplete="off" autocorrect="off" spellcheck="false" />
+        <button class="camera-btn" onclick="submitLotteryInput()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          Go
+        </button>
+      </div>
+      <div id="lottery-result"></div>
+      <div class="log-header" style="margin-top:12px">
         <div class="log-title">Received this session</div>
       </div>
       <div id="lottery-log-container"></div>
-    </div><!-- /scan-col-right -->
-    </div><!-- /scan-layout -->
+    </div>
 
-    <!-- Received packs ready to load -->
-    <div class="scan-card" style="margin-top:14px">
+    <!-- Ready to load queue -->
+    <div class="scan-card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <div class="card-label" style="margin:0">Ready to Load</div>
         <button class="log-act-btn" onclick="loadReceiveQueue()">Refresh</button>
@@ -602,6 +603,27 @@
       <button class="modal-add-btn" style="margin:0;background:var(--surface);color:var(--text-muted);border-color:var(--border)" onmousedown="confirmMovePack('Office',event)" ontouchstart="confirmMovePack('Office',event)">Office</button>
     </div>
     <button class="modal-close" style="margin-top:10px" onclick="closeMovePackModal()">Cancel</button>
+  </div>
+</div>
+
+<!-- MOVE BOOKS MODAL -->
+<div class="modal-overlay" id="move-books-modal">
+  <div class="modal" style="max-height:85vh;display:flex;flex-direction:column">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Move Books</div>
+    <div class="scan-row" style="margin-bottom:10px">
+      <input class="scan-input" id="move-books-input" type="text" inputmode="text"
+        placeholder="Scan ticket barcode…" autocomplete="off" autocorrect="off" spellcheck="false" />
+    </div>
+    <div id="move-books-status" style="min-height:18px;font-size:12px;margin-bottom:8px"></div>
+    <div id="move-books-list" style="flex:1;overflow-y:auto;min-height:60px;margin-bottom:12px"></div>
+    <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Move to</div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <button class="modal-add-btn" style="margin:0;background:#f0fdf4;color:#166534;border-color:#bbf7d0" onmousedown="confirmMoveBooks('TVA',event)" ontouchstart="confirmMoveBooks('TVA',event)">TVA</button>
+      <button class="modal-add-btn" style="margin:0" onmousedown="confirmMoveBooks('Front - Extra',event)" ontouchstart="confirmMoveBooks('Front - Extra',event)">Front — Extra</button>
+      <button class="modal-add-btn" style="margin:0;background:var(--surface);color:var(--text-muted);border-color:var(--border)" onmousedown="confirmMoveBooks('Office',event)" ontouchstart="confirmMoveBooks('Office',event)">Office</button>
+    </div>
+    <button class="modal-close" style="margin-top:10px" onclick="closeMoveBooksModal()">Cancel</button>
   </div>
 </div>
 

@@ -30,6 +30,6 @@ function switchLotterySection(section) {
     document.getElementById('lsub-' + s).classList.toggle('active', s === section);
     document.getElementById('lsection-' + s).style.display = s === section ? '' : 'none';
   });
-  if (section === 'receive') initReceiveTab();
+  if (section === 'receive') { initReceiveTab(); loadLocationView(); }
   if (section === 'catalog') loadLotteryCatalog();
 }

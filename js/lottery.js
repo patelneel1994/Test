@@ -29,6 +29,9 @@ let _invData          = {};     // pack_id → ticket number
 let _invSoldOut       = {};     // pack_id → finalTicket — staged sold-outs, committed on confirm
 let _invScanCleanup   = null;
 
+// ---- Move books modal ----
+let _moveBooksQueue = []; // { id, packNumber, gameName, location }
+
 // ---- DB-state load guard ----
 let _lotteryDbStateReady = false;
 
@@ -334,7 +337,7 @@ function _renderInvList() {
     return;
   }
 
-  const locOrder = ['Station Booth', 'Front - Extra', 'Office'];
+  const locOrder = ['Station Booth', 'TVA', 'Front - Extra', 'Office'];
   const byLoc = {};
   for (const p of _invPacks) {
     const loc = p.location || 'Office';
@@ -931,7 +934,7 @@ async function showOpenDayModal() {
       return;
     }
 
-    const locOrder = ['Station Booth', 'Front - Extra', 'Office'];
+    const locOrder = ['Station Booth', 'TVA', 'Front - Extra', 'Office'];
     const byLoc    = {};
     for (const p of _dayOpenPacks) {
       const loc = p.location || 'Office';
@@ -1119,6 +1122,7 @@ function setReceiveLocation(loc) {
   _receiveLocation = loc;
   document.getElementById('recv-loc-office').classList.toggle('active', loc === 'Office');
   document.getElementById('recv-loc-front').classList.toggle('active',  loc === 'Front - Extra');
+  document.getElementById('recv-loc-tva').classList.toggle('active',    loc === 'TVA');
 }
 
 async function doReceivePack(parsed, game) {
@@ -1291,7 +1295,7 @@ function _renderReceivedStockBar(packs) {
     const loc = p.location || 'Unassigned';
     byLoc[loc] = (byLoc[loc] || 0) + 1;
   }
-  const locOrder = ['Station Booth', 'Front - Extra', 'Office', 'Unassigned'];
+  const locOrder = ['Station Booth', 'TVA', 'Front - Extra', 'Office', 'Unassigned'];
   const pills = locOrder
     .filter(l => byLoc[l])
     .map(l => `<span class="recv-loc-pill">${l}<strong>${byLoc[l]}</strong></span>`)
@@ -1494,6 +1498,106 @@ async function confirmMovePack(newLocation, e) {
   } catch (err) { showError('Move failed', err.message); }
 }
 
+// ===== MOVE RECEIVED PACKS =====
+
+// ===== MOVE BOOKS MODAL =====
+
+function openMoveBooksModal() {
+  _moveBooksQueue = [];
+  document.getElementById('move-books-modal').classList.add('open');
+  document.getElementById('move-books-list').innerHTML = '<div style="font-size:13px;color:var(--text-hint)">No books scanned yet</div>';
+  document.getElementById('move-books-status').textContent = '';
+  const inp = document.getElementById('move-books-input');
+  inp.value = '';
+  inp.focus();
+  inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); _scanMoveBook(inp.value.trim()); inp.value = ''; } };
+  inp.onpaste   = () => setTimeout(() => { _scanMoveBook(inp.value.trim()); inp.value = ''; }, 50);
+}
+
+function closeMoveBooksModal() {
+  document.getElementById('move-books-modal').classList.remove('open');
+  _moveBooksQueue = [];
+}
+
+async function _scanMoveBook(raw) {
+  if (!raw) return;
+  const statusEl = document.getElementById('move-books-status');
+  const parsed = parseLotteryBarcode(raw);
+  if (!parsed) { _setMoveStatus('Could not read barcode', 'error'); return; }
+  let candidate = parsed.ambiguous ? (await _resolveAmbiguousBarcode(parsed)) : parsed;
+  if (!candidate) { _setMoveStatus('Could not resolve barcode', 'error'); return; }
+  statusEl.textContent = 'Looking up…';
+  try {
+    const res  = await sbFetch(
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=id,pack_number,status,location,lottery_games(game_name)` +
+      `&game_number=eq.${encodeURIComponent(candidate.gameNumber)}&pack_number=eq.${encodeURIComponent(candidate.packNumber)}&limit=1`
+    );
+    const rows = await res.json();
+    const pack = Array.isArray(rows) && rows[0];
+    if (!pack) { _setMoveStatus(`Pack #${candidate.packNumber} not found — receive it first`, 'error'); return; }
+    if (pack.status !== 'received') { _setMoveStatus(`Pack #${pack.pack_number} is ${pack.status}, not received`, 'error'); return; }
+    if (_moveBooksQueue.find(q => q.id === pack.id)) { _setMoveStatus(`Pack #${pack.pack_number} already in list`, 'warn'); return; }
+    _moveBooksQueue.push({ id: pack.id, packNumber: pack.pack_number,
+      gameName: pack.lottery_games?.game_name || `Game #${candidate.gameNumber}`, location: pack.location || 'Office' });
+    _setMoveStatus(`Added: ${pack.lottery_games?.game_name || `Game #${candidate.gameNumber}`} #${pack.pack_number}`, 'ok');
+    _renderMoveBooksQueue();
+  } catch (err) { _setMoveStatus('Lookup failed: ' + err.message, 'error'); }
+}
+
+function _setMoveStatus(msg, type) {
+  const el = document.getElementById('move-books-status');
+  el.textContent = msg;
+  el.style.color = type === 'error' ? 'var(--red-text)' : type === 'warn' ? 'var(--amber-text)' : 'var(--green-text)';
+}
+
+function _renderMoveBooksQueue() {
+  const el = document.getElementById('move-books-list');
+  if (!_moveBooksQueue.length) { el.innerHTML = '<div style="font-size:13px;color:var(--text-hint)">No books scanned yet</div>'; return; }
+  el.innerHTML = _moveBooksQueue.map((q, i) => `
+    <div class="move-queue-row">
+      <div class="move-queue-info">
+        <span class="move-queue-name">${q.gameName}</span>
+        <span class="move-queue-sub">#${q.packNumber} · ${q.location}</span>
+      </div>
+      <button class="pack-remove-btn" onmousedown="_removeMoveQueueItem(${i},event)" ontouchstart="_removeMoveQueueItem(${i},event)">✕</button>
+    </div>`).join('');
+}
+
+function _removeMoveQueueItem(i, e) {
+  if (e) e.preventDefault();
+  _moveBooksQueue.splice(i, 1);
+  _renderMoveBooksQueue();
+}
+
+async function confirmMoveBooks(newLocation, e) {
+  if (e) e.preventDefault();
+  if (!_moveBooksQueue.length) { _setMoveStatus('Scan at least one book first', 'error'); return; }
+  const ids = _moveBooksQueue.map(q => q.id);
+  try {
+    await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=in.(${ids.join(',')})`,
+      { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ location: newLocation }) });
+    for (const q of _moveBooksQueue) {
+      _logPackEvent(q.id, 'moved', { location_from: q.location, location_to: newLocation });
+    }
+    closeMoveBooksModal();
+    await Promise.all([loadLotteryStock(), loadLocationView()]);
+  } catch (err) { showError('Move failed', err.message); }
+}
+
+async function moveReceivedPack(packId, newLocation, e) {
+  if (e) e.preventDefault();
+  const prevLocation = (_packInfoCache[packId] || {}).location || null;
+  if (prevLocation === newLocation) return;
+  try {
+    await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(packId)}`,
+      { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ location: newLocation }) });
+    _logPackEvent(packId, 'moved', { location_from: prevLocation, location_to: newLocation });
+    await Promise.all([loadLotteryStock(), loadLocationView()]);
+  } catch (err) { showError('Move failed', err.message); }
+}
+
 // ===== ACTIVATION MODAL =====
 
 // ===== EDIT PACK POSITION / END =====
@@ -1625,10 +1729,24 @@ async function confirmActivation(e) {
 
 function _packActionHtml(p) {
   if (!_currentDay) return '';
-  if (p.status === 'received') return `
-    <button class="pack-act-btn act-station"
-      onmousedown="openActivationForm('${p.id}','Station Booth',event)"
-      ontouchstart="openActivationForm('${p.id}','Station Booth',event)">Load to Station</button>`;
+  if (p.status === 'received') {
+    const loc = p.location || 'Office';
+    const mvBtn = (label, dest, cls) => {
+      const on = loc === dest ? ' act-move-active' : '';
+      return `<button class="pack-act-btn ${cls}${on}"
+        onmousedown="moveReceivedPack('${p.id}','${dest}',event)"
+        ontouchstart="moveReceivedPack('${p.id}','${dest}',event)">${label}</button>`;
+    };
+    return `<div class="pack-move-row">
+      <span class="pack-move-label">Move to</span>
+      ${mvBtn('TVA',   'TVA',          'act-move-tva')}
+      ${mvBtn('Front', 'Front - Extra','act-move-front-extra')}
+      ${mvBtn('Office','Office',       'act-move-office')}
+      <button class="pack-act-btn act-station"
+        onmousedown="openActivationForm('${p.id}','Station Booth',event)"
+        ontouchstart="openActivationForm('${p.id}','Station Booth',event)">Active</button>
+    </div>`;
+  }
   if (p.status === 'activated') {
     const atStation = p.location === 'Station Booth';
     const moveBtn = atStation ? '' : `
@@ -1679,11 +1797,11 @@ function renderPackRow(p, ticketsPerPack, gameName) {
       ? `<span class="lottery-book-at" style="color:var(--text-hint)">At #${p.start_ticket}</span>`
       : '';
   return `
-    <div class="lottery-stock-book">
+    <div class="lottery-stock-book" id="stock-row-${p.id}">
       <div class="lottery-book-info">
         <span class="lottery-book-label">#${p.pack_number}</span>
         <span class="pack-status-pill ${st.css}">${st.label}</span>
-        ${p.location && isActive ? `<span class="pack-loc-pill ${locCss}">${p.location}</span>` : ''}
+        ${p.location && (isActive || p.status === 'received') ? `<span class="pack-loc-pill ${locCss}">${p.location}</span>` : ''}
         ${dirPill}${ticketInfo}
       </div>
       ${isActive && ticketsPerPack > 0 ? `<div class="lottery-book-bar-wrap"><div class="lottery-book-bar" style="width:${pct}%"></div></div>` : ''}
@@ -1976,7 +2094,7 @@ function setStockView(mode) {
   _stockViewMode = mode;
   document.getElementById('stock-view-game').classList.toggle('active', mode === 'game');
   document.getElementById('stock-view-loc').classList.toggle('active', mode === 'location');
-  if (_cachedStockRows) renderLotteryStock(_cachedStockRows);
+  loadLotteryStock();
 }
 
 async function loadLotteryStock() {
@@ -1985,13 +2103,16 @@ async function loadLotteryStock() {
   const select = _dbCaps.hasLoadingDirection
     ? `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,loading_direction,status,location,lottery_games(game_name,price,tickets_per_pack)`
     : `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,status,location,lottery_games(game_name,price,tickets_per_pack)`;
-  const statusQ = {
-    active:   'status=eq.activated',
-    received: 'status=eq.received',
-    soldout:  'status=eq.soldout',
-    removed:  'status=eq.removed',
-    all:      'status=in.(received,activated,soldout,removed)',
-  }[_stockStatusFilter] || 'status=in.(received,activated,soldout)';
+  // By-location view always shows all non-soldout packs so every book appears under its location
+  const statusQ = _stockViewMode === 'location'
+    ? 'status=in.(received,activated)'
+    : ({
+        active:   'status=eq.activated',
+        received: 'status=eq.received',
+        soldout:  'status=eq.soldout',
+        removed:  'status=eq.removed',
+        all:      'status=in.(received,activated,soldout,removed)',
+      }[_stockStatusFilter] || 'status=in.(received,activated,soldout)');
   try {
     const res = await sbFetch(
       `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=${select}&${statusQ}&order=game_number.asc,status.asc,pack_number.asc&limit=500`
@@ -2006,8 +2127,22 @@ async function loadLotteryStock() {
 }
 
 function renderLotteryStock(rows) {
+  _renderBulkMoveBar(rows);
   if (_stockViewMode === 'location') renderLotteryStockByLocation(rows);
   else renderLotteryStockByGame(rows);
+}
+
+function _renderBulkMoveBar(_rows) {
+  const bar = document.getElementById('bulk-move-bar');
+  if (!bar) return;
+  if (!_currentDay) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+  bar.style.display = '';
+  bar.innerHTML = `<div class="bulk-move-row">
+    <button class="pack-act-btn act-move-tva" style="font-size:12px;padding:6px 12px"
+      onmousedown="openMoveBooksModal()" ontouchstart="openMoveBooksModal()">Move Books…</button>
+    <span class="bulk-move-sep"></span>
+    <button class="pack-act-btn bulk-reset-btn" onmousedown="openResetModal()" ontouchstart="openResetModal()">⚠ Reset All</button>
+  </div>`;
 }
 
 function renderLotteryStockByGame(rows) {
@@ -2059,7 +2194,7 @@ function renderLotteryStockByLocation(rows) {
   if (!Array.isArray(rows) || !rows.length) {
     el.innerHTML = '<div class="log-empty" style="padding:12px 0;border:none">No packs in stock</div>'; return;
   }
-  const locOrder = ['Station Booth', 'Front - Extra', 'Office'];
+  const locOrder = ['Station Booth', 'TVA', 'Front - Extra', 'Office'];
   const byLoc = {};
   for (const row of rows) {
     const loc = row.location || 'Office';
@@ -2073,14 +2208,18 @@ function renderLotteryStockByLocation(rows) {
     const packs = byLoc[loc];
     if (!packs || !packs.length) continue;
     const activated = packs.filter(p => p.status === 'activated').length;
-    const inStock   = packs.filter(p => p.status !== 'soldout').length;
+    const received  = packs.filter(p => p.status === 'received').length;
     const soldOut   = packs.filter(p => p.status === 'soldout').length;
+    const inStock   = activated + received;
+    const metaParts = [];
+    if (activated > 0) metaParts.push(`${activated} active`);
+    if (received  > 0) metaParts.push(`${received} ready`);
     sections += `
       <div class="lottery-stock-game">
         <div class="lottery-stock-row">
           <div class="lottery-stock-name"><span class="pack-loc-pill ${PACK_LOC_CSS[loc] || 'loc-office'}">${loc}</span></div>
           <div class="lottery-stock-packs">${inStock} book${inStock !== 1 ? 's' : ''}</div>
-          <div class="lottery-stock-open-pill ${activated > 0 ? 'is-open' : ''}">${activated} activated</div>
+          <div class="lottery-stock-open-pill ${activated > 0 ? 'is-open' : ''}">${metaParts.join(' · ')}</div>
         </div>
         <div class="lottery-stock-books">
           ${packs.filter(p => p.status !== 'soldout').map(p => renderPackRowByLoc(p)).join('')}
@@ -2133,7 +2272,7 @@ function renderShiftCloseModal(rows) {
   if (!rows.length) {
     bodyEl.innerHTML = '<div class="log-empty" style="padding:12px 0;border:none">No active books to close</div>'; return;
   }
-  const locOrder = ['Station Booth', 'Front - Extra', 'Office'];
+  const locOrder = ['Station Booth', 'TVA', 'Front - Extra', 'Office'];
   const byLoc = {};
   for (const r of rows) { const loc = r.location || 'Office'; if (!byLoc[loc]) byLoc[loc] = []; byLoc[loc].push(r); }
   let html = '';
@@ -2656,6 +2795,70 @@ async function _ensureLotteryDbState() {
 }
 
 // Receive sub-section — called when switching to receive sub-tab
+async function loadLocationView() {
+  const el = document.getElementById('location-view-container');
+  if (!el) return;
+  el.innerHTML = '<div class="summary-loading">Loading…</div>';
+  try {
+    const res  = await sbFetch(
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_packs` +
+      `?select=id,pack_number,status,location,lottery_games(game_name,price,tickets_per_pack)` +
+      `&status=in.(received,activated)&order=location.asc,pack_number.asc&limit=500`
+    );
+    const rows = await res.json();
+    if (!res.ok) throw new Error(rows?.message || `[${res.status}]`);
+    if (!rows.length) { el.innerHTML = '<div class="log-empty" style="padding:10px 0;border:none">No books in system</div>'; return; }
+    const locOrder = ['Station Booth', 'TVA', 'Front - Extra', 'Office'];
+    const byLoc = {};
+    for (const r of rows) {
+      const loc = r.location || 'Office';
+      if (!byLoc[loc]) byLoc[loc] = [];
+      byLoc[loc].push(r);
+    }
+    const allLocs = [...locOrder, ...Object.keys(byLoc).filter(l => !locOrder.includes(l))];
+    let html = '';
+    for (const loc of allLocs) {
+      const packs = byLoc[loc];
+      if (!packs?.length) continue;
+      const locCss   = PACK_LOC_CSS[loc] || 'loc-office';
+      const totalVal = packs.reduce((sum, p) => {
+        const price = parseFloat(p.lottery_games?.price || 0);
+        const tpp   = parseInt(p.lottery_games?.tickets_per_pack || 0, 10);
+        return sum + price * tpp;
+      }, 0);
+      html += `<div class="loc-view-section">
+        <div class="loc-view-header">
+          <span class="pack-loc-pill ${locCss}">${loc}</span>
+          <span class="loc-view-count">${packs.length} book${packs.length !== 1 ? 's' : ''}</span>
+          <span class="loc-view-total">$${totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+        </div>
+        <div class="loc-view-books">
+          ${packs.map(p => {
+            const st    = PACK_STATUS[p.status] || { label: p.status, css: '' };
+            const name  = p.lottery_games?.game_name || `Game #${p.game_number}`;
+            const price = parseFloat(p.lottery_games?.price || 0);
+            const tpp   = parseInt(p.lottery_games?.tickets_per_pack || 0, 10);
+            const val   = price && tpp ? `$${(price * tpp).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '';
+            return `<div class="loc-view-row">
+              <div class="loc-view-info">
+                <span class="loc-view-name">${name}</span>
+                <span class="loc-view-sub">#${p.pack_number}${price ? ` · $${price.toFixed(2)}/ticket` : ''}</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+                ${val ? `<span class="loc-view-val">${val}</span>` : ''}
+                <span class="pack-status-pill ${st.css}">${st.label}</span>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+    }
+    el.innerHTML = html;
+  } catch (err) {
+    el.innerHTML = `<div class="item-nf-sub">Load failed: ${err.message}</div>`;
+  }
+}
+
 function initReceiveTab() {
   renderLotteryLog();
   renderLotteryStats();
@@ -2677,7 +2880,7 @@ async function loadReceiveQueue() {
       el.innerHTML = '<div class="log-empty" style="border:none">No received packs — scan a barcode above to receive one.</div>';
       return;
     }
-    const locOrder = ['Station Booth', 'Front - Extra', 'Office'];
+    const locOrder = ['Station Booth', 'TVA', 'Front - Extra', 'Office'];
     const byLoc = {};
     for (const p of packs) {
       const loc = p.location || 'Unassigned';
