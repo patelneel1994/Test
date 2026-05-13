@@ -1895,6 +1895,27 @@ function _renderBarcodeBreakdown(raw, knownGameNumber) {
     <div class="bc-legend">${legend}</div>`;
 }
 
+// Shows barcode structure for a game with only the game # filled in; pack/ticket marked as variable.
+// Used in catalog where a sample barcode would imply a specific pack number.
+function _renderGameNumberTemplate(gameNumber) {
+  const gn  = String(gameNumber).replace(/\D/g, '');
+  const segments = [
+    { val: gn,      label: 'Game #',   cls: 'bc-game',   dim: false },
+    { val: '######', label: 'Pack #',  cls: 'bc-pack',   dim: true  },
+    { val: '###',    label: 'Ticket #', cls: 'bc-ticket', dim: true  },
+  ];
+  const fullDisplay = segments.map(s =>
+    `<span class="bc-seg ${s.cls}"${s.dim ? ' style="opacity:0.28"' : ''}>${s.val}</span>`
+  ).join('<span class="bc-sep">-</span>');
+  const legend = segments.map(s =>
+    `<div class="bc-legend-item"${s.dim ? ' style="opacity:0.4"' : ''}>` +
+    `<span class="bc-legend-dot ${s.cls}"></span>` +
+    `<span class="bc-legend-label">${s.label}</span>` +
+    `<span class="bc-legend-val">${s.dim ? 'varies' : s.val}</span></div>`
+  ).join('');
+  return `<div class="bc-full-row"><div class="bc-full">${fullDisplay}</div></div><div class="bc-legend">${legend}</div>`;
+}
+
 const _catalogGameCache = {};
 
 function toggleInactiveGames() {
@@ -1910,12 +1931,16 @@ async function loadLotteryCatalog() {
   el.innerHTML = '<div class="summary-loading">Loading…</div>';
   const activeFilter = _showInactiveGames ? '' : '&active=eq.true';
   try {
-    const [gRes, pRes] = await Promise.all([
+    const [gRes, pRes, eRes] = await Promise.all([
       sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_games?select=game_number,game_name,price,tickets_per_pack,active&order=game_number.asc${activeFilter}&limit=200`),
-      sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=game_number,status,raw_barcode&order=game_number.asc,id.asc&limit=1000`),
+      sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=game_number,pack_number,status,raw_barcode&order=game_number.asc,id.asc&limit=1000`),
+      _dbCaps.hasPackEvents
+        ? sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_pack_events?select=action,created_at,ticket_after,location_to,lottery_packs(game_number,pack_number)&order=created_at.asc&limit=5000`)
+        : Promise.resolve(null),
     ]);
-    const games = await gRes.json();
-    const packs = await pRes.json();
+    const games  = await gRes.json();
+    const packs  = await pRes.json();
+    const evtRaw = eRes ? await eRes.json() : null;
     if (!gRes.ok) throw new Error(games?.message || `[${gRes.status}]`);
 
     if (!Array.isArray(games) || !games.length) {
@@ -1923,15 +1948,42 @@ async function loadLotteryCatalog() {
       return;
     }
 
-    // Count packs per game by status; grab first raw_barcode seen per game
+    // Count packs per game by status; track pack numbers per status; grab first raw_barcode seen per game
     const packCounts  = {};
+    const packLists   = {};
     const sampleBarcode = {};
     for (const p of (Array.isArray(packs) ? packs : [])) {
       const gn = p.game_number;
-      if (!packCounts[gn]) packCounts[gn] = { activated: 0, received: 0, soldout: 0, removed: 0, total: 0 };
+      if (!packCounts[gn]) {
+        packCounts[gn] = { activated: 0, received: 0, soldout: 0, removed: 0, total: 0 };
+        packLists[gn]  = { activated: [], received: [], soldout: [], removed: [] };
+      }
       packCounts[gn].total++;
-      if (packCounts[gn][p.status] !== undefined) packCounts[gn][p.status]++;
+      if (packCounts[gn][p.status] !== undefined) {
+        packCounts[gn][p.status]++;
+        packLists[gn][p.status].push(p.pack_number);
+      }
       if (!sampleBarcode[gn] && p.raw_barcode) sampleBarcode[gn] = p.raw_barcode;
+    }
+
+    // Build per-game pack event history: { game_number: { pack_number: [{label, date, extra}] } }
+    const packHistory = {};
+    const _EVT_LABELS = {
+      received: 'Received', activated: 'Loaded', soldout: 'Sold Out',
+      removed: 'Removed', moved: 'Moved', adjusted: 'Adjusted', discrepancy: 'Discrepancy',
+    };
+    for (const ev of (Array.isArray(evtRaw) ? evtRaw : [])) {
+      const gn = ev.lottery_packs?.game_number;
+      const pn = ev.lottery_packs?.pack_number;
+      if (!gn || pn == null) continue;
+      if (!packHistory[gn]) packHistory[gn] = {};
+      if (!packHistory[gn][pn]) packHistory[gn][pn] = [];
+      const isPartialLoad = ev.action === 'activated' && ev.ticket_after > 0;
+      packHistory[gn][pn].push({
+        label: isPartialLoad ? 'Partial Load' : (_EVT_LABELS[ev.action] || ev.action),
+        cls:   `ph-evt-${ev.action}`,
+        date:  ev.created_at,
+      });
     }
 
     // Cache game data for edit modal lookup (avoids encoding in onclick)
@@ -1947,11 +1999,13 @@ async function loadLotteryCatalog() {
       const received = cnts.received  || 0;
       const soldout  = cnts.soldout   || 0;
       const total    = cnts.total     || 0;
+      const lists    = packLists[g.game_number] || {};
+      const _nums = (arr) => arr?.length ? ` <span style="font-weight:500;opacity:.75">(${arr.map(n => `#${n}`).join(', ')})</span>` : '';
       const stockParts = [
         total ? `${total} total` : '0',
-        active   ? `<span class="catalog-cnt-active">${active} active</span>`   : '',
-        received ? `<span class="catalog-cnt-rcvd">${received} received</span>` : '',
-        soldout  ? `<span class="catalog-cnt-sold">${soldout} sold out</span>`  : '',
+        active   ? `<span class="catalog-cnt-active">${active} active${_nums(lists.activated)}</span>`   : '',
+        received ? `<span class="catalog-cnt-rcvd">${received} received${_nums(lists.received)}</span>` : '',
+        soldout  ? `<span class="catalog-cnt-sold">${soldout} sold out${_nums(lists.soldout)}</span>`   : '',
       ].filter(Boolean).join(' · ');
 
       const canEdit = total === 0;
@@ -1990,9 +2044,23 @@ async function loadLotteryCatalog() {
             </div>
           </div>
           <div class="catalog-barcode-section">
-            <div class="catalog-meta-label" style="margin-bottom:6px">Barcode</div>
-            ${_renderBarcodeBreakdown(sampleBarcode[g.game_number], g.game_number)}
+            <div class="catalog-meta-label" style="margin-bottom:6px">Barcode Format</div>
+            ${_renderGameNumberTemplate(g.game_number)}
           </div>
+          ${(() => {
+            const gameEvts = packHistory[g.game_number];
+            if (!gameEvts || !Object.keys(gameEvts).length) return '';
+            const rows = Object.entries(gameEvts).map(([pn, evts]) => {
+              const steps = evts.map((e, i) => {
+                const d = new Date(e.date);
+                const dateFmt = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                const timeFmt = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                return `${i > 0 ? '<span class="ph-arrow">→</span>' : ''}<span class="ph-step"><span class="ph-evt ${e.cls}">${e.label}</span><span class="ph-date">${dateFmt} ${timeFmt}</span></span>`;
+              }).join('');
+              return `<div class="ph-pack-row"><span class="ph-pack-num">#${pn}</span><div class="ph-timeline">${steps}</div></div>`;
+            }).join('');
+            return `<div class="catalog-history-section"><div class="catalog-meta-label" style="margin-bottom:6px">Pack History</div><div class="ph-list">${rows}</div></div>`;
+          })()}
         </div>`;
     }
     html += '</div>';
@@ -2802,7 +2870,7 @@ async function loadLocationView() {
   try {
     const res  = await sbFetch(
       `${CONFIG.supabaseUrl}/rest/v1/lottery_packs` +
-      `?select=id,pack_number,status,location,lottery_games(game_name,price,tickets_per_pack)` +
+      `?select=id,game_number,pack_number,status,location,raw_barcode,lottery_games(game_name,price,tickets_per_pack)` +
       `&status=in.(received,activated)&order=location.asc,pack_number.asc&limit=500`
     );
     const rows = await res.json();
@@ -2839,15 +2907,18 @@ async function loadLocationView() {
             const price = parseFloat(p.lottery_games?.price || 0);
             const tpp   = parseInt(p.lottery_games?.tickets_per_pack || 0, 10);
             const val   = price && tpp ? `$${(price * tpp).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '';
-            return `<div class="loc-view-row">
-              <div class="loc-view-info">
-                <span class="loc-view-name">${name}</span>
-                <span class="loc-view-sub">#${p.pack_number}${price ? ` · $${price.toFixed(2)}/ticket` : ''}</span>
+            return `<div class="loc-view-row" style="flex-direction:column;align-items:stretch">
+              <div style="display:flex;align-items:center;gap:8px">
+                <div class="loc-view-info">
+                  <span class="loc-view-name">${name}</span>
+                  <span class="loc-view-sub">#${p.pack_number}${price ? ` · $${price.toFixed(2)}/ticket` : ''}</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+                  ${val ? `<span class="loc-view-val">${val}</span>` : ''}
+                  <span class="pack-status-pill ${st.css}">${st.label}</span>
+                </div>
               </div>
-              <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
-                ${val ? `<span class="loc-view-val">${val}</span>` : ''}
-                <span class="pack-status-pill ${st.css}">${st.label}</span>
-              </div>
+              ${p.raw_barcode ? `<div style="margin-top:8px">${_renderBarcodeBreakdown(p.raw_barcode, p.game_number)}</div>` : ''}
             </div>`;
           }).join('')}
         </div>

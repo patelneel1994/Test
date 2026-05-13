@@ -324,6 +324,23 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 .catalog-del-btn:hover  { opacity: .8; }
 .catalog-in-use   { font-size: 11px; font-weight: 600; color: var(--text-hint); font-style: italic; }
 .catalog-barcode-section { border-top: 1px solid var(--border); padding-top: 9px; }
+/* Pack history timeline */
+.catalog-history-section { border-top: 1px solid var(--border); padding-top: 9px; margin-top: 2px; }
+.ph-pack-row  { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.ph-pack-row:last-child { margin-bottom: 0; }
+.ph-pack-num  { font-size: 11px; font-weight: 700; color: var(--text); font-family: 'Courier New', Courier, monospace; }
+.ph-timeline  { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 5px; }
+.ph-step      { display: flex; align-items: center; gap: 4px; }
+.ph-arrow     { font-size: 10px; color: var(--text-hint); }
+.ph-evt       { font-size: 10px; font-weight: 700; border-radius: 3px; padding: 2px 5px; border: 1px solid; white-space: nowrap; }
+.ph-date      { font-size: 10px; color: var(--text-hint); white-space: nowrap; }
+.ph-evt-received   { background: var(--bg); color: var(--text-muted); border-color: var(--border); }
+.ph-evt-activated  { background: var(--green-bg); color: var(--green-text); border-color: var(--green-border); }
+.ph-evt-soldout    { background: var(--primary-bg); color: var(--primary); border-color: var(--primary-border); }
+.ph-evt-removed    { background: var(--red-bg); color: var(--red-text); border-color: var(--red-border); }
+.ph-evt-moved      { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+.ph-evt-adjusted   { background: var(--surface); color: var(--text-hint); border-color: var(--border); }
+.ph-evt-discrepancy { background: #fff7ed; color: #c2410c; border-color: #fed7aa; }
 /* Barcode display */
 .bc-full { font-family: 'Courier New', Courier, monospace; font-size: 20px; font-weight: 800; letter-spacing: .08em; margin-bottom: 8px; display: flex; align-items: center; flex-wrap: wrap; gap: 0; }
 .bc-sep  { color: var(--text-hint); margin: 0 1px; font-weight: 400; }
