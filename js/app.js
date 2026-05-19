@@ -27,16 +27,20 @@ function init() {
     }, 50);
   });
 
-  // Click outside scan card / loc bar / modals → refocus barcode
+  // Click outside scan card → refocus barcode (only when scan section is visible)
   document.addEventListener('click', e => {
+    const scanScreen = document.getElementById('screen-scan');
+    if (!scanScreen || scanScreen.style.display === 'none') return;
     const card   = document.querySelector('.scan-card');
     const modal  = document.getElementById('loc-modal');
     const locBar = document.querySelector('.loc-bar');
-    if (!card.contains(e.target) && !modal.contains(e.target) && !locBar.contains(e.target)) {
+    if (card && !card.contains(e.target) && (!modal || !modal.contains(e.target)) && (!locBar || !locBar.contains(e.target))) {
       refocusBarcode();
     }
   });
 
+  // Show lottery dashboard as default landing screen
+  switchLotterySection('dashboard');
   initLotteryTab();
 
   const start = Date.now();

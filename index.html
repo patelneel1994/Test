@@ -3,17 +3,94 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Inventory Counter</title>
+<title>LottoTrack — Lottery Inventory & Audit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 </head>
 <body>
 
-<!-- HEADER -->
-<header class="header">
-  <div class="header-title">📦 Inventory Counter</div>
-  <div class="header-right" id="session-time"></div>
-</header>
+<div class="app-shell">
+
+<!-- ===== SIDEBAR ===== -->
+<nav class="sidebar" id="sidebar">
+
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-icon">★</div>
+    <div>
+      <div class="sidebar-logo-text">LottoTrack</div>
+      <div class="sidebar-logo-sub">Inventory · Audit</div>
+    </div>
+  </div>
+
+  <div class="sidebar-nav">
+
+    <div class="nav-group">
+      <div class="nav-group-label">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V4h3"/><path d="M21 7V4h-3"/><path d="M3 17v3h3"/><path d="M21 17v3h-3"/><path d="M3 12h18"/></svg>
+        Inventory
+      </div>
+      <button class="nav-item" id="nav-scan" onclick="switchTab('scan')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V4h3"/><path d="M21 7V4h-3"/><path d="M3 17v3h3"/><path d="M21 17v3h-3"/><path d="M3 12h18"/></svg>
+        <span class="nav-label">Scan</span>
+      </button>
+      <button class="nav-item" id="nav-search" onclick="switchTab('search')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <span class="nav-label">Search</span>
+      </button>
+      <button class="nav-item" id="nav-summary" onclick="switchTab('summary')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 15 3-4 3 3 5-7"/></svg>
+        <span class="nav-label">Summary</span>
+      </button>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-label">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v1a2 2 0 0 0 0 4v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1a2 2 0 0 0 0-4V9z"/></svg>
+        Lottery
+      </div>
+      <button class="nav-item" id="nav-lottery-dashboard" onclick="switchLotterySection('dashboard')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+        <span class="nav-label">Dashboard</span>
+      </button>
+      <button class="nav-item" id="nav-lottery-tracking" onclick="switchLotterySection('tracking')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v1a2 2 0 0 0 0 4v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1a2 2 0 0 0 0-4V9z"/><path d="M8 12h8"/><path d="m12 9 3 3-3 3"/></svg>
+        <span class="nav-label">Floor</span>
+      </button>
+      <button class="nav-item" id="nav-lottery-receive" onclick="switchLotterySection('receive')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><rect x="3" y="17" width="18" height="4" rx="1.5"/></svg>
+        <span class="nav-label">Stock</span>
+      </button>
+      <button class="nav-item" id="nav-lottery-catalog" onclick="switchLotterySection('catalog')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h12a4 4 0 0 1 4 4v13H8a4 4 0 0 1-4-4Z"/><path d="M4 17a4 4 0 0 1 4-4h12"/></svg>
+        <span class="nav-label">Catalog</span>
+      </button>
+      <button class="nav-item" id="nav-lottery-reports" onclick="switchLotterySection('reports')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 16 4-4 4 4 4-6"/></svg>
+        <span class="nav-label">Reports</span>
+      </button>
+      <button class="nav-item" id="nav-lottery-inventory" onclick="switchLotterySection('inventory')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="m9 12 2 2 4-4"/></svg>
+        <span class="nav-label">All Books</span>
+      </button>
+      <button class="nav-item" id="nav-lottery-settings" onclick="switchLotterySection('settings')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span class="nav-label">Settings</span>
+      </button>
+    </div>
+
+  </div>
+
+  <div class="sidebar-footer">
+    <div id="session-time"></div>
+  </div>
+
+</nav>
+
+<!-- ===== CONTENT AREA ===== -->
+<div class="app-content">
 
 <!-- ERROR BANNER -->
 <div class="error-banner" id="error-banner">
@@ -25,15 +102,7 @@
   <button class="error-banner-close" onclick="dismissError()">×</button>
 </div>
 
-<!-- TAB BAR -->
-<div class="tab-bar">
-  <button class="tab" id="tab-scan" onclick="switchTab('scan')">Scan</button>
-  <button class="tab" id="tab-summary" onclick="switchTab('summary')">DB Summary</button>
-  <button class="tab" id="tab-search" onclick="switchTab('search')">Search</button>
-  <button class="tab active" id="tab-lottery" onclick="switchTab('lottery')">Lottery</button>
-</div>
-
-<!-- LOCATION BAR (scan tab only) -->
+<!-- LOCATION BAR (scan section only) -->
 <div class="loc-bar" id="loc-bar" style="display:none">
   <span class="loc-label">Location</span>
   <select class="loc-select" id="loc-select">
@@ -216,59 +285,209 @@
   </div>
 </div>
 
-<!-- ===== LOTTERY TAB ===== -->
-<div class="main" id="screen-lottery">
+<!-- ===== LOTTERY SECTION ===== -->
+<div class="main" id="screen-lottery" style="display:none">
 
-  <!-- SUB-TAB BAR -->
-  <div class="lottery-subtab-bar">
-    <button class="lottery-subtab active" id="lsub-tracking" onclick="switchLotterySection('tracking')">History</button>
-    <button class="lottery-subtab" id="lsub-catalog" onclick="switchLotterySection('catalog')">Catalog</button>
-    <button class="lottery-subtab" id="lsub-receive" onclick="switchLotterySection('receive')">Stock</button>
+  <!-- ── CONTEXT BAR ───────────────────────────────────────────── -->
+  <div class="lotto-ctx-bar" id="lotto-ctx-bar">
+    <div class="lotto-ctx-pills">
+      <span class="ctx-pill" id="ctx-date-pill">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent-dk)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5"/></svg>
+        <span id="ctx-date-text">—</span>
+      </span>
+      <span class="ctx-pill live" id="ctx-live-pill">
+        <span class="ctx-pill-dot"></span>
+        Live · <span id="ctx-active-count">—</span> active
+      </span>
+    </div>
   </div>
 
-  <!-- ── HISTORY SECTION ──────────────────────────────────────── -->
-  <div id="lsection-tracking">
+  <!-- ── DASHBOARD SECTION ────────────────────────────────────── -->
+  <div id="lsection-dashboard">
 
-    <!-- Stats -->
-    <div class="stat-row" style="margin-bottom:14px">
-      <div class="stat"><div class="stat-val" id="lottery-stat-db-packs">—</div><div class="stat-label">Active</div></div>
-      <div class="stat"><div class="stat-val" id="lottery-stat-games">—</div><div class="stat-label">Received</div></div>
-      <div class="stat"><div class="stat-val" id="lottery-stat-soldout">—</div><div class="stat-label">Sold Out</div></div>
-      <div class="stat"><div class="stat-val" id="lottery-stat-total">—</div><div class="stat-label">Total Books</div></div>
+    <!-- Header -->
+    <div class="page-hdr">
+      <div class="page-hdr-left">
+        <div class="page-eyebrow" id="dash-greeting">Today</div>
+        <h2 class="page-title">Lottery floor</h2>
+        <div class="page-subtitle">A quick read on what's active, what needs attention, and today's performance.</div>
+      </div>
+      <div class="page-hdr-actions">
+        <div id="day-shift-btns" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"></div>
+      </div>
+    </div>
+
+    <!-- Stats row: Revenue · Active · In Office · Flagged -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px">
+      <div class="stat-rich">
+        <div class="stat-rich-hdr">
+          <div class="stat-rich-label">Today's revenue</div>
+          <div class="stat-rich-icon" style="background:rgba(14,143,90,.22);color:#0E8F5A">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h10l-1 12H8z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg>
+          </div>
+        </div>
+        <div class="stat-rich-val" id="dash-stat-revenue">$—</div>
+        <div class="stat-rich-sub" id="dash-stat-rev-sub">no open day</div>
+      </div>
+      <div class="stat-rich">
+        <div class="stat-rich-hdr">
+          <div class="stat-rich-label">Books active</div>
+          <div class="stat-rich-icon" style="background:rgba(225,59,59,.22);color:#E13B3B">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h12a4 4 0 0 1 4 4v13H8a4 4 0 0 1-4-4Z"/><path d="M4 17a4 4 0 0 1 4-4h12"/></svg>
+          </div>
+        </div>
+        <div class="stat-rich-val" id="dash-stat-active">—</div>
+        <div class="stat-rich-sub" id="dash-stat-active-sub">across stations</div>
+      </div>
+      <div class="stat-rich">
+        <div class="stat-rich-hdr">
+          <div class="stat-rich-label">In office</div>
+          <div class="stat-rich-icon" style="background:rgba(255,203,69,.3);color:#8A6A00">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7 12 3l9 4-9 4-9-4Z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>
+          </div>
+        </div>
+        <div class="stat-rich-val" id="dash-stat-office">—</div>
+        <div class="stat-rich-sub">awaiting deployment</div>
+      </div>
+      <div class="stat-rich">
+        <div class="stat-rich-hdr">
+          <div class="stat-rich-label">Needs attention</div>
+          <div class="stat-rich-icon" id="dash-flag-icon" style="background:rgba(26,22,18,.07);color:#1A1612">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" id="dash-flag-svg"><path d="M12 3 2 21h20Z"/><path d="M12 10v5"/><circle cx="12" cy="18" r=".8" fill="currentColor" stroke="none"/></svg>
+          </div>
+        </div>
+        <div class="stat-rich-val" id="dash-stat-flagged">—</div>
+        <div class="stat-rich-sub" id="dash-stat-flagged-sub">nothing to review</div>
+      </div>
+    </div>
+
+    <!-- Stations strip -->
+    <div id="dashboard-stations" style="margin-bottom:16px">
+      <div class="summary-loading" style="padding:20px 0">Loading stations…</div>
+    </div>
+
+    <!-- Two-col: Attention + Activity -->
+    <div class="dash-two-col" style="margin-bottom:16px">
+      <div class="scan-card">
+        <div class="card-section-hdr" style="margin-bottom:14px">
+          <div class="card-section-title">Needs attention</div>
+          <span class="pack-status-pill status-removed" id="dash-flag-pill" style="display:none">0 flagged</span>
+        </div>
+        <div id="dashboard-attention"><div class="summary-loading">Loading…</div></div>
+      </div>
+      <div class="scan-card">
+        <div class="card-section-hdr" style="margin-bottom:14px">
+          <div class="card-section-title">Recent activity</div>
+          <button class="log-act-btn" onclick="loadDashboard()" style="flex-shrink:0">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg>
+            Refresh
+          </button>
+        </div>
+        <div id="dashboard-activity"><div class="summary-loading">Loading…</div></div>
+      </div>
+    </div>
+
+  </div><!-- /lsection-dashboard -->
+
+  <!-- ── FLOOR SECTION ─────────────────────────────────────────── -->
+  <div id="lsection-tracking" style="display:none">
+
+    <!-- Section header -->
+    <div class="page-hdr">
+      <div class="page-hdr-left">
+        <div class="page-eyebrow">Inventory</div>
+        <h2 class="page-title">Live floor</h2>
+        <div class="page-subtitle">All active books by game or location, and full shift history.</div>
+      </div>
+    </div>
+
+    <!-- Rich stat cards -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px">
+      <div class="stat-rich">
+        <div class="stat-rich-hdr">
+          <div class="stat-rich-label">Active books</div>
+          <div class="stat-rich-icon" style="background:rgba(225,59,59,.22);color:#E13B3B">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h12a4 4 0 0 1 4 4v13H8a4 4 0 0 1-4-4Z"/><path d="M4 17a4 4 0 0 1 4-4h12"/></svg>
+          </div>
+        </div>
+        <div class="stat-rich-val" id="lottery-stat-db-packs">—</div>
+        <div class="stat-rich-sub" id="lottery-stat-active-sub">at stations</div>
+      </div>
+      <div class="stat-rich">
+        <div class="stat-rich-hdr">
+          <div class="stat-rich-label">Received</div>
+          <div class="stat-rich-icon" style="background:rgba(255,203,69,.3);color:#8A6A00">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7 12 3l9 4-9 4-9-4Z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>
+          </div>
+        </div>
+        <div class="stat-rich-val" id="lottery-stat-games">—</div>
+        <div class="stat-rich-sub">in office / ready</div>
+      </div>
+      <div class="stat-rich">
+        <div class="stat-rich-hdr">
+          <div class="stat-rich-label">Sold out</div>
+          <div class="stat-rich-icon" style="background:rgba(14,143,90,.22);color:#0E8F5A">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h10l-1 12H8z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg>
+          </div>
+        </div>
+        <div class="stat-rich-val" id="lottery-stat-soldout">—</div>
+        <div class="stat-rich-sub">completed books</div>
+      </div>
+      <div class="stat-rich">
+        <div class="stat-rich-hdr">
+          <div class="stat-rich-label">Total books</div>
+          <div class="stat-rich-icon" style="background:rgba(26,22,18,.07);color:#1A1612">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+          </div>
+        </div>
+        <div class="stat-rich-val" id="lottery-stat-total">—</div>
+        <div class="stat-rich-sub">all time received</div>
+      </div>
     </div>
 
     <div id="received-stock-bar" class="received-stock-bar" style="display:none"></div>
 
-    <!-- Lottery Inventory -->
-    <div class="scan-card" style="margin-bottom:14px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px;flex-wrap:wrap">
-        <div class="card-label" style="margin:0">Lottery Inventory</div>
+    <!-- Live Inventory Card -->
+    <div class="scan-card" style="margin-bottom:16px">
+      <div class="card-section-hdr">
+        <div>
+          <div class="page-eyebrow" style="margin-bottom:2px">Books</div>
+          <div class="card-section-title">Live inventory</div>
+        </div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
           <div class="view-toggle">
             <button class="view-toggle-btn active" id="stock-view-game" onclick="setStockView('game')">By Game</button>
-            <button class="view-toggle-btn" id="stock-view-loc" onclick="setStockView('location')">By Loc</button>
+            <button class="view-toggle-btn" id="stock-view-loc" onclick="setStockView('location')">By Location</button>
           </div>
-          <div id="day-shift-btns" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"></div>
-          <button class="log-act-btn" onclick="loadLotteryStock()">Refresh</button>
+          <button class="log-act-btn" onclick="loadLotteryStock()" title="Refresh">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg>
+            Refresh
+          </button>
           <button class="log-act-btn reset-trigger-btn" onclick="openResetModal()">⚠ Reset</button>
         </div>
       </div>
       <div class="stock-filter-row">
-        <button class="stock-filter-btn active" data-filter="active" onclick="setStockFilter('active')">Active <span class="sf-count" id="sf-active">—</span></button>
-        <button class="stock-filter-btn" data-filter="received" onclick="setStockFilter('received')">Received <span class="sf-count" id="sf-received">—</span></button>
-        <button class="stock-filter-btn" data-filter="soldout" onclick="setStockFilter('soldout')">Sold Out <span class="sf-count" id="sf-soldout">—</span></button>
-        <button class="stock-filter-btn" data-filter="removed" onclick="setStockFilter('removed')">Removed</button>
-        <button class="stock-filter-btn" data-filter="all" onclick="setStockFilter('all')">All</button>
+        <button class="stock-filter-btn active" data-filter="active"   onclick="setStockFilter('active')">Active <span class="sf-count" id="sf-active">—</span></button>
+        <button class="stock-filter-btn"         data-filter="received" onclick="setStockFilter('received')">Received <span class="sf-count" id="sf-received">—</span></button>
+        <button class="stock-filter-btn"         data-filter="soldout"  onclick="setStockFilter('soldout')">Sold Out <span class="sf-count" id="sf-soldout">—</span></button>
+        <button class="stock-filter-btn"         data-filter="removed"  onclick="setStockFilter('removed')">Removed</button>
+        <button class="stock-filter-btn"         data-filter="all"      onclick="setStockFilter('all')">All</button>
       </div>
       <div id="bulk-move-bar" style="display:none"></div>
       <div id="lottery-stock-container"><div class="summary-loading">Loading…</div></div>
     </div>
 
-    <!-- Shift History -->
+    <!-- Shift History Card -->
     <div class="scan-card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-        <div class="card-label" style="margin:0">Shift History</div>
-        <button class="log-act-btn" onclick="loadShiftHistory()">Refresh</button>
+      <div class="card-section-hdr">
+        <div>
+          <div class="page-eyebrow" style="margin-bottom:2px">Audit trail</div>
+          <div class="card-section-title">Shift history</div>
+        </div>
+        <button class="log-act-btn" onclick="loadShiftHistory()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg>
+          Refresh
+        </button>
       </div>
       <div class="history-filter-bar">
         <div class="history-filter-presets">
@@ -287,44 +506,193 @@
 
   </div><!-- /lsection-tracking -->
 
-  <!-- ── INVENTORY CATALOG SECTION ────────────────────────────── -->
+  <!-- ── CATALOG SECTION ───────────────────────────────────────── -->
   <div id="lsection-catalog" style="display:none">
-    <div class="scan-card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px;flex-wrap:wrap">
-        <div class="card-label" style="margin:0">Ticket Catalog</div>
-        <div style="display:flex;gap:6px;align-items:center">
-          <button class="stock-filter-btn" id="catalog-inactive-btn" onclick="toggleInactiveGames()">Show Inactive</button>
-          <button class="log-act-btn" onclick="loadLotteryCatalog()">Refresh</button>
-        </div>
+
+    <div class="page-hdr">
+      <div class="page-hdr-left">
+        <div class="page-eyebrow">Games</div>
+        <h2 class="page-title">Ticket catalog</h2>
+        <div class="page-subtitle">Manage game types, prices, and ticket counts.</div>
       </div>
+      <div class="page-hdr-actions">
+        <button class="stock-filter-btn" id="catalog-inactive-btn" onclick="toggleInactiveGames()">Show Inactive</button>
+        <button class="log-act-btn" onclick="loadLotteryCatalog()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg>
+          Refresh
+        </button>
+      </div>
+    </div>
+
+    <div class="scan-card">
       <div id="lottery-catalog-container"><div class="summary-loading">Loading…</div></div>
     </div>
+
   </div><!-- /lsection-catalog -->
 
-  <!-- ── STOCK SECTION ────────────────────────────────────────── -->
+  <!-- ── REPORTS SECTION ──────────────────────────────────────── -->
+  <div id="lsection-reports" style="display:none">
+
+    <div class="page-hdr">
+      <div class="page-hdr-left">
+        <div class="page-eyebrow">Analytics</div>
+        <h2 class="page-title">Reports</h2>
+        <div class="page-subtitle">Sales by game, by station, and shift history.</div>
+      </div>
+      <div class="page-hdr-actions">
+        <div class="view-toggle" id="report-range-toggle">
+          <button class="view-toggle-btn active" id="report-range-today" onclick="setReportRange('today')">Today</button>
+          <button class="view-toggle-btn" id="report-range-week" onclick="setReportRange('week')">Week</button>
+          <button class="view-toggle-btn" id="report-range-all" onclick="setReportRange('all')">All time</button>
+        </div>
+        <button class="log-act-btn" onclick="loadLotteryReports()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg>
+          Refresh
+        </button>
+      </div>
+    </div>
+
+    <!-- KPI cards -->
+    <div class="rpt-kpi-grid" id="rpt-kpi-grid">
+      <div class="stat-rich">
+        <div class="stat-rich-icon" style="background:rgba(14,143,90,.12)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--design-green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        </div>
+        <div class="stat-rich-val" id="rpt-gross">$0</div>
+        <div class="stat-rich-label">Gross sales</div>
+        <div class="stat-rich-sub" id="rpt-gross-sub">all locations</div>
+      </div>
+      <div class="stat-rich">
+        <div class="stat-rich-icon" style="background:var(--brand-10)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--brand-red)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M12 12h.01"/><path d="M17 12h.01"/><path d="M7 12h.01"/></svg>
+        </div>
+        <div class="stat-rich-val" id="rpt-tickets">0</div>
+        <div class="stat-rich-label">Tickets sold</div>
+        <div class="stat-rich-sub" id="rpt-tickets-sub">in period</div>
+      </div>
+      <div class="stat-rich">
+        <div class="stat-rich-icon" style="background:rgba(30,93,216,.1)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+        </div>
+        <div class="stat-rich-val" id="rpt-avg">$0.00</div>
+        <div class="stat-rich-label">Avg ticket value</div>
+        <div class="stat-rich-sub">revenue per ticket</div>
+      </div>
+      <div class="stat-rich">
+        <div class="stat-rich-icon" style="background:var(--accent-10)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-dk)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h12a4 4 0 0 1 4 4v13H8a4 4 0 0 1-4-4Z"/><path d="M4 17a4 4 0 0 1 4-4h12"/></svg>
+        </div>
+        <div class="stat-rich-val" id="rpt-books-closed">0</div>
+        <div class="stat-rich-label">Books closed</div>
+        <div class="stat-rich-sub" id="rpt-books-active">— active</div>
+      </div>
+    </div>
+
+    <!-- Two-col: by game + by station -->
+    <div class="rpt-two-col">
+      <div class="scan-card">
+        <div class="card-section-hdr">
+          <div class="card-section-title">By game</div>
+        </div>
+        <div id="rpt-by-game"><div class="summary-loading">Loading…</div></div>
+      </div>
+      <div class="scan-card">
+        <div class="card-section-hdr">
+          <div class="card-section-title">By station</div>
+        </div>
+        <div id="rpt-by-station"><div class="summary-loading">Loading…</div></div>
+      </div>
+    </div>
+
+  </div><!-- /lsection-reports -->
+
+  <!-- ── SETTINGS SECTION ─────────────────────────────────────── -->
+  <!-- ── INVENTORY SECTION ────────────────────────────────────── -->
+  <div id="lsection-inventory" style="display:none">
+
+    <div class="page-hdr">
+      <div class="page-hdr-left">
+        <div class="page-eyebrow">All Books</div>
+        <h2 class="page-title">Inventory</h2>
+        <div class="page-subtitle">Every book in the system, sorted by date received.</div>
+      </div>
+      <div class="page-hdr-actions">
+        <button class="log-act-btn" onclick="loadInventorySection()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg>
+          Refresh
+        </button>
+      </div>
+    </div>
+
+    <!-- Status filter pills -->
+    <div class="inv-tab-filters" id="inv-tab-filter-row">
+      <button class="inv-tab-pill active" data-filter="all"      onclick="setInventoryFilter('all')">All</button>
+      <button class="inv-tab-pill"        data-filter="activated" onclick="setInventoryFilter('activated')">Active</button>
+      <button class="inv-tab-pill"        data-filter="received"  onclick="setInventoryFilter('received')">Received</button>
+      <button class="inv-tab-pill"        data-filter="soldout"   onclick="setInventoryFilter('soldout')">Sold Out</button>
+      <button class="inv-tab-pill"        data-filter="removed"   onclick="setInventoryFilter('removed')">Removed</button>
+    </div>
+
+    <!-- Search -->
+    <div class="inv-tab-search-row">
+      <input class="scan-input" id="inv-tab-search" type="text" placeholder="Search by game name or book #…"
+        oninput="filterInventoryRows()" autocomplete="off" spellcheck="false"
+        style="flex:1;font-size:13px;padding:9px 14px" />
+    </div>
+
+    <!-- Book list -->
+    <div class="scan-card" style="padding:0;overflow:hidden">
+      <div id="inv-tab-list"><div class="summary-loading" style="padding:20px">Loading…</div></div>
+    </div>
+
+  </div><!-- /lsection-inventory -->
+
+  <div id="lsection-settings" style="display:none">
+
+    <div class="page-hdr">
+      <div class="page-hdr-left">
+        <div class="page-eyebrow">Configuration</div>
+        <h2 class="page-title">Settings</h2>
+        <div class="page-subtitle">Manage stations, locations, and other options.</div>
+      </div>
+    </div>
+
+    <div id="settings-content">
+      <div class="summary-loading">Loading…</div>
+    </div>
+
+  </div><!-- /lsection-settings -->
+
+  <!-- ── STOCK / RECEIVE SECTION ──────────────────────────────── -->
   <div id="lsection-receive" style="display:none">
 
-    <!-- Books by Location -->
-    <div class="scan-card" style="margin-bottom:14px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-        <div class="card-label" style="margin:0">Books by Location</div>
-        <div style="display:flex;gap:6px">
-          <button class="log-act-btn" onclick="loadLocationView()">Refresh</button>
-          <button class="pack-act-btn act-move-tva" style="font-size:12px;padding:5px 10px" onmousedown="openMoveBooksModal()" ontouchstart="openMoveBooksModal()">Move Books…</button>
-        </div>
+    <div class="page-hdr">
+      <div class="page-hdr-left">
+        <div class="page-eyebrow">Stock management</div>
+        <h2 class="page-title">Receive &amp; move</h2>
+        <div class="page-subtitle">Receive new packs and move books between locations.</div>
       </div>
-      <div id="location-view-container"><div class="summary-loading">Loading…</div></div>
+      <div class="page-hdr-actions">
+        <button class="pack-act-btn act-move-tva" style="font-size:12px;padding:6px 14px" onmousedown="openMoveBooksModal()" ontouchstart="openMoveBooksModal()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M3 12h18"/><path d="m15 6 6 6-6 6"/><path d="m9 18-6-6 6-6"/></svg>
+          Move Books
+        </button>
+        <button class="log-act-btn" onclick="loadLocationView()">Refresh</button>
+      </div>
     </div>
 
     <!-- Receive new pack -->
-    <div class="scan-card" style="margin-bottom:14px">
-      <div class="card-label">Receive New Pack</div>
-      <div style="margin-bottom:10px">
-        <div class="lottery-form-label" style="display:block;margin-bottom:6px">Receive to location</div>
-        <div class="view-toggle" style="width:100%">
-          <button class="view-toggle-btn active" id="recv-loc-office"  onclick="setReceiveLocation('Office')">Office</button>
-          <button class="view-toggle-btn"         id="recv-loc-front"   onclick="setReceiveLocation('Front - Extra')">Front</button>
-          <button class="view-toggle-btn"         id="recv-loc-tva"     onclick="setReceiveLocation('TVA')">TVA</button>
+    <div class="scan-card" style="margin-bottom:16px">
+      <div class="card-section-hdr">
+        <div>
+          <div class="page-eyebrow" style="margin-bottom:2px">Inbound</div>
+          <div class="card-section-title">Receive new pack</div>
+        </div>
+      </div>
+      <div style="margin-bottom:12px">
+        <div class="lottery-form-label" style="display:block;margin-bottom:8px">Receive to location</div>
+        <div class="recv-loc-pill-row" id="recv-loc-btns">
+          <!-- rendered dynamically by renderReceiveLocationButtons() -->
         </div>
       </div>
       <div class="scan-row">
@@ -332,22 +700,36 @@
           placeholder="Scan any ticket from pack…" autocomplete="off" autocorrect="off" spellcheck="false" />
         <button class="camera-btn" onclick="submitLotteryInput()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
-            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            <path d="M3 7V4h3"/><path d="M21 7V4h-3"/><path d="M3 17v3h3"/><path d="M21 17v3h-3"/><path d="M3 12h18"/>
           </svg>
-          Go
+          Scan
         </button>
       </div>
       <div id="lottery-result"></div>
-      <div class="log-header" style="margin-top:12px">
+      <div class="log-header" style="margin-top:14px">
         <div class="log-title">Received this session</div>
       </div>
       <div id="lottery-log-container"></div>
     </div>
 
+    <!-- Books by Location -->
+    <div class="scan-card" style="margin-bottom:16px">
+      <div class="card-section-hdr">
+        <div>
+          <div class="page-eyebrow" style="margin-bottom:2px">Locations</div>
+          <div class="card-section-title">Books by location</div>
+        </div>
+      </div>
+      <div id="location-view-container"><div class="summary-loading">Loading…</div></div>
+    </div>
+
     <!-- Ready to load queue -->
     <div class="scan-card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-        <div class="card-label" style="margin:0">Ready to Load</div>
+      <div class="card-section-hdr">
+        <div>
+          <div class="page-eyebrow" style="margin-bottom:2px">Ready to activate</div>
+          <div class="card-section-title">Load queue</div>
+        </div>
         <button class="log-act-btn" onclick="loadReceiveQueue()">Refresh</button>
       </div>
       <div id="receive-queue-container"><div class="summary-loading">Loading…</div></div>
@@ -357,13 +739,22 @@
 
 </div><!-- /screen-lottery -->
 
+</div><!-- /app-content -->
+</div><!-- /app-shell -->
+
 <!-- SHIFT CLOSE MODAL -->
 <div class="modal-overlay" id="shift-modal">
   <div class="modal">
     <div class="modal-handle"></div>
-    <div class="modal-title" id="shift-modal-title">Shift Close</div>
+    <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:14px">
+      <div class="modal-title" id="shift-modal-title" style="margin-bottom:0">Shift Close</div>
+      <span id="shift-modal-time" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-hint)"></span>
+    </div>
     <div id="shift-modal-body" style="overflow-y:auto;margin-bottom:2px"></div>
-    <div style="display:flex;gap:8px;margin-top:14px">
+    <textarea class="modal-input" id="shift-notes-input" rows="2"
+      placeholder="Notes (optional) — e.g. change in drawer was short, machine jam…"
+      style="margin-top:10px;resize:none;font-size:13px"></textarea>
+    <div style="display:flex;gap:8px;margin-top:10px">
       <button class="modal-close" style="flex:1;margin:0;padding:11px" onclick="closeShiftModal()">Cancel</button>
       <button class="modal-add-btn" id="shift-confirm-btn" style="flex:2;margin:0"
         onmousedown="confirmShiftClose(event)" ontouchstart="confirmShiftClose(event)">Confirm</button>
@@ -402,47 +793,98 @@
 </div>
 
 <!-- INVENTORY MODAL (open day optional / open shift, close shift, close day mandatory) -->
-<div class="modal-overlay" id="inventory-modal">
-  <div class="modal">
-    <div class="modal-handle"></div>
-    <div class="modal-title" id="inv-modal-title">Inventory</div>
+<!-- INVENTORY / AUDIT MODAL -->
+<div class="modal-overlay" id="inventory-modal" style="padding:0;align-items:stretch;overflow:hidden">
+  <div class="audit-shell">
 
-    <!-- Progress bar -->
-    <div class="inv-progress-wrap">
-      <div class="inv-progress-track">
-        <div class="inv-progress-fill" id="inv-progress-fill" style="width:0%"></div>
+    <!-- Left: scanner + controls -->
+    <div class="audit-left">
+
+      <!-- Step 1: Station picker (shown before scanning starts) -->
+      <div id="audit-station-picker">
+        <div class="audit-ctx-row">
+          <div class="audit-ctx-eyebrow">Audit</div>
+          <button class="audit-close-btn" onclick="closeInventoryModal()">✕</button>
+        </div>
+        <div class="audit-ctx-title" id="inv-modal-title-picker">Select Station</div>
+        <div style="font-size:12.5px;color:rgba(246,244,239,.55);margin-bottom:16px">Choose the station you are auditing, or audit all at once.</div>
+        <div class="audit-station-btns" id="audit-station-btn-list">
+          <!-- rendered by JS -->
+        </div>
       </div>
-      <div class="inv-progress-label">
-        <span id="inv-done-count">0</span> / <span id="inv-total-count">0</span> books scanned
-        &nbsp;<span id="inv-todo-label" class="inv-todo">(<span id="inv-todo-count">0</span> remaining)</span>
+
+      <!-- Step 2: Scanner (shown after station is selected) -->
+      <div id="audit-scanner-panel" style="display:none">
+        <div class="audit-scanner-card">
+          <div class="audit-ctx-row">
+            <button class="audit-back-btn" onclick="_auditBackToStationPicker()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+            <div class="audit-ctx-eyebrow" id="audit-active-station-label">Station</div>
+            <button class="audit-close-btn" onclick="closeInventoryModal()">✕</button>
+          </div>
+          <div class="audit-ctx-title" id="inv-modal-title">Inventory</div>
+          <input class="audit-scan-input" id="inv-scan-input" type="text" inputmode="text"
+            placeholder="Scan a ticket to record its position…"
+            autocomplete="off" autocorrect="off" spellcheck="false" />
+
+          <!-- Last scan feedback -->
+          <div id="inv-last-scan" style="display:none;margin-top:10px"></div>
+
+          <div class="audit-stats-row" style="margin-top:14px">
+            <div class="audit-stat">
+              <div class="audit-stat-val" id="inv-stat-scanned">0</div>
+              <div class="audit-stat-lbl">Scanned</div>
+            </div>
+            <div class="audit-stat">
+              <div class="audit-stat-val" id="inv-stat-ok" style="color:var(--design-green)">0</div>
+              <div class="audit-stat-lbl">Matched</div>
+            </div>
+            <div class="audit-stat">
+              <div class="audit-stat-val" id="inv-stat-flagged" style="color:var(--brand-red)">0</div>
+              <div class="audit-stat-lbl">Flagged</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Progress -->
+        <div class="inv-progress-wrap" style="margin:16px 0 0">
+          <div class="inv-progress-track"><div class="inv-progress-fill" id="inv-progress-fill" style="width:0%"></div></div>
+          <div class="inv-progress-label">
+            <span id="inv-done-count">0</span> / <span id="inv-total-count">0</span> books scanned
+            &nbsp;<span id="inv-todo-label" class="inv-todo">(<span id="inv-todo-count">0</span> remaining)</span>
+          </div>
+        </div>
+
+        <!-- Discrepancy summary -->
+        <div id="inv-disc-summary" style="display:none;margin-top:10px"></div>
+
+        <!-- Totals row (close contexts) -->
+        <div id="inv-totals-row" class="inv-totals-row" style="display:none;margin-top:10px">
+          <span>Total: <strong id="inv-total-tickets">0</strong> tickets sold</span>
+          <span class="shift-total-rev" id="inv-total-revenue">$0.00</span>
+        </div>
+
+        <!-- Notes -->
+        <textarea class="modal-input" id="inv-notes-input" rows="2"
+          placeholder="Notes (optional) — discrepancy explained, manager on duty…"
+          style="margin-top:12px;resize:none;font-size:13px;background:rgba(255,255,255,.07);color:var(--cream);border-color:rgba(255,255,255,.15)"></textarea>
+
+        <!-- Buttons -->
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="modal-close" style="flex:1;margin:0;padding:11px;background:rgba(255,255,255,.08);color:var(--cream);border-color:rgba(255,255,255,.15)" onclick="closeInventoryModal()">Cancel</button>
+          <button class="modal-close" id="inv-skip-btn" style="flex:1;margin:0;padding:11px;display:none;background:rgba(255,255,255,.08);color:var(--cream);border-color:rgba(255,255,255,.15)" onclick="skipInventory()">Skip</button>
+          <button class="modal-add-btn" id="inv-confirm-btn" style="flex:2;margin:0"
+            onmousedown="confirmInventory(event)" ontouchstart="confirmInventory(event)">Confirm</button>
+        </div>
       </div>
     </div>
 
-    <!-- Barcode scan input -->
-    <input class="modal-input" id="inv-scan-input" type="text" inputmode="text"
-      placeholder="Scan a ticket to record its position…"
-      autocomplete="off" autocorrect="off" spellcheck="false"
-      style="margin-bottom:10px" />
-
-    <!-- Book list -->
-    <div id="inv-book-list" style="overflow-y:auto;max-height:36vh;margin-bottom:4px"></div>
-
-    <!-- Discrepancy warning (open-day only) -->
-    <div id="inv-disc-summary" style="display:none"></div>
-
-    <!-- Totals row (close contexts only) -->
-    <div id="inv-totals-row" class="inv-totals-row" style="display:none">
-      <span>Total: <strong id="inv-total-tickets">0</strong> tickets sold</span>
-      <span class="shift-total-rev" id="inv-total-revenue">$0.00</span>
+    <!-- Right: scrollable book list -->
+    <div class="audit-right">
+      <div id="inv-book-list"></div>
     </div>
 
-    <!-- Buttons -->
-    <div style="display:flex;gap:8px;margin-top:12px">
-      <button class="modal-close" style="flex:1;margin:0;padding:11px" onclick="closeInventoryModal()">Cancel</button>
-      <button class="modal-close" id="inv-skip-btn" style="flex:1;margin:0;padding:11px;display:none" onclick="skipInventory()">Skip</button>
-      <button class="modal-add-btn" id="inv-confirm-btn" style="flex:2;margin:0"
-        onmousedown="confirmInventory(event)" ontouchstart="confirmInventory(event)">Confirm</button>
-    </div>
   </div>
 </div>
 
@@ -607,23 +1049,24 @@
 </div>
 
 <!-- MOVE BOOKS MODAL -->
-<div class="modal-overlay" id="move-books-modal">
-  <div class="modal" style="max-height:85vh;display:flex;flex-direction:column">
-    <div class="modal-handle"></div>
-    <div class="modal-title">Move Books</div>
-    <div class="scan-row" style="margin-bottom:10px">
-      <input class="scan-input" id="move-books-input" type="text" inputmode="text"
-        placeholder="Scan ticket barcode…" autocomplete="off" autocorrect="off" spellcheck="false" />
+<div class="modal-overlay modal-overlay-center" id="move-books-modal">
+  <div class="modal modal-card">
+    <div class="modal-card-hdr">
+      <div class="modal-card-title">Move Books</div>
+      <button class="modal-card-x" onclick="closeMoveBooksModal()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
     </div>
-    <div id="move-books-status" style="min-height:18px;font-size:12px;margin-bottom:8px"></div>
-    <div id="move-books-list" style="flex:1;overflow-y:auto;min-height:60px;margin-bottom:12px"></div>
-    <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Move to</div>
-    <div style="display:flex;flex-direction:column;gap:6px">
-      <button class="modal-add-btn" style="margin:0;background:#f0fdf4;color:#166534;border-color:#bbf7d0" onmousedown="confirmMoveBooks('TVA',event)" ontouchstart="confirmMoveBooks('TVA',event)">TVA</button>
-      <button class="modal-add-btn" style="margin:0" onmousedown="confirmMoveBooks('Front - Extra',event)" ontouchstart="confirmMoveBooks('Front - Extra',event)">Front — Extra</button>
-      <button class="modal-add-btn" style="margin:0;background:var(--surface);color:var(--text-muted);border-color:var(--border)" onmousedown="confirmMoveBooks('Office',event)" ontouchstart="confirmMoveBooks('Office',event)">Office</button>
+    <div class="modal-card-body">
+      <div class="modal-card-scan-row">
+        <input class="scan-input" id="move-books-input" type="text" inputmode="text"
+          placeholder="Scan a received book barcode…" autocomplete="off" autocorrect="off" spellcheck="false" />
+      </div>
+      <div id="move-books-status" class="move-books-status"></div>
+      <div id="move-books-list" class="move-books-list"></div>
+      <div class="move-dest-label">Move to location</div>
+      <div id="move-books-dest-btns" class="move-dest-grid"></div>
     </div>
-    <button class="modal-close" style="margin-top:10px" onclick="closeMoveBooksModal()">Cancel</button>
   </div>
 </div>
 

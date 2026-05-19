@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p /tmp/design_bundle)",
+      "Bash(tar -xf /tmp/design_out.txt -C /tmp/design_bundle)",
+      "Bash(grep -n \"AuditScreen\\\\|audit\\\\|Audit\" /tmp/design_bundle/lottery-tracking/project/screens.jsx | head -20)",
+      "Read(//private/tmp/design_bundle/lottery-tracking/project/**)",
+      "WebFetch(domain:api.anthropic.com)",
+      "Bash(cp \"/Users/neel/.claude/projects/-Users-neel-Documents-Programing-vercel/2c3d197d-863b-48a8-ab06-f80ff5d4cfbd/tool-results/webfetch-1779074476248-cnnhmn.bin\" /tmp/design.gz)",
+      "Bash(gunzip -f /tmp/design.gz)"
+    ]
+  }
+}

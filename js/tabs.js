@@ -1,35 +1,52 @@
 // ===== TAB NAVIGATION =====
-function switchTab(tab) {
-  const tabs    = ['scan', 'summary', 'search', 'lottery'];
-  const screens = {
-    scan:    document.getElementById('screen-scan'),
-    summary: document.getElementById('screen-summary'),
-    search:  document.getElementById('screen-search'),
-    lottery: document.getElementById('screen-lottery'),
-  };
-  const locBar = document.getElementById('loc-bar');
 
-  tabs.forEach(t => {
-    document.getElementById('tab-' + t).classList.toggle('active', t === tab);
-    screens[t].style.display = t === tab ? '' : 'none';
+function _setNavActive(id) {
+  document.querySelectorAll('.nav-item').forEach(btn => btn.classList.remove('active'));
+  const el = document.getElementById(id);
+  if (el) el.classList.add('active');
+}
+
+function switchTab(tab) {
+  ['scan', 'summary', 'search', 'lottery'].forEach(t => {
+    const el = document.getElementById('screen-' + t);
+    if (el) el.style.display = t === tab ? '' : 'none';
   });
 
-  locBar.style.display = tab === 'scan' ? '' : 'none';
+  const locBar = document.getElementById('loc-bar');
+  if (locBar) locBar.style.display = tab === 'scan' ? '' : 'none';
+
+  if (tab !== 'lottery') _setNavActive('nav-' + tab);
 
   if (tab === 'summary') loadSummary();
   if (tab === 'search') {
     const si = document.getElementById('search-input');
-    si.focus();
-    si.click();
+    if (si) { si.focus(); si.click(); }
   }
-  if (tab === 'lottery') initLotteryTab();
 }
 
 function switchLotterySection(section) {
-  ['tracking', 'catalog', 'receive'].forEach(s => {
-    document.getElementById('lsub-' + s).classList.toggle('active', s === section);
-    document.getElementById('lsection-' + s).style.display = s === section ? '' : 'none';
+  // Show the lottery screen, hide others
+  ['scan', 'summary', 'search', 'lottery'].forEach(t => {
+    const el = document.getElementById('screen-' + t);
+    if (el) el.style.display = t === 'lottery' ? '' : 'none';
   });
-  if (section === 'receive') { initReceiveTab(); loadLocationView(); }
-  if (section === 'catalog') loadLotteryCatalog();
+  const locBar = document.getElementById('loc-bar');
+  if (locBar) locBar.style.display = 'none';
+
+  // Show the correct sub-section
+  ['dashboard', 'tracking', 'catalog', 'receive', 'reports', 'settings', 'inventory'].forEach(s => {
+    const sec = document.getElementById('lsection-' + s);
+    if (sec) sec.style.display = s === section ? '' : 'none';
+  });
+
+  _setNavActive('nav-lottery-' + section);
+
+  if (typeof _updateContextBar === 'function') _updateContextBar(null);
+
+  if (section === 'dashboard') loadDashboard();
+  if (section === 'receive')   { initReceiveTab(); loadLocationView(); }
+  if (section === 'catalog')   loadLotteryCatalog();
+  if (section === 'reports')   loadLotteryReports();
+  if (section === 'settings')  loadSettingsSection();
+  if (section === 'inventory') loadInventorySection();
 }
