@@ -6,7 +6,7 @@ function _setNavActive(id) {
   if (el) el.classList.add('active');
 }
 
-function switchTab(tab) {
+function switchTab(tab, { pushHash = true } = {}) {
   ['scan', 'summary', 'search', 'lottery'].forEach(t => {
     const el = document.getElementById('screen-' + t);
     if (el) el.style.display = t === tab ? '' : 'none';
@@ -17,6 +17,8 @@ function switchTab(tab) {
 
   if (tab !== 'lottery') _setNavActive('nav-' + tab);
 
+  if (pushHash) location.hash = tab;
+
   if (tab === 'summary') loadSummary();
   if (tab === 'search') {
     const si = document.getElementById('search-input');
@@ -24,7 +26,7 @@ function switchTab(tab) {
   }
 }
 
-function switchLotterySection(section) {
+function switchLotterySection(section, { pushHash = true } = {}) {
   // Show the lottery screen, hide others
   ['scan', 'summary', 'search', 'lottery'].forEach(t => {
     const el = document.getElementById('screen-' + t);
@@ -41,6 +43,8 @@ function switchLotterySection(section) {
 
   _setNavActive('nav-lottery-' + section);
 
+  if (pushHash) location.hash = 'lottery-' + section;
+
   if (typeof _updateContextBar === 'function') _updateContextBar(null);
 
   if (section === 'dashboard') loadDashboard();
@@ -50,3 +54,15 @@ function switchLotterySection(section) {
   if (section === 'settings')  loadSettingsSection();
   if (section === 'inventory') loadInventorySection();
 }
+
+function _routeFromHash() {
+  const hash = location.hash.replace('#', '') || 'lottery-dashboard';
+  if (hash === 'scan' || hash === 'search' || hash === 'summary') {
+    switchTab(hash, { pushHash: false });
+  } else {
+    const section = hash.startsWith('lottery-') ? hash.slice('lottery-'.length) : 'dashboard';
+    switchLotterySection(section, { pushHash: false });
+  }
+}
+
+window.addEventListener('hashchange', () => _routeFromHash());

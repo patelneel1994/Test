@@ -39,8 +39,8 @@ function init() {
     }
   });
 
-  // Show lottery dashboard as default landing screen
-  switchLotterySection('dashboard');
+  // Route to the tab matching the URL hash, or default to lottery dashboard
+  _routeFromHash();
   initLotteryTab();
 
   const start = Date.now();
