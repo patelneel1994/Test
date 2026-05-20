@@ -492,9 +492,28 @@ body {
 
 /* LOTTERY STOCK TABLE */
 /* Inventory status filter row */
-.stock-filter-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.stock-filter-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; align-items: center; }
 .stock-filter-btn { font-family: 'Space Grotesk', sans-serif; font-size: 11px; font-weight: 700; padding: 4px 12px; border-radius: 999px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text-muted); cursor: pointer; transition: all .15s; display: inline-flex; align-items: center; gap: 4px; }
 .stock-filter-btn.active { background: var(--ink); color: var(--cream); border-color: var(--ink); }
+.stock-sort-sep { width: 1px; height: 18px; background: var(--border); margin: 0 2px; flex-shrink: 0; }
+.stock-sort-btn { font-family: 'Space Grotesk', sans-serif; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 999px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text-muted); cursor: pointer; transition: all .15s; }
+.stock-sort-btn.active { background: var(--amber-bg); color: var(--accent-dk); border-color: var(--amber-border); }
+/* Catalog search + sort controls */
+.cat-controls { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.cat-search-input { width: 100%; border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 10px 14px; font-size: 14px; font-family: 'Space Grotesk', sans-serif; color: var(--text); background: var(--bg); box-sizing: border-box; }
+.cat-search-input:focus { outline: none; border-color: var(--ink-30); }
+.cat-sort-pills { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cat-sort-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; margin-right: 2px; }
+.cat-sort-pill { font-family: 'Space Grotesk', sans-serif; font-size: 11px; font-weight: 700; padding: 4px 12px; border-radius: 999px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text-muted); cursor: pointer; transition: all .15s; }
+.cat-sort-pill.active { background: var(--amber-bg); color: var(--accent-dk); border-color: var(--amber-border); }
+.price-summary-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.price-sum-pill { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; border-radius: 999px; padding: 6px 14px 6px 12px; cursor: default; transition: transform .12s, box-shadow .12s; white-space: nowrap; }
+.price-sum-pill:hover { transform: translateY(-1px); }
+.price-sum-val { font-size: 14px; font-weight: 800; color: #fff; font-family: 'Space Grotesk', sans-serif; letter-spacing: -.01em; }
+.price-sum-badge { font-size: 11px; font-weight: 700; color: rgba(255,255,255,.85); background: rgba(0,0,0,.18); border-radius: 999px; padding: 1px 7px; min-width: 20px; text-align: center; }
+.loc-controls { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.loc-sort-btn { font-family: 'Space Grotesk', sans-serif; font-size: 11px; font-weight: 700; padding: 4px 12px; border-radius: 999px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text-muted); cursor: pointer; transition: all .15s; }
+.loc-sort-btn.active { background: var(--amber-bg); color: var(--accent-dk); border-color: var(--amber-border); }
 .sf-count { font-size: 10px; font-weight: 800; opacity: .75; }
 .lottery-subtab-bar { display: flex; gap: 0; background: var(--cream-dk); border: 1.5px solid var(--border); border-radius: 999px; overflow: hidden; margin-bottom: 14px; padding: 3px; gap: 2px; }
 .lottery-subtab { flex: 1; border: none; background: none; padding: 8px 14px; border-radius: 999px; font-family: 'Space Grotesk', sans-serif; font-size: 13px; font-weight: 700; color: var(--text-muted); cursor: pointer; transition: background .15s, color .15s; display: flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap; }

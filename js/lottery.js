@@ -2242,12 +2242,37 @@ function _renderGameNumberTemplate(gameNumber) {
 }
 
 const _catalogGameCache = {};
+let _catalogSortBy = 'game';   // 'game' | 'price-asc' | 'price-desc'
+let _catalogSearch = '';
+let _catalogCache  = null;
+let _stockSortBy   = 'price-asc'; // 'game' | 'price-asc' | 'price-desc'
 
 function toggleInactiveGames() {
   _showInactiveGames = !_showInactiveGames;
   const btn = document.getElementById('catalog-inactive-btn');
   if (btn) btn.classList.toggle('active', _showInactiveGames);
   loadLotteryCatalog();
+}
+
+function setCatalogSort(sort) {
+  _catalogSortBy = sort;
+  document.querySelectorAll('.cat-sort-pill').forEach(b =>
+    b.classList.toggle('active', b.dataset.sort === sort)
+  );
+  _renderLotteryCatalog();
+}
+
+function setCatalogSearch(q) {
+  _catalogSearch = q;
+  _renderLotteryCatalog();
+}
+
+function setStockSort(sort) {
+  _stockSortBy = sort;
+  document.querySelectorAll('.stock-sort-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.sort === sort)
+  );
+  if (_cachedStockRows) renderLotteryStock(_cachedStockRows);
 }
 
 async function loadLotteryCatalog() {
@@ -2274,9 +2299,8 @@ async function loadLotteryCatalog() {
       return;
     }
 
-    // Count packs per game by status; track pack numbers per status; grab first raw_barcode seen per game
-    const packCounts   = {};
-    const packLists    = {};
+    const packCounts    = {};
+    const packLists     = {};
     const sampleBarcode = {};
     const packBarcodes  = {};
     for (const p of (Array.isArray(packs) ? packs : [])) {
@@ -2297,7 +2321,6 @@ async function loadLotteryCatalog() {
       }
     }
 
-    // Build per-game pack event history: { game_number: { pack_number: [{label, date, extra}] } }
     const packHistory = {};
     const _EVT_LABELS = {
       received: 'Received', activated: 'Loaded', soldout: 'Sold Out',
@@ -2318,113 +2341,159 @@ async function loadLotteryCatalog() {
       });
     }
 
-    // Cache game data for edit modal lookup (avoids encoding in onclick)
-    for (const g of games) _catalogGameCache[g.game_number] = g;
-
-    let html = '<div class="catalog-grid">';
-    for (const g of games) {
-      const price    = parseFloat(g.price || 0);
-      const tpp      = parseInt(g.tickets_per_pack || 0, 10);
-      const bookCost = price * tpp;
-      const cnts     = packCounts[g.game_number] || {};
-      const active   = cnts.activated || 0;
-      const received = cnts.received  || 0;
-      const soldout  = cnts.soldout   || 0;
-      const total    = cnts.total     || 0;
-      const gn       = g.game_number;
-      const color    = _gameColor(gn);
-      const emoji    = _gameEmoji(gn);
-
-      const stockHTML = (() => {
-        const pills = [
-          active   ? `<span class="cat-cnt-pill cp-active"><span class="cat-cnt-dot"></span>${active} active</span>`     : '',
-          received ? `<span class="cat-cnt-pill cp-received"><span class="cat-cnt-dot"></span>${received} received</span>` : '',
-          soldout  ? `<span class="cat-cnt-pill cp-soldout"><span class="cat-cnt-dot"></span>${soldout} sold out</span>`   : '',
-        ].filter(Boolean).join('');
-        return `<div class="cat-stock">${pills || '<span class="cat-stock-empty">No books recorded</span>'}</div>`;
-      })();
-
-      const canEdit = total === 0;
-      const editBtns = canEdit
-        ? `<button class="catalog-edit-btn" onclick="openEditGame('${gn}')">Edit</button>
-           ${g.active
-             ? `<button class="catalog-del-btn" onclick="softDeleteGame('${gn}')">Deactivate</button>`
-             : `<button class="catalog-edit-btn" onclick="reactivateGame('${gn}')">Reactivate</button>`}`
-        : `<button class="catalog-edit-btn" onclick="openEditGame('${gn}')">Edit</button>
-           <span class="cat-in-use">${total} book${total !== 1 ? 's' : ''} recorded</span>
-           ${!g.active ? `<button class="catalog-edit-btn" onclick="reactivateGame('${gn}')">Reactivate</button>` : ''}`;
-
-      const historyHTML = (() => {
-        const gameEvts     = packHistory[g.game_number];
-        const gameBarcodes = packBarcodes[gn] || {};
-        if (!gameEvts || !Object.keys(gameEvts).length) return { panel: '', hasHistory: false };
-        const packCount = Object.keys(gameEvts).length;
-        const rows = Object.entries(gameEvts).map(([pn, evts]) => {
-          const steps = evts.map((e, i) => {
-            const d = new Date(e.date);
-            const dateFmt = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-            const timeFmt = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            return `${i > 0 ? '<span class="ph-arrow">→</span>' : ''}<span class="ph-step"><span class="ph-evt ${e.cls}">${e.label}</span><span class="ph-date">${dateFmt} ${timeFmt}</span></span>`;
-          }).join('');
-          const bc = gameBarcodes[pn];
-          const bcRow = bc
-            ? `<div class="ph-barcode-row"><span class="ph-barcode-val">${bc}</span><button class="ph-copy-btn" onclick="_copyBarcode(this,'${bc}')">Copy</button></div>`
-            : `<div class="ph-barcode-row"><span class="ph-barcode-none">No barcode on file</span></div>`;
-          return `<div class="ph-pack-row"><span class="ph-pack-num">#${pn}</span><div class="ph-timeline">${steps}</div>${bcRow}</div>`;
-        }).join('');
-        const panel = `
-          <div class="cat-hist-panel">
-            <div class="cat-hist-panel-hdr">
-              <span class="cat-hist-panel-title">Pack history (${packCount})</span>
-              <button class="cat-bc-toggle" onclick="_toggleCatBarcode(event,'${gn}')">Show Barcodes</button>
-            </div>
-            <div class="ph-list">${rows}</div>
-          </div>`;
-        return { panel, hasHistory: true };
-      })();
-
-      html += `
-        <div class="cat-card" id="catalog-row-${gn}">
-          <div class="cat-card-bar" style="background:${color}"></div>
-          <div class="cat-card-hdr">
-            <div class="cat-game-dot" style="background:${color}1a">${emoji}</div>
-            <div class="cat-game-identity">
-              <div class="cat-game-name">${g.game_name || '—'}</div>
-              <div class="cat-game-num">#${gn}</div>
-            </div>
-            ${g.active ? '<span class="pack-status-pill st-activated">Active</span>' : '<span class="pack-status-pill st-removed">Inactive</span>'}
-          </div>
-          <div class="cat-stats">
-            <div class="cat-stat">
-              <div class="cat-stat-val">$${price.toFixed(2)}</div>
-              <div class="cat-stat-lbl">Per ticket</div>
-            </div>
-            <div class="cat-stat">
-              <div class="cat-stat-val">${tpp > 0 ? tpp.toLocaleString() : '—'}</div>
-              <div class="cat-stat-lbl">Per roll</div>
-            </div>
-            <div class="cat-stat">
-              <div class="cat-stat-val">${bookCost > 0 ? '$' + bookCost.toFixed(0) : '—'}</div>
-              <div class="cat-stat-lbl">Book cost</div>
-            </div>
-          </div>
-          ${stockHTML}
-          <div class="cat-bc">
-            <div class="cat-bc-lbl">Barcode format</div>
-            ${_renderGameNumberTemplate(gn)}
-          </div>
-          <div class="cat-footer">
-            ${editBtns}
-            ${historyHTML.hasHistory ? `<button class="cat-hist-toggle" onclick="_toggleCatHistory('${gn}')">History <i class="cat-hist-chev">▶</i></button>` : ''}
-          </div>
-          ${historyHTML.panel || ''}
-        </div>`;
-    }
-    html += '</div>';
-    el.innerHTML = html;
+    _catalogCache = { games, packCounts, packLists, packBarcodes, packHistory, sampleBarcode };
+    _renderLotteryCatalog();
   } catch (e) {
     el.innerHTML = `<div class="item-nf-sub" style="padding:10px 0">Load failed: ${e.message}</div>`;
   }
+}
+
+function _renderLotteryCatalog() {
+  const el = document.getElementById('lottery-catalog-container');
+  if (!el || !_catalogCache) return;
+  const { games, packCounts, packLists, packBarcodes, packHistory } = _catalogCache;
+
+  // Filter
+  const q = _catalogSearch.trim().toLowerCase();
+  let visible = games;
+  if (q) {
+    visible = games.filter(g => {
+      if (String(g.game_number).includes(q)) return true;
+      if ((g.game_name || '').toLowerCase().includes(q)) return true;
+      const allPacks = [
+        ...(packLists[g.game_number]?.activated || []),
+        ...(packLists[g.game_number]?.received  || []),
+        ...(packLists[g.game_number]?.soldout   || []),
+        ...(packLists[g.game_number]?.removed   || []),
+      ];
+      return allPacks.some(pn => String(pn).includes(q));
+    });
+  }
+
+  // Sort
+  if (_catalogSortBy === 'price-asc')  visible = [...visible].sort((a, b) => parseFloat(a.price) - parseFloat(b.price));
+  if (_catalogSortBy === 'price-desc') visible = [...visible].sort((a, b) => parseFloat(b.price) - parseFloat(a.price));
+
+  if (!visible.length) {
+    el.innerHTML = q
+      ? `<div class="log-empty">No games match "${_catalogSearch}"</div>`
+      : '<div class="log-empty">No games in catalog yet.</div>';
+    return;
+  }
+
+  for (const g of visible) _catalogGameCache[g.game_number] = g;
+
+  // Price count summary — unique game types + total active/received books per price
+  const catPriceCounts = {};
+  for (const g of visible) {
+    const price = parseFloat(g.price || 0);
+    if (!price) continue;
+    const cnt = packCounts[g.game_number] || {};
+    if (!catPriceCounts[price]) catPriceCounts[price] = { games: 0, books: 0 };
+    catPriceCounts[price].games++;
+    catPriceCounts[price].books += (cnt.activated || 0) + (cnt.received || 0);
+  }
+  let html = _priceSummaryHtml(catPriceCounts) + '<div class="catalog-grid">';
+  for (const g of visible) {
+    const price    = parseFloat(g.price || 0);
+    const tpp      = parseInt(g.tickets_per_pack || 0, 10);
+    const bookCost = price * tpp;
+    const cnts     = packCounts[g.game_number] || {};
+    const active   = cnts.activated || 0;
+    const received = cnts.received  || 0;
+    const soldout  = cnts.soldout   || 0;
+    const total    = cnts.total     || 0;
+    const gn       = g.game_number;
+    const color    = _gameColor(gn);
+    const emoji    = _gameEmoji(gn);
+
+    const stockHTML = (() => {
+      const pills = [
+        active   ? `<span class="cat-cnt-pill cp-active"><span class="cat-cnt-dot"></span>${active} active</span>`     : '',
+        received ? `<span class="cat-cnt-pill cp-received"><span class="cat-cnt-dot"></span>${received} received</span>` : '',
+        soldout  ? `<span class="cat-cnt-pill cp-soldout"><span class="cat-cnt-dot"></span>${soldout} sold out</span>`   : '',
+      ].filter(Boolean).join('');
+      return `<div class="cat-stock">${pills || '<span class="cat-stock-empty">No books recorded</span>'}</div>`;
+    })();
+
+    const canEdit = total === 0;
+    const editBtns = canEdit
+      ? `<button class="catalog-edit-btn" onclick="openEditGame('${gn}')">Edit</button>
+         ${g.active
+           ? `<button class="catalog-del-btn" onclick="softDeleteGame('${gn}')">Deactivate</button>`
+           : `<button class="catalog-edit-btn" onclick="reactivateGame('${gn}')">Reactivate</button>`}`
+      : `<button class="catalog-edit-btn" onclick="openEditGame('${gn}')">Edit</button>
+         <span class="cat-in-use">${total} book${total !== 1 ? 's' : ''} recorded</span>
+         ${!g.active ? `<button class="catalog-edit-btn" onclick="reactivateGame('${gn}')">Reactivate</button>` : ''}`;
+
+    const historyHTML = (() => {
+      const gameEvts     = packHistory[g.game_number];
+      const gameBarcodes = packBarcodes[gn] || {};
+      if (!gameEvts || !Object.keys(gameEvts).length) return { panel: '', hasHistory: false };
+      const packCount = Object.keys(gameEvts).length;
+      const rows = Object.entries(gameEvts).map(([pn, evts]) => {
+        const steps = evts.map((e, i) => {
+          const d = new Date(e.date);
+          const dateFmt = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+          const timeFmt = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          return `${i > 0 ? '<span class="ph-arrow">→</span>' : ''}<span class="ph-step"><span class="ph-evt ${e.cls}">${e.label}</span><span class="ph-date">${dateFmt} ${timeFmt}</span></span>`;
+        }).join('');
+        const bc = gameBarcodes[pn];
+        const bcRow = bc
+          ? `<div class="ph-barcode-row"><span class="ph-barcode-val">${bc}</span><button class="ph-copy-btn" onclick="_copyBarcode(this,'${bc}')">Copy</button></div>`
+          : `<div class="ph-barcode-row"><span class="ph-barcode-none">No barcode on file</span></div>`;
+        return `<div class="ph-pack-row"><span class="ph-pack-num">#${pn}</span><div class="ph-timeline">${steps}</div>${bcRow}</div>`;
+      }).join('');
+      const panel = `
+        <div class="cat-hist-panel">
+          <div class="cat-hist-panel-hdr">
+            <span class="cat-hist-panel-title">Pack history (${packCount})</span>
+            <button class="cat-bc-toggle" onclick="_toggleCatBarcode(event,'${gn}')">Show Barcodes</button>
+          </div>
+          <div class="ph-list">${rows}</div>
+        </div>`;
+      return { panel, hasHistory: true };
+    })();
+
+    html += `
+      <div class="cat-card" id="catalog-row-${gn}">
+        <div class="cat-card-bar" style="background:${color}"></div>
+        <div class="cat-card-hdr">
+          <div class="cat-game-dot" style="background:${color}1a">${emoji}</div>
+          <div class="cat-game-identity">
+            <div class="cat-game-name">${g.game_name || '—'}</div>
+            <div class="cat-game-num">#${gn}</div>
+          </div>
+          ${g.active ? '<span class="pack-status-pill st-activated">Active</span>' : '<span class="pack-status-pill st-removed">Inactive</span>'}
+        </div>
+        <div class="cat-stats">
+          <div class="cat-stat">
+            <div class="cat-stat-val">$${price.toFixed(2)}</div>
+            <div class="cat-stat-lbl">Per ticket</div>
+          </div>
+          <div class="cat-stat">
+            <div class="cat-stat-val">${tpp > 0 ? tpp.toLocaleString() : '—'}</div>
+            <div class="cat-stat-lbl">Per roll</div>
+          </div>
+          <div class="cat-stat">
+            <div class="cat-stat-val">${bookCost > 0 ? '$' + bookCost.toFixed(0) : '—'}</div>
+            <div class="cat-stat-lbl">Book cost</div>
+          </div>
+        </div>
+        ${stockHTML}
+        <div class="cat-bc">
+          <div class="cat-bc-lbl">Barcode format</div>
+          ${_renderGameNumberTemplate(gn)}
+        </div>
+        <div class="cat-footer">
+          ${editBtns}
+          ${historyHTML.hasHistory ? `<button class="cat-hist-toggle" onclick="_toggleCatHistory('${gn}')">History <i class="cat-hist-chev">▶</i></button>` : ''}
+        </div>
+        ${historyHTML.panel || ''}
+      </div>`;
+  }
+  html += '</div>';
+  el.innerHTML = html;
 }
 
 // ===== CATALOG EDIT / SOFT DELETE =====
@@ -2588,7 +2657,11 @@ function renderLotteryStockByGame(rows) {
     };
     games[gn].packs.push(row);
   }
-  const sorted = Object.values(games).sort((a, b) => parseFloat(a.price) - parseFloat(b.price));
+  const sorted = Object.values(games).sort((a, b) => {
+    if (_stockSortBy === 'price-desc') return parseFloat(b.price) - parseFloat(a.price);
+    if (_stockSortBy === 'game')       return String(a.gn).localeCompare(String(b.gn));
+    return parseFloat(a.price) - parseFloat(b.price); // price-asc default
+  });
   const _pills = (activated, received, soldOut) => [
     activated.length ? `<span class="cat-cnt-pill cp-active"><span class="cat-cnt-dot"></span>${activated.length} active</span>` : '',
     received.length  ? `<span class="cat-cnt-pill cp-received"><span class="cat-cnt-dot"></span>${received.length} received</span>` : '',
@@ -2982,6 +3055,37 @@ function _packEventDetail(ev) {
 }
 
 // Full day-tracking view: days → shifts → entries
+const _PRICE_COLORS = {
+  1:  { bg: 'linear-gradient(135deg,#22c55e,#16a34a)', shadow: '#16a34a40' },
+  2:  { bg: 'linear-gradient(135deg,#06b6d4,#0891b2)', shadow: '#0891b240' },
+  3:  { bg: 'linear-gradient(135deg,#818cf8,#6366f1)', shadow: '#6366f140' },
+  5:  { bg: 'linear-gradient(135deg,#a78bfa,#7c3aed)', shadow: '#7c3aed40' },
+  10: { bg: 'linear-gradient(135deg,#fb923c,#ea580c)', shadow: '#ea580c40' },
+  20: { bg: 'linear-gradient(135deg,#f43f5e,#e11d48)', shadow: '#e11d4840' },
+  25: { bg: 'linear-gradient(135deg,#f43f5e,#be123c)', shadow: '#be123c40' },
+  30: { bg: 'linear-gradient(135deg,#ec4899,#be185d)', shadow: '#be185d40' },
+  50: { bg: 'linear-gradient(135deg,#1A1612,#44403c)',  shadow: '#1A161240' },
+};
+function _priceColor(price) {
+  return _PRICE_COLORS[price] || { bg: 'linear-gradient(135deg,#94a3b8,#64748b)', shadow: '#64748b40' };
+}
+
+function _priceSummaryHtml(priceCounts) {
+  const sorted = Object.entries(priceCounts)
+    .map(([p, c]) => ({ price: parseFloat(p), data: c }))
+    .sort((a, b) => a.price - b.price);
+  if (!sorted.length) return '';
+  const pills = sorted.map(({ price, data }) => {
+    const { bg, shadow } = _priceColor(price);
+    const label = price % 1 === 0 ? `$${price}` : `$${price.toFixed(2)}`;
+    const badge = typeof data === 'object'
+      ? `<span class="price-sum-badge">${data.games} type${data.games !== 1 ? 's' : ''}</span><span class="price-sum-badge">${data.books} book${data.books !== 1 ? 's' : ''}</span>`
+      : `<span class="price-sum-badge">${data} book${data !== 1 ? 's' : ''}</span>`;
+    return `<span class="price-sum-pill" style="background:${bg};box-shadow:0 3px 10px ${shadow}"><span class="price-sum-val">${label}</span>${badge}</span>`;
+  }).join('');
+  return `<div class="price-summary-bar">${pills}</div>`;
+}
+
 function _toggleCatHistory(gn) {
   const card = document.getElementById('catalog-row-' + gn);
   const isOpen = card.classList.toggle('cat-hist-open');
@@ -3309,71 +3413,135 @@ async function _ensureLotteryDbState() {
 }
 
 // Receive sub-section — called when switching to receive sub-tab
+let _locViewSortBy = 'pack';  // 'pack' | 'price-asc' | 'price-desc' | 'name'
+let _locViewSearch = '';
+let _locViewCache  = null;
+
+function setLocSort(sort) {
+  _locViewSortBy = sort;
+  document.querySelectorAll('.loc-sort-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.sort === sort)
+  );
+  _renderLocationView();
+}
+
+function setLocSearch(q) {
+  _locViewSearch = q;
+  _renderLocationView();
+}
+
 async function loadLocationView() {
   const el = document.getElementById('location-view-container');
   if (!el) return;
   el.innerHTML = '<div class="summary-loading">Loading…</div>';
   try {
-    const res  = await sbFetch(
+    const res = await sbFetch(
       `${CONFIG.supabaseUrl}/rest/v1/lottery_packs` +
       `?select=id,game_number,pack_number,status,location,raw_barcode,lottery_games(game_name,price,tickets_per_pack)` +
       `&status=in.(received,activated)&order=location.asc,pack_number.asc&limit=500`
     );
     const rows = await res.json();
     if (!res.ok) throw new Error(rows?.message || `[${res.status}]`);
-    if (!rows.length) { el.innerHTML = '<div class="log-empty" style="padding:10px 0;border:none">No books in system</div>'; return; }
-    const locOrder = _getLocOrderAll();
-    const byLoc = {};
-    for (const r of rows) {
-      const loc = r.location || 'Office';
-      if (!byLoc[loc]) byLoc[loc] = [];
-      byLoc[loc].push(r);
-    }
-    const allLocs = [...locOrder, ...Object.keys(byLoc).filter(l => !locOrder.includes(l))];
-    let html = '';
-    for (const loc of allLocs) {
-      const packs = byLoc[loc];
-      if (!packs?.length) continue;
-      const locCss   = PACK_LOC_CSS[loc] || 'loc-office';
-      const totalVal = packs.reduce((sum, p) => {
-        const price = parseFloat(p.lottery_games?.price || 0);
-        const tpp   = parseInt(p.lottery_games?.tickets_per_pack || 0, 10);
-        return sum + price * tpp;
-      }, 0);
-      html += `<div class="loc-view-section">
-        <div class="loc-view-header">
-          <span class="pack-loc-pill ${locCss}">${loc}</span>
-          <span class="loc-view-count">${packs.length} book${packs.length !== 1 ? 's' : ''}</span>
-          <span class="loc-view-total">$${totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-        </div>
-        <div class="loc-view-books">
-          ${packs.map(p => {
-            const st    = PACK_STATUS[p.status] || { label: p.status, css: '' };
-            const name  = p.lottery_games?.game_name || `Game #${p.game_number}`;
-            const price = parseFloat(p.lottery_games?.price || 0);
-            const tpp   = parseInt(p.lottery_games?.tickets_per_pack || 0, 10);
-            const val   = price && tpp ? `$${(price * tpp).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '';
-            return `<div class="loc-view-row" style="flex-direction:column;align-items:stretch">
-              <div style="display:flex;align-items:center;gap:8px">
-                <div class="loc-view-info">
-                  <span class="loc-view-name">${name}</span>
-                  <span class="loc-view-sub">#${p.pack_number}${price ? ` · $${price.toFixed(2)}/ticket` : ''}</span>
-                </div>
-                <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
-                  ${val ? `<span class="loc-view-val">${val}</span>` : ''}
-                  <span class="pack-status-pill ${st.css}">${st.label}</span>
-                </div>
-              </div>
-              ${p.raw_barcode ? `<div style="margin-top:8px">${_renderBarcodeBreakdown(p.raw_barcode, p.game_number)}</div>` : ''}
-            </div>`;
-          }).join('')}
-        </div>
-      </div>`;
-    }
-    el.innerHTML = html;
+    _locViewCache = rows;
+    _renderLocationView();
   } catch (err) {
-    el.innerHTML = `<div class="item-nf-sub">Load failed: ${err.message}</div>`;
+    document.getElementById('location-view-container').innerHTML =
+      `<div class="item-nf-sub">Load failed: ${err.message}</div>`;
   }
+}
+
+function _renderLocationView() {
+  const el = document.getElementById('location-view-container');
+  if (!el || !_locViewCache) return;
+  const rows = _locViewCache;
+
+  if (!rows.length) {
+    el.innerHTML = '<div class="log-empty" style="padding:10px 0;border:none">No books in system</div>';
+    return;
+  }
+
+  // Filter
+  const q = _locViewSearch.trim().toLowerCase();
+  const filtered = q
+    ? rows.filter(p =>
+        (p.lottery_games?.game_name || '').toLowerCase().includes(q) ||
+        String(p.game_number).includes(q) ||
+        String(p.pack_number).includes(q)
+      )
+    : rows;
+
+  if (!filtered.length) {
+    el.innerHTML = `<div class="log-empty" style="padding:10px 0;border:none">No books match "${_locViewSearch}"</div>`;
+    return;
+  }
+
+  // Group by location
+  const locOrder = _getLocOrderAll();
+  const byLoc = {};
+  for (const r of filtered) {
+    const loc = r.location || 'Office';
+    if (!byLoc[loc]) byLoc[loc] = [];
+    byLoc[loc].push(r);
+  }
+
+  // Sort within each location
+  const sortFn = (a, b) => {
+    if (_locViewSortBy === 'price-asc')  return parseFloat(a.lottery_games?.price || 0) - parseFloat(b.lottery_games?.price || 0);
+    if (_locViewSortBy === 'price-desc') return parseFloat(b.lottery_games?.price || 0) - parseFloat(a.lottery_games?.price || 0);
+    if (_locViewSortBy === 'name')       return (a.lottery_games?.game_name || '').localeCompare(b.lottery_games?.game_name || '');
+    return a.pack_number - b.pack_number; // 'pack' default
+  };
+  for (const loc of Object.keys(byLoc)) byLoc[loc].sort(sortFn);
+
+  // Price count summary
+  const locPriceCounts = {};
+  for (const p of filtered) {
+    const price = parseFloat(p.lottery_games?.price || 0);
+    if (price > 0) locPriceCounts[price] = (locPriceCounts[price] || 0) + 1;
+  }
+
+  const allLocs = [...locOrder, ...Object.keys(byLoc).filter(l => !locOrder.includes(l))];
+  let html = _priceSummaryHtml(locPriceCounts);
+  for (const loc of allLocs) {
+    const packs = byLoc[loc];
+    if (!packs?.length) continue;
+    const locCss   = PACK_LOC_CSS[loc] || 'loc-office';
+    const totalVal = packs.reduce((sum, p) => {
+      const price = parseFloat(p.lottery_games?.price || 0);
+      const tpp   = parseInt(p.lottery_games?.tickets_per_pack || 0, 10);
+      return sum + price * tpp;
+    }, 0);
+    html += `<div class="loc-view-section">
+      <div class="loc-view-header">
+        <span class="pack-loc-pill ${locCss}">${loc}</span>
+        <span class="loc-view-count">${packs.length} book${packs.length !== 1 ? 's' : ''}</span>
+        <span class="loc-view-total">$${totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+      </div>
+      <div class="loc-view-books">
+        ${packs.map(p => {
+          const st    = PACK_STATUS[p.status] || { label: p.status, css: '' };
+          const name  = p.lottery_games?.game_name || `Game #${p.game_number}`;
+          const price = parseFloat(p.lottery_games?.price || 0);
+          const tpp   = parseInt(p.lottery_games?.tickets_per_pack || 0, 10);
+          const val   = price && tpp ? `$${(price * tpp).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '';
+          return `<div class="loc-view-row" style="flex-direction:column;align-items:stretch">
+            <div style="display:flex;align-items:center;gap:8px">
+              <div class="loc-view-info">
+                <span class="loc-view-name">${name}</span>
+                <span class="loc-view-sub">#${p.pack_number}${price ? ` · $${price.toFixed(2)}/ticket` : ''}</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+                ${val ? `<span class="loc-view-val">${val}</span>` : ''}
+                <span class="pack-status-pill ${st.css}">${st.label}</span>
+              </div>
+            </div>
+            ${p.raw_barcode ? `<div style="margin-top:8px">${_renderBarcodeBreakdown(p.raw_barcode, p.game_number)}</div>` : ''}
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }
+  el.innerHTML = html;
 }
 
 function initReceiveTab() {

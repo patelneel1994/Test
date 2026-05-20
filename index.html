@@ -472,6 +472,10 @@
         <button class="stock-filter-btn"         data-filter="soldout"  onclick="setStockFilter('soldout')">Sold Out <span class="sf-count" id="sf-soldout">—</span></button>
         <button class="stock-filter-btn"         data-filter="removed"  onclick="setStockFilter('removed')">Removed</button>
         <button class="stock-filter-btn"         data-filter="all"      onclick="setStockFilter('all')">All</button>
+        <span class="stock-sort-sep"></span>
+        <button class="stock-sort-btn active" data-sort="price-asc"  onclick="setStockSort('price-asc')">$ ↑</button>
+        <button class="stock-sort-btn"        data-sort="price-desc" onclick="setStockSort('price-desc')">$ ↓</button>
+        <button class="stock-sort-btn"        data-sort="game"       onclick="setStockSort('game')">Game #</button>
       </div>
       <div id="bulk-move-bar" style="display:none"></div>
       <div id="lottery-stock-container"><div class="summary-loading">Loading…</div></div>
@@ -525,6 +529,17 @@
     </div>
 
     <div class="scan-card">
+      <div class="cat-controls">
+        <input class="cat-search-input" id="catalog-search" type="search"
+          placeholder="Search by game name, game #, or pack #…"
+          oninput="setCatalogSearch(this.value)" />
+        <div class="cat-sort-pills">
+          <span class="cat-sort-label">Sort</span>
+          <button class="cat-sort-pill active" data-sort="game"       onclick="setCatalogSort('game')">Game #</button>
+          <button class="cat-sort-pill"        data-sort="price-asc"  onclick="setCatalogSort('price-asc')">$ Low→High</button>
+          <button class="cat-sort-pill"        data-sort="price-desc" onclick="setCatalogSort('price-desc')">$ High→Low</button>
+        </div>
+      </div>
       <div id="lottery-catalog-container"><div class="summary-loading">Loading…</div></div>
     </div>
 
@@ -718,6 +733,18 @@
         <div>
           <div class="page-eyebrow" style="margin-bottom:2px">Locations</div>
           <div class="card-section-title">Books by location</div>
+        </div>
+      </div>
+      <div class="loc-controls">
+        <input class="cat-search-input" id="loc-search" type="search"
+          placeholder="Search by game name, game #, or pack #…"
+          oninput="setLocSearch(this.value)" />
+        <div class="cat-sort-pills">
+          <span class="cat-sort-label">Sort</span>
+          <button class="loc-sort-btn active" data-sort="pack"       onclick="setLocSort('pack')">Pack #</button>
+          <button class="loc-sort-btn"        data-sort="name"       onclick="setLocSort('name')">Name</button>
+          <button class="loc-sort-btn"        data-sort="price-asc"  onclick="setLocSort('price-asc')">$ ↑</button>
+          <button class="loc-sort-btn"        data-sort="price-desc" onclick="setLocSort('price-desc')">$ ↓</button>
         </div>
       </div>
       <div id="location-view-container"><div class="summary-loading">Loading…</div></div>
