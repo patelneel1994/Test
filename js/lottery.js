@@ -1898,6 +1898,17 @@ async function moveReceivedPack(packId, newLocation, e) {
   } catch (err) { showError('Move failed', err.message); }
 }
 
+async function restoreRemovedPack(packId, location, e) {
+  if (e) e.preventDefault();
+  try {
+    await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(packId)}`,
+      { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ status: 'received', location, start_ticket: 0, last_shift_ticket: 0 }) });
+    _logPackEvent(packId, 'restored', { location_to: location, notes: `Brought back from removed — received at ${location}` });
+    await loadLotteryStock(); loadLotteryDbStats();
+  } catch (err) { showError('Restore failed', err.message); }
+}
+
 // ===== ACTIVATION MODAL =====
 
 // ===== EDIT PACK POSITION / END =====
@@ -2066,11 +2077,14 @@ function _packActionHtml(p) {
       onmousedown="openSoldOutModal('${p.id}',${p.start_ticket},event)"
       ontouchstart="openSoldOutModal('${p.id}',${p.start_ticket},event)">Sold Out</button>`;
   }
-  // Removed packs can be re-activated at station only
-  if (p.status === 'removed') return _getStations().map(st => `
-    <button class="pack-act-btn act-station"
-      onmousedown="openActivationForm('${p.id}','${st}',event)"
-      ontouchstart="openActivationForm('${p.id}','${st}',event)">${st}</button>`).join('');
+  if (p.status === 'removed') {
+    const stationBtns = _getStations().map(st =>
+      `<button class="pack-act-btn act-station"
+        onmousedown="restoreRemovedPack('${p.id}','${st}',event)"
+        ontouchstart="restoreRemovedPack('${p.id}','${st}',event)">${st}</button>`
+    ).join('');
+    return `<div class="pack-move-row"><span class="pack-move-label">Bring back to</span>${stationBtns}</div>`;
+  }
   return '';
 }
 
@@ -2240,6 +2254,7 @@ async function loadLotteryCatalog() {
   const el = document.getElementById('lottery-catalog-container');
   if (!el) return;
   el.innerHTML = '<div class="summary-loading">Loading…</div>';
+  await checkDbCapabilities();
   const activeFilter = _showInactiveGames ? '' : '&or=(active.eq.true,active.is.null)';
   try {
     const [gRes, pRes, eRes] = await Promise.all([
@@ -2260,9 +2275,10 @@ async function loadLotteryCatalog() {
     }
 
     // Count packs per game by status; track pack numbers per status; grab first raw_barcode seen per game
-    const packCounts  = {};
-    const packLists   = {};
+    const packCounts   = {};
+    const packLists    = {};
     const sampleBarcode = {};
+    const packBarcodes  = {};
     for (const p of (Array.isArray(packs) ? packs : [])) {
       const gn = p.game_number;
       if (!packCounts[gn]) {
@@ -2275,6 +2291,10 @@ async function loadLotteryCatalog() {
         packLists[gn][p.status].push(p.pack_number);
       }
       if (!sampleBarcode[gn] && p.raw_barcode) sampleBarcode[gn] = p.raw_barcode;
+      if (p.raw_barcode) {
+        if (!packBarcodes[gn]) packBarcodes[gn] = {};
+        packBarcodes[gn][p.pack_number] = p.raw_barcode;
+      }
     }
 
     // Build per-game pack event history: { game_number: { pack_number: [{label, date, extra}] } }
@@ -2282,6 +2302,7 @@ async function loadLotteryCatalog() {
     const _EVT_LABELS = {
       received: 'Received', activated: 'Loaded', soldout: 'Sold Out',
       removed: 'Removed', moved: 'Moved', adjusted: 'Adjusted', discrepancy: 'Discrepancy',
+      restored: 'Restored',
     };
     for (const ev of (Array.isArray(evtRaw) ? evtRaw : [])) {
       const gn = ev.lottery_packs?.game_number;
@@ -2334,8 +2355,9 @@ async function loadLotteryCatalog() {
            ${!g.active ? `<button class="catalog-edit-btn" onclick="reactivateGame('${gn}')">Reactivate</button>` : ''}`;
 
       const historyHTML = (() => {
-        const gameEvts = packHistory[g.game_number];
-        if (!gameEvts || !Object.keys(gameEvts).length) return '';
+        const gameEvts     = packHistory[g.game_number];
+        const gameBarcodes = packBarcodes[gn] || {};
+        if (!gameEvts || !Object.keys(gameEvts).length) return { panel: '', hasHistory: false };
         const packCount = Object.keys(gameEvts).length;
         const rows = Object.entries(gameEvts).map(([pn, evts]) => {
           const steps = evts.map((e, i) => {
@@ -2344,12 +2366,21 @@ async function loadLotteryCatalog() {
             const timeFmt = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             return `${i > 0 ? '<span class="ph-arrow">→</span>' : ''}<span class="ph-step"><span class="ph-evt ${e.cls}">${e.label}</span><span class="ph-date">${dateFmt} ${timeFmt}</span></span>`;
           }).join('');
-          return `<div class="ph-pack-row"><span class="ph-pack-num">#${pn}</span><div class="ph-timeline">${steps}</div></div>`;
+          const bc = gameBarcodes[pn];
+          const bcRow = bc
+            ? `<div class="ph-barcode-row"><span class="ph-barcode-val">${bc}</span><button class="ph-copy-btn" onclick="_copyBarcode(this,'${bc}')">Copy</button></div>`
+            : `<div class="ph-barcode-row"><span class="ph-barcode-none">No barcode on file</span></div>`;
+          return `<div class="ph-pack-row"><span class="ph-pack-num">#${pn}</span><div class="ph-timeline">${steps}</div>${bcRow}</div>`;
         }).join('');
-        return `<details class="cat-history">
-          <summary><i class="cat-history-chevron">▶</i> Pack history <span style="font-weight:500;opacity:.7">(${packCount})</span></summary>
-          <div class="cat-history-body"><div class="ph-list">${rows}</div></div>
-        </details>`;
+        const panel = `
+          <div class="cat-hist-panel">
+            <div class="cat-hist-panel-hdr">
+              <span class="cat-hist-panel-title">Pack history (${packCount})</span>
+              <button class="cat-bc-toggle" onclick="_toggleCatBarcode(event,'${gn}')">Show Barcodes</button>
+            </div>
+            <div class="ph-list">${rows}</div>
+          </div>`;
+        return { panel, hasHistory: true };
       })();
 
       html += `
@@ -2382,8 +2413,11 @@ async function loadLotteryCatalog() {
             <div class="cat-bc-lbl">Barcode format</div>
             ${_renderGameNumberTemplate(gn)}
           </div>
-          ${historyHTML}
-          <div class="cat-footer">${editBtns}</div>
+          <div class="cat-footer">
+            ${editBtns}
+            ${historyHTML.hasHistory ? `<button class="cat-hist-toggle" onclick="_toggleCatHistory('${gn}')">History <i class="cat-hist-chev">▶</i></button>` : ''}
+          </div>
+          ${historyHTML.panel || ''}
         </div>`;
     }
     html += '</div>';
@@ -2940,6 +2974,7 @@ function _packEventDetail(ev) {
     case 'activated': return `loaded to ${ev.location_to || '?'}${ev.ticket_after != null ? ` from #${ev.ticket_after}` : ''}${ev.notes ? ` (${ev.notes})` : ''}`;
     case 'moved':     return `${ev.location_from || '?'} → ${ev.location_to || '?'}`;
     case 'removed':   return `removed at #${ev.ticket_after ?? '?'}`;
+    case 'restored':  return ev.notes || 'brought back from removed → received';
     case 'soldout':   return `sold out at #${ev.ticket_after ?? '?'}`;
     case 'adjusted':  return `position ${ev.ticket_before ?? '?'} → ${ev.ticket_after ?? '?'}${ev.notes ? ` · ${ev.notes}` : ''}`;
     default:          return ev.notes || '';
@@ -2947,6 +2982,34 @@ function _packEventDetail(ev) {
 }
 
 // Full day-tracking view: days → shifts → entries
+function _toggleCatHistory(gn) {
+  const card = document.getElementById('catalog-row-' + gn);
+  const isOpen = card.classList.toggle('cat-hist-open');
+  if (!isOpen) {
+    card.classList.remove('cat-bc-open');
+    const bcBtn = card.querySelector('.cat-bc-toggle');
+    if (bcBtn) bcBtn.textContent = 'Show Barcodes';
+  }
+}
+
+function _toggleCatBarcode(e, gn) {
+  e.stopPropagation();
+  const card = document.getElementById('catalog-row-' + gn);
+  const isOn = card.classList.toggle('cat-bc-open');
+  e.currentTarget.textContent = isOn ? 'Show Timeline' : 'Show Barcodes';
+}
+
+function _copyBarcode(btn, barcode) {
+  navigator.clipboard.writeText(barcode).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = '✓ Copied';
+    setTimeout(() => btn.textContent = orig, 1500);
+  }).catch(() => {
+    btn.textContent = 'Error';
+    setTimeout(() => btn.textContent = 'Copy', 1500);
+  });
+}
+
 function _toggleDayGroup(id) {
   const el = document.getElementById(id);
   if (el) el.classList.toggle('collapsed');
@@ -3435,8 +3498,8 @@ async function deleteReceivedPack(packId, gameName, e) {
 
 const _GAME_COLORS  = ['#E13B3B','#1E5DD8','#0E8F5A','#8B5CF6','#F97316','#0F8C8C','#B8002E','#D44A8B'];
 const _GAME_EMOJIS  = ['🍀','💎','💵','👑','🎰','🧩','♛','🎯'];
-const _ACT_COLORS   = { received:'#8A6A00', activated:'#0E8F5A', moved:'#8B5CF6', soldout:'#E13B3B', discrepancy:'#B91C1C', adjusted:'#6B7280', removed:'#B91C1C' };
-const _ACT_LABELS   = { received:'Received', activated:'Activated', moved:'Moved', soldout:'Sold out', discrepancy:'Discrepancy', adjusted:'Adjusted', removed:'Removed' };
+const _ACT_COLORS   = { received:'#8A6A00', activated:'#0E8F5A', moved:'#8B5CF6', soldout:'#E13B3B', discrepancy:'#B91C1C', adjusted:'#6B7280', removed:'#B91C1C', restored:'#0E8F5A' };
+const _ACT_LABELS   = { received:'Received', activated:'Activated', moved:'Moved', soldout:'Sold out', discrepancy:'Discrepancy', adjusted:'Adjusted', removed:'Removed', restored:'Restored' };
 
 // ── Shared ticket-info helpers (used everywhere a pack row is rendered) ──
 function _dirPill(dir) {
