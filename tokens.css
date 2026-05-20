@@ -1,0 +1,74 @@
+/* ================================================================
+   LOTTOTRACK DESIGN TOKENS
+   Single source of truth for all design values.
+   Import this file first — styles.css imports it automatically.
+   ================================================================ */
+
+:root {
+  /* ── PRIMITIVES ─────────────────────────────────────────────── */
+  --cream:        #FAF7F0;   /* page canvas, warm white */
+  --cream-dk:     #F2EDE0;   /* section backgrounds, table headers */
+  --ink:          #1A1612;   /* primary text, sidebar, strong UI */
+  --card:         #FFFFFF;   /* card surfaces */
+  --accent:       #FFCB45;   /* amber/gold — active nav, active sort pills */
+  --accent-dk:    #8A6A00;   /* amber text on light */
+  --brand-red:    #E13B3B;   /* primary brand — CTA, active states */
+  --brand-dk:     #9B1F1F;   /* brand red dark — hover/pressed */
+  --design-green: #0E8F5A;   /* success, activated books, positive */
+  --blue:         #1E5DD8;   /* directional / informational (ASC) */
+
+  /* ── INK OPACITY SCALE ─────────────────────────────────────── */
+  --ink-80:  rgba(26,22,18,.78);  /* primary text */
+  --ink-70:  rgba(26,22,18,.68);  /* secondary text */
+  --ink-60:  rgba(26,22,18,.54);  /* muted / labels */
+  --ink-50:  rgba(26,22,18,.42);  /* placeholder / hint */
+  --ink-30:  rgba(26,22,18,.28);  /* subtle borders on focus */
+  --ink-15:  rgba(26,22,18,.14);  /* borders, dividers */
+  --ink-10:  rgba(26,22,18,.09);  /* card borders, very subtle */
+
+  /* ── SEMANTIC COLOR ROLES ───────────────────────────────────── */
+
+  /* Backgrounds & surfaces */
+  --bg:             var(--cream);
+  --surface:        var(--card);
+  --border:         var(--ink-15);
+  --text:           var(--ink);
+  --text-muted:     var(--ink-60);
+  --text-hint:      var(--ink-50);
+
+  /* Primary (brand red) */
+  --primary:        var(--brand-red);
+  --primary-dark:   var(--brand-dk);
+  --primary-bg:     rgba(225,59,59,.10);
+  --primary-border: rgba(225,59,59,.25);
+
+  /* Red aliases (error, destructive, removed) */
+  --red:            var(--brand-red);
+  --red-dk:         var(--brand-dk);
+  --red-10:         var(--primary-bg);
+  --red-bg:         rgba(185,28,28,.08);
+  --red-border:     rgba(185,28,28,.28);
+  --red-text:       #B91C1C;
+
+  /* Amber (warning, received, staging) */
+  --amber-bg:       rgba(255,203,69,.18);
+  --amber-border:   rgba(255,203,69,.45);
+  --amber-text:     var(--accent-dk);
+  --accent-10:      rgba(255,203,69,.18);
+
+  /* Green (success, active books) */
+  --green:          var(--design-green);
+  --green-bg:       rgba(14,143,90,.10);
+  --green-border:   rgba(14,143,90,.30);
+  --green-text:     var(--design-green);
+  --green-10:       rgba(14,143,90,.10);
+
+  /* Brand aliases (keep old references working) */
+  --brand-10:       rgba(225,59,59,.10);
+
+  /* ── BORDER RADIUS ──────────────────────────────────────────── */
+  --radius:    16px;   /* cards, modals, panels */
+  --radius-sm: 12px;   /* scan inputs, secondary cards */
+  --radius-xs:  8px;   /* inline badges, small buttons */
+  /* 999px — pills, tags, full-round buttons (used inline) */
+}
