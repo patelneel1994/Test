@@ -9,7 +9,9 @@ function _setNavActive(id) {
 function switchTab(tab, { pushHash = true } = {}) {
   ['scan', 'summary', 'search', 'lottery'].forEach(t => {
     const el = document.getElementById('screen-' + t);
-    if (el) el.style.display = t === tab ? '' : 'none';
+    if (!el) return;
+    el.style.display = t === tab ? '' : 'none';
+    if (t === tab) { el.classList.remove('section-anim'); void el.offsetWidth; el.classList.add('section-anim'); }
   });
 
   const locBar = document.getElementById('loc-bar');
@@ -38,7 +40,9 @@ function switchLotterySection(section, { pushHash = true } = {}) {
   // Show the correct sub-section
   ['dashboard', 'tracking', 'catalog', 'receive', 'reports', 'settings', 'inventory'].forEach(s => {
     const sec = document.getElementById('lsection-' + s);
-    if (sec) sec.style.display = s === section ? '' : 'none';
+    if (!sec) return;
+    sec.style.display = s === section ? '' : 'none';
+    if (s === section) { sec.classList.remove('section-anim'); void sec.offsetWidth; sec.classList.add('section-anim'); }
   });
 
   _setNavActive('nav-lottery-' + section);
@@ -47,7 +51,7 @@ function switchLotterySection(section, { pushHash = true } = {}) {
 
   if (typeof _updateContextBar === 'function') _updateContextBar(null);
 
-  if (section === 'dashboard') loadDashboard();
+  if (section === 'dashboard') { loadDashboard(); _initDashAnalyticsDates(); }
   if (section === 'receive')   { initReceiveTab(); loadLocationView(); }
   if (section === 'catalog')   loadLotteryCatalog();
   if (section === 'reports')   loadLotteryReports();

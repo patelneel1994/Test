@@ -140,12 +140,28 @@ async function openInventory(context, skipPrompt = false) {
       : `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,location,lottery_games(game_name,price,tickets_per_pack)`;
     const base = `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=${sel}&order=location.asc,pack_number.asc&limit=200`;
     const isOpenDay = context === 'open-day';
+    const isClose   = !isOpenDay && context.startsWith('close');
     const fetches = [sbFetch(`${base}&status=eq.activated`)];
     if (isOpenDay) fetches.push(sbFetch(`${base}&status=eq.received`));
+    if (isClose)   fetches.push(sbFetch(`${base}&status=eq.soldout`));
     const results = await Promise.all(fetches);
     const jsons   = await Promise.all(results.map(r => r.json()));
     _invPacks         = Array.isArray(jsons[0]) ? jsons[0] : [];
-    _invReceivedPacks = isOpenDay && Array.isArray(jsons[1]) ? jsons[1] : [];
+    _invReceivedPacks = isOpenDay ? (Array.isArray(jsons[1]) ? jsons[1] : []) : [];
+
+    // Include soldout packs whose last_shift_ticket hasn't been settled yet —
+    // these were marked sold-out mid-shift and need their revenue counted.
+    if (isClose) {
+      const soldoutPacks = Array.isArray(jsons[1]) ? jsons[1] : [];
+      const unsettled = soldoutPacks.filter(p =>
+        p.start_ticket != null && p.last_shift_ticket != null && p.start_ticket !== p.last_shift_ticket
+      );
+      for (const p of unsettled) {
+        _invData[p.id]    = p.start_ticket;
+        _invSoldOut[p.id] = p.start_ticket;
+      }
+      _invPacks = [..._invPacks, ...unsettled];
+    }
 
     // Auto-commit when nothing to audit
     if (!_invPacks.length && !_invReceivedPacks.length) {
@@ -342,7 +358,18 @@ async function doSkipShiftChange(e) {
 }
 
 // ===== RESET DATA =====
+function _onResetConfirmInput() {
+  const val = (document.getElementById('reset-confirm-input')?.value || '');
+  const unlocked = val === 'Neel';
+  document.querySelectorAll('#reset-data-modal .reset-opt').forEach(btn => {
+    btn.disabled = !unlocked;
+  });
+}
+
 async function openResetModal() {
+  const inp = document.getElementById('reset-confirm-input');
+  if (inp) inp.value = '';
+  document.querySelectorAll('#reset-data-modal .reset-opt').forEach(btn => { btn.disabled = true; });
   document.getElementById('reset-data-modal').classList.add('open');
   const el = document.getElementById('reset-current-counts');
   if (!el) return;
@@ -374,6 +401,9 @@ async function openResetModal() {
 }
 function closeResetModal() {
   document.getElementById('reset-data-modal').classList.remove('open');
+  const inp = document.getElementById('reset-confirm-input');
+  if (inp) inp.value = '';
+  document.querySelectorAll('#reset-data-modal .reset-opt').forEach(btn => { btn.disabled = true; });
 }
 
 async function confirmReset(mode, e) {
@@ -769,7 +799,8 @@ function _updateInvTotals() {
     const baseline = p.last_shift_ticket != null ? p.last_shift_ticket : p.start_ticket;
     const dir      = (p.loading_direction || 'asc').toLowerCase();
     const price    = parseFloat(p.lottery_games?.price || 0);
-    const sold = _soldTickets(_invData[p.id], baseline, dir);
+    const base = _soldTickets(_invData[p.id], baseline, dir);
+    const sold = (p.id in _invSoldOut) ? base + 1 : base;
     totalSold += sold;
     totalRev  += sold * price;
   }
@@ -1071,28 +1102,28 @@ async function loadCurrentDayShift() {
 }
 
 function updateDayShiftButtons() {
-  const el = document.getElementById('day-shift-btns');
-  if (!el) return;
+  const els = document.querySelectorAll('.day-shift-btns');
+  if (!els.length) return;
 
   const shiftIcon = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M3 12h18"/><path d="m15 6 6 6-6 6"/><path d="m9 18-6-6 6-6"/></svg>`;
   const closeIcon = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M3 3v18h18"/><path d="m7 15 3-4 3 3 5-7"/></svg>`;
   const sunIcon   = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5"/></svg>`;
 
+  let html;
   if (!_dbCaps.hasFullDayTracking) {
-    el.innerHTML = `
+    html = `
       <button class="pack-act-btn act-soldout" style="font-size:12px;padding:6px 14px" onclick="openShiftClose('shift')">${shiftIcon}Change Shift</button>
       <button class="pack-act-btn" style="font-size:12px;padding:6px 14px;background:var(--accent-10);color:var(--accent-dk);border-color:var(--amber-border)" onclick="openShiftClose('day')">${closeIcon}Close Day</button>`;
-    return;
-  }
-
-  if (!_currentDay) {
-    el.innerHTML = `<button class="pack-act-btn act-station" style="font-size:12px;padding:7px 16px;font-family:'Space Grotesk',sans-serif;font-weight:700" onclick="openInventory('open-day')">${sunIcon}Open Day</button>`;
+  } else if (!_currentDay) {
+    html = `<button class="pack-act-btn act-station" style="font-size:12px;padding:7px 16px;font-family:'Space Grotesk',sans-serif;font-weight:700" onclick="openInventory('open-day')">${sunIcon}Open Day</button>`;
   } else {
-    el.innerHTML = `
+    html = `
       <span class="day-status-badge day-status-shift">${sunIcon}Day Open</span>
       <button class="pack-act-btn act-soldout" style="font-size:12px;padding:6px 14px" onclick="openInventory('close-shift')">${shiftIcon}Change Shift</button>
       <button class="pack-act-btn" style="font-size:12px;padding:6px 14px;background:var(--accent-10);color:var(--accent-dk);border-color:var(--amber-border)" onclick="openInventory('close-day')">${closeIcon}Close Day</button>`;
   }
+
+  els.forEach(el => { el.innerHTML = html; });
 }
 
 // ===== OPEN DAY =====
@@ -1722,7 +1753,7 @@ async function confirmSoldOut(e) {
     const prevTicket = (_packInfoCache[_pendingSoldOutId] || {}).startTicket;
     await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(_pendingSoldOutId)}`,
       { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ status: 'soldout', start_ticket: finalTicket, last_shift_ticket: finalTicket }) });
+        body: JSON.stringify({ status: 'soldout', start_ticket: finalTicket }) });
     _logPackEvent(_pendingSoldOutId, 'soldout', { ticket_before: prevTicket ?? null, ticket_after: finalTicket });
     closeSoldOutModal();
     await loadLotteryStock(); loadLotteryDbStats();
@@ -1901,10 +1932,11 @@ async function moveReceivedPack(packId, newLocation, e) {
 async function restoreRemovedPack(packId, location, e) {
   if (e) e.preventDefault();
   try {
+    const newStatus = _isStation(location) ? 'activated' : 'received';
     await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(packId)}`,
       { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ status: 'received', location, start_ticket: 0, last_shift_ticket: 0 }) });
-    _logPackEvent(packId, 'restored', { location_to: location, notes: `Brought back from removed — received at ${location}` });
+        body: JSON.stringify({ status: newStatus, location, start_ticket: 0, last_shift_ticket: 0 }) });
+    _logPackEvent(packId, 'restored', { location_to: location, notes: `Brought back from removed — ${newStatus} at ${location}` });
     await loadLotteryStock(); loadLotteryDbStats();
   } catch (err) { showError('Restore failed', err.message); }
 }
@@ -2710,7 +2742,9 @@ function renderLotteryStockByLocation(rows) {
     sold ? `<span class="cat-cnt-pill cp-soldout"><span class="cat-cnt-dot"></span>${sold} sold out</span>`  : '',
   ].filter(Boolean).join('');
 
-  el.innerHTML = '<div class="catalog-grid">' + locOrder.map(loc => {
+  const allLocs = [...locOrder, ...Object.keys(byLoc).filter(l => !locOrder.includes(l))];
+
+  el.innerHTML = '<div class="catalog-grid">' + allLocs.map(loc => {
     const packs = byLoc[loc];
     if (!packs || !packs.length) return '';
     const activated = packs.filter(p => p.status === 'activated').length;
@@ -3018,7 +3052,7 @@ async function loadShiftHistory() {
   try {
     if (_dbCaps.hasFullDayTracking) {
       const eventsSelect = _dbCaps.hasPackEvents
-        ? `,lottery_pack_events(id,action,location_from,location_to,ticket_before,ticket_after,notes,created_at,lottery_packs(pack_number,game_number,lottery_games(game_name)))`
+        ? `,lottery_pack_events(id,action,location_from,location_to,ticket_before,ticket_after,notes,created_at,lottery_packs(pack_number,game_number,raw_barcode,lottery_games(game_name,price)))`
         : '';
       const res = await sbFetch(
         `${CONFIG.supabaseUrl}/rest/v1/lottery_days` +
@@ -3041,13 +3075,33 @@ async function loadShiftHistory() {
   }
 }
 
+function _evBarcodeInline(raw, gameNumber) {
+  if (!raw) return '';
+  const clean = raw.replace(/[^0-9]/g, '');
+  let segs;
+  if (clean.length === 14) {
+    segs = [clean.slice(0, 4), clean.slice(4, 10), clean.slice(10, 13)];
+  } else if (clean.length === 13) {
+    segs = [clean.slice(0, 4), clean.slice(4, 10), clean.slice(10)];
+  } else if (clean.length === 12) {
+    segs = [clean.slice(0, 3), clean.slice(3, 9), clean.slice(9)];
+  } else if (clean.length > 14) {
+    const gd = gameNumber && String(gameNumber).replace(/\D/g,'').length === 4 ? 4 : 3;
+    const pe = gd + 6, te = pe + 3;
+    segs = [clean.slice(0, gd), clean.slice(gd, pe), clean.slice(pe, te)];
+  } else {
+    return `<span class="sev-bc-raw">${clean}</span>`;
+  }
+  return `<span class="sev-bc-game">${segs[0]}</span><span class="sev-bc-sep">·</span><span class="sev-bc-pack">${segs[1]}</span><span class="sev-bc-sep">·</span><span class="sev-bc-ticket">${segs[2]}</span>`;
+}
+
 function _packEventDetail(ev) {
   switch (ev.action) {
     case 'received':  return `received → ${ev.location_to || ''}${ev.ticket_after != null ? ` at #${ev.ticket_after}` : ''}`;
     case 'activated': return `loaded to ${ev.location_to || '?'}${ev.ticket_after != null ? ` from #${ev.ticket_after}` : ''}${ev.notes ? ` (${ev.notes})` : ''}`;
     case 'moved':     return `${ev.location_from || '?'} → ${ev.location_to || '?'}`;
     case 'removed':   return `removed at #${ev.ticket_after ?? '?'}`;
-    case 'restored':  return ev.notes || 'brought back from removed → received';
+    case 'restored':  return ev.notes || 'brought back from removed';
     case 'soldout':   return `sold out at #${ev.ticket_after ?? '?'}`;
     case 'adjusted':  return `position ${ev.ticket_before ?? '?'} → ${ev.ticket_after ?? '?'}${ev.notes ? ` · ${ev.notes}` : ''}`;
     default:          return ev.notes || '';
@@ -3818,11 +3872,251 @@ async function loadDashboard() {
     // Activity feed
     _renderDashActivity(eventArr, activityEl);
 
+    // Analytics (non-blocking — loads independently)
+    loadDashAnalytics();
+
   } catch (err) {
     if (stationsEl) stationsEl.innerHTML = `<div class="item-nf-sub">Load error: ${err.message}</div>`;
     if (attentionEl) attentionEl.innerHTML = '';
     if (activityEl)  activityEl.innerHTML = '';
   }
+}
+
+// ===== DASHBOARD ANALYTICS =====
+
+let _dashAnalyticsPreset = 'month';
+let _dashAnalyticsInited = false;
+
+function _initDashAnalyticsDates() {
+  if (_dashAnalyticsInited) return;
+  _dashAnalyticsInited = true;
+  const { from, to } = _dashAnalyticsDates();
+  const fEl = document.getElementById('da-date-from');
+  const tEl = document.getElementById('da-date-to');
+  if (fEl) fEl.value = from;
+  if (tEl) tEl.value = to;
+}
+
+function _dashAnalyticsDates() {
+  const now   = new Date();
+  const y     = now.getFullYear(), m = now.getMonth();
+  if (_dashAnalyticsPreset === 'month') {
+    return {
+      from: new Date(y, m, 1).toISOString().slice(0, 10),
+      to:   new Date(y, m + 1, 0).toISOString().slice(0, 10),
+    };
+  }
+  if (_dashAnalyticsPreset === 'lastmonth') {
+    return {
+      from: new Date(y, m - 1, 1).toISOString().slice(0, 10),
+      to:   new Date(y, m, 0).toISOString().slice(0, 10),
+    };
+  }
+  if (_dashAnalyticsPreset === '3months') {
+    return {
+      from: new Date(y, m - 2, 1).toISOString().slice(0, 10),
+      to:   new Date(y, m + 1, 0).toISOString().slice(0, 10),
+    };
+  }
+  // custom — read from inputs
+  const f = document.getElementById('da-date-from')?.value;
+  const t = document.getElementById('da-date-to')?.value;
+  return { from: f || '', to: t || '' };
+}
+
+function setDashAnalyticsPreset(preset) {
+  _dashAnalyticsPreset = preset;
+  ['month', 'lastmonth', '3months'].forEach(p => {
+    const btn = document.getElementById(`dapreset-${p}`);
+    if (btn) btn.classList.toggle('active', p === preset);
+  });
+  const { from, to } = _dashAnalyticsDates();
+  const fEl = document.getElementById('da-date-from');
+  const tEl = document.getElementById('da-date-to');
+  if (fEl) fEl.value = from;
+  if (tEl) tEl.value = to;
+  loadDashAnalytics();
+}
+
+function _onDashAnalyticsDateChange() {
+  _dashAnalyticsPreset = 'custom';
+  ['month', 'lastmonth', '3months'].forEach(p => {
+    const btn = document.getElementById(`dapreset-${p}`);
+    if (btn) btn.classList.remove('active');
+  });
+  loadDashAnalytics();
+}
+
+async function loadDashAnalytics() {
+  const container = document.getElementById('dash-analytics-container');
+  const summaryEl = document.getElementById('dash-analytics-summary');
+  if (!container) return;
+  container.innerHTML = '<div class="summary-loading">Loading…</div>';
+  if (summaryEl) summaryEl.innerHTML = '';
+
+  const { from, to } = _dashAnalyticsDates();
+  if (!from || !to) { container.innerHTML = '<div class="log-empty" style="border:none;padding:8px 0">Select a date range.</div>'; return; }
+
+  try {
+    const res = await sbFetch(
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_days` +
+      `?select=id,opened_at,closed_at,status,total_revenue,total_tickets_sold,` +
+      `lottery_shifts(id,opened_at,closed_at,status,total_revenue,total_tickets_sold,` +
+      `lottery_shift_entries(pack_id,tickets_sold,revenue,lottery_packs(game_number,lottery_games(game_name,price))))` +
+      `&opened_at=gte.${from}T00:00:00&opened_at=lte.${to}T23:59:59&order=opened_at.desc&limit=120`
+    );
+    const days = await res.json();
+    if (!res.ok) throw new Error(days?.message || `[${res.status}]`);
+    _renderDashAnalytics(Array.isArray(days) ? days : [], summaryEl, container);
+  } catch (e) {
+    container.innerHTML = `<div class="item-nf-sub" style="padding:8px 0">Load failed: ${e.message}</div>`;
+  }
+}
+
+function _renderDashAnalytics(days, summaryEl, container) {
+  if (!days.length) {
+    container.innerHTML = '<div class="log-empty" style="border:none;padding:8px 0">No closed days in this range.</div>';
+    return;
+  }
+
+  // --- Summary row ---
+  const closedDays = days.filter(d => d.status === 'closed');
+  const totalRev  = closedDays.reduce((s, d) => s + parseFloat(d.total_revenue || 0), 0);
+  const totalTix  = closedDays.reduce((s, d) => s + (d.total_tickets_sold || 0), 0);
+  const avgRev    = closedDays.length ? totalRev / closedDays.length : 0;
+  if (summaryEl) {
+    summaryEl.innerHTML = `
+      <div class="da-summary-row">
+        <div class="da-summary-stat">
+          <div class="da-summary-val">$${totalRev.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+          <div class="da-summary-lbl">Total revenue</div>
+        </div>
+        <div class="da-summary-stat">
+          <div class="da-summary-val">${totalTix.toLocaleString()}</div>
+          <div class="da-summary-lbl">Tickets sold</div>
+        </div>
+        <div class="da-summary-stat">
+          <div class="da-summary-val">$${avgRev.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+          <div class="da-summary-lbl">Avg per day</div>
+        </div>
+        <div class="da-summary-stat">
+          <div class="da-summary-val">${closedDays.length}</div>
+          <div class="da-summary-lbl">Days closed</div>
+        </div>
+      </div>`;
+  }
+
+  // --- Group days into ISO weeks (Mon–Sun) ---
+  function isoWeekKey(dateStr) {
+    const d = new Date(dateStr);
+    const day = d.getDay() === 0 ? 7 : d.getDay(); // Mon=1…Sun=7
+    const mon = new Date(d); mon.setDate(d.getDate() - day + 1);
+    return mon.toISOString().slice(0, 10);
+  }
+
+  const weeks = {};
+  for (const day of days) {
+    const wk = isoWeekKey(day.opened_at);
+    if (!weeks[wk]) weeks[wk] = [];
+    weeks[wk].push(day);
+  }
+  const weekKeys = Object.keys(weeks).sort((a, b) => b.localeCompare(a)); // newest first
+
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const WDAYS  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+  function fmtDate(str) {
+    const d = new Date(str);
+    return `${WDAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}`;
+  }
+  function fmtMoney(n) {
+    return `$${parseFloat(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+
+  let html = '';
+  weekKeys.forEach((wk, wi) => {
+    const wDays      = weeks[wk];
+    const wClosed    = wDays.filter(d => d.status === 'closed');
+    const wRev       = wClosed.reduce((s, d) => s + parseFloat(d.total_revenue || 0), 0);
+    const wTix       = wClosed.reduce((s, d) => s + (d.total_tickets_sold || 0), 0);
+    const wShifts    = wClosed.reduce((s, d) => s + (d.lottery_shifts || []).filter(sh => sh.status === 'closed').length, 0);
+    const groupId    = `da-week-${wi}`;
+    const collapsed  = wi >= 2 ? ' da-collapsed' : '';
+
+    // Week label: "May 19 – May 25"
+    const monDate = new Date(wk);
+    const sunDate = new Date(wk); sunDate.setDate(monDate.getDate() + 6);
+    const wLabel  = `${MONTHS[monDate.getMonth()]} ${monDate.getDate()} – ${MONTHS[sunDate.getMonth()]} ${sunDate.getDate()}`;
+
+    // Per-day rows
+    let dayRows = '';
+    for (const d of wDays) {
+      const closed  = d.status === 'closed';
+      const dRev    = parseFloat(d.total_revenue || 0);
+      const dTix    = d.total_tickets_sold || 0;
+      const dShifts = (d.lottery_shifts || []).filter(sh => sh.status === 'closed');
+      const openT   = d.opened_at  ? new Date(d.opened_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '?';
+      const closeT  = d.closed_at  ? new Date(d.closed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null;
+
+      // Per-game breakdown from shift entries
+      const gameTotals = {};
+      for (const sh of dShifts) {
+        for (const en of (sh.lottery_shift_entries || [])) {
+          const gn    = en.lottery_packs?.game_number || '?';
+          const gName = en.lottery_packs?.lottery_games?.game_name || `Game #${gn}`;
+          const price = parseFloat(en.lottery_packs?.lottery_games?.price || 0);
+          if (!gameTotals[gn]) gameTotals[gn] = { name: gName, price, tickets: 0, revenue: 0 };
+          gameTotals[gn].tickets += en.tickets_sold || 0;
+          gameTotals[gn].revenue += parseFloat(en.revenue || 0);
+        }
+      }
+      const gameRows = Object.values(gameTotals)
+        .sort((a, b) => b.revenue - a.revenue)
+        .map(g => `<div class="da-game-row">
+          <span class="da-game-name">${g.name}</span>
+          <span class="da-game-meta">${g.tickets} tickets</span>
+          <span class="da-game-rev">${fmtMoney(g.revenue)}</span>
+        </div>`).join('');
+
+      dayRows += `
+        <div class="da-day-row${closed ? '' : ' da-day-open'}">
+          <div class="da-day-main">
+            <div class="da-day-info">
+              <span class="da-day-date">${fmtDate(d.opened_at)}</span>
+              ${closed ? '' : '<span class="da-open-pill">Open</span>'}
+              <span class="da-day-time">${openT}${closeT ? ` – ${closeT}` : ''}</span>
+            </div>
+            <div class="da-day-stats">
+              <span class="da-day-tix">${dTix} tickets · ${dShifts.length} shift${dShifts.length !== 1 ? 's' : ''}</span>
+              <span class="da-day-rev">${closed ? fmtMoney(dRev) : '—'}</span>
+            </div>
+          </div>
+          ${gameRows ? `<div class="da-game-list">${gameRows}</div>` : ''}
+        </div>`;
+    }
+
+    html += `
+      <div class="da-week-group${collapsed}" id="${groupId}">
+        <div class="da-week-header" onclick="_toggleDaWeek('${groupId}')">
+          <div class="da-week-left">
+            <span class="da-week-label">Week of ${wLabel}</span>
+            <span class="da-week-meta">${wClosed.length} day${wClosed.length !== 1 ? 's' : ''} · ${wShifts} shift${wShifts !== 1 ? 's' : ''} · ${wTix.toLocaleString()} tickets</span>
+          </div>
+          <div class="da-week-right">
+            <span class="da-week-rev">${fmtMoney(wRev)}</span>
+            ${_chevronSvg}
+          </div>
+        </div>
+        <div class="da-week-body">${dayRows}</div>
+      </div>`;
+  });
+
+  container.innerHTML = html;
+}
+
+function _toggleDaWeek(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle('da-collapsed');
 }
 
 function _renderDashStations(byLoc, el) {

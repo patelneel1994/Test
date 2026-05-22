@@ -314,16 +314,16 @@
         <div class="page-subtitle">A quick read on what's active, what needs attention, and today's performance.</div>
       </div>
       <div class="page-hdr-actions">
-        <div id="day-shift-btns" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"></div>
+        <div class="day-shift-btns" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"></div>
       </div>
     </div>
 
     <!-- Stats row: Revenue · Active · In Office · Flagged -->
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px">
+    <div class="dash-stats-grid">
       <div class="stat-rich">
         <div class="stat-rich-hdr">
           <div class="stat-rich-label">Today's revenue</div>
-          <div class="stat-rich-icon" style="background:rgba(14,143,90,.22);color:#0E8F5A">
+          <div class="stat-rich-icon stat-icon-green">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h10l-1 12H8z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg>
           </div>
         </div>
@@ -333,7 +333,7 @@
       <div class="stat-rich">
         <div class="stat-rich-hdr">
           <div class="stat-rich-label">Books active</div>
-          <div class="stat-rich-icon" style="background:rgba(225,59,59,.22);color:#E13B3B">
+          <div class="stat-rich-icon stat-icon-red">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h12a4 4 0 0 1 4 4v13H8a4 4 0 0 1-4-4Z"/><path d="M4 17a4 4 0 0 1 4-4h12"/></svg>
           </div>
         </div>
@@ -343,7 +343,7 @@
       <div class="stat-rich">
         <div class="stat-rich-hdr">
           <div class="stat-rich-label">In office</div>
-          <div class="stat-rich-icon" style="background:rgba(255,203,69,.3);color:#8A6A00">
+          <div class="stat-rich-icon stat-icon-amber">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7 12 3l9 4-9 4-9-4Z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>
           </div>
         </div>
@@ -353,7 +353,7 @@
       <div class="stat-rich">
         <div class="stat-rich-hdr">
           <div class="stat-rich-label">Needs attention</div>
-          <div class="stat-rich-icon" id="dash-flag-icon" style="background:rgba(26,22,18,.07);color:#1A1612">
+          <div class="stat-rich-icon stat-icon-ink" id="dash-flag-icon">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" id="dash-flag-svg"><path d="M12 3 2 21h20Z"/><path d="M12 10v5"/><circle cx="12" cy="18" r=".8" fill="currentColor" stroke="none"/></svg>
           </div>
         </div>
@@ -388,6 +388,30 @@
       </div>
     </div>
 
+    <!-- Analytics -->
+    <div class="scan-card" style="margin-bottom:16px">
+      <div class="card-section-hdr" style="margin-bottom:14px">
+        <div>
+          <div class="page-eyebrow" style="margin-bottom:2px">Revenue</div>
+          <div class="card-section-title">Analytics</div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <div id="dash-analytics-presets" style="display:flex;gap:4px">
+            <button class="hpreset-btn active" id="dapreset-month"     onclick="setDashAnalyticsPreset('month')">This Month</button>
+            <button class="hpreset-btn"        id="dapreset-lastmonth" onclick="setDashAnalyticsPreset('lastmonth')">Last Month</button>
+            <button class="hpreset-btn"        id="dapreset-3months"   onclick="setDashAnalyticsPreset('3months')">3 Months</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:4px">
+            <input type="date" id="da-date-from" class="history-date-input" onchange="_onDashAnalyticsDateChange()" />
+            <span class="history-date-sep">–</span>
+            <input type="date" id="da-date-to"   class="history-date-input" onchange="_onDashAnalyticsDateChange()" />
+          </div>
+        </div>
+      </div>
+      <div id="dash-analytics-summary" style="margin-bottom:14px"></div>
+      <div id="dash-analytics-container"><div class="summary-loading">Loading…</div></div>
+    </div>
+
   </div><!-- /lsection-dashboard -->
 
   <!-- ── FLOOR SECTION ─────────────────────────────────────────── -->
@@ -400,14 +424,17 @@
         <h2 class="page-title">Live floor</h2>
         <div class="page-subtitle">All active books by game or location, and full shift history.</div>
       </div>
+      <div class="page-hdr-actions">
+        <div class="day-shift-btns" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"></div>
+      </div>
     </div>
 
     <!-- Rich stat cards -->
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px">
+    <div class="dash-stats-grid">
       <div class="stat-rich">
         <div class="stat-rich-hdr">
           <div class="stat-rich-label">Active books</div>
-          <div class="stat-rich-icon" style="background:rgba(225,59,59,.22);color:#E13B3B">
+          <div class="stat-rich-icon stat-icon-red">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h12a4 4 0 0 1 4 4v13H8a4 4 0 0 1-4-4Z"/><path d="M4 17a4 4 0 0 1 4-4h12"/></svg>
           </div>
         </div>
@@ -417,7 +444,7 @@
       <div class="stat-rich">
         <div class="stat-rich-hdr">
           <div class="stat-rich-label">Received</div>
-          <div class="stat-rich-icon" style="background:rgba(255,203,69,.3);color:#8A6A00">
+          <div class="stat-rich-icon stat-icon-amber">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7 12 3l9 4-9 4-9-4Z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>
           </div>
         </div>
@@ -427,7 +454,7 @@
       <div class="stat-rich">
         <div class="stat-rich-hdr">
           <div class="stat-rich-label">Sold out</div>
-          <div class="stat-rich-icon" style="background:rgba(14,143,90,.22);color:#0E8F5A">
+          <div class="stat-rich-icon stat-icon-green">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h10l-1 12H8z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg>
           </div>
         </div>
@@ -437,7 +464,7 @@
       <div class="stat-rich">
         <div class="stat-rich-hdr">
           <div class="stat-rich-label">Total books</div>
-          <div class="stat-rich-icon" style="background:rgba(26,22,18,.07);color:#1A1612">
+          <div class="stat-rich-icon stat-icon-ink">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
           </div>
         </div>
@@ -571,32 +598,32 @@
     <!-- KPI cards -->
     <div class="rpt-kpi-grid" id="rpt-kpi-grid">
       <div class="stat-rich">
-        <div class="stat-rich-icon" style="background:rgba(14,143,90,.12)">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--design-green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        <div class="stat-rich-icon stat-icon-green">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
         </div>
         <div class="stat-rich-val" id="rpt-gross">$0</div>
         <div class="stat-rich-label">Gross sales</div>
         <div class="stat-rich-sub" id="rpt-gross-sub">all locations</div>
       </div>
       <div class="stat-rich">
-        <div class="stat-rich-icon" style="background:var(--brand-10)">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--brand-red)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M12 12h.01"/><path d="M17 12h.01"/><path d="M7 12h.01"/></svg>
+        <div class="stat-rich-icon stat-icon-red">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M12 12h.01"/><path d="M17 12h.01"/><path d="M7 12h.01"/></svg>
         </div>
         <div class="stat-rich-val" id="rpt-tickets">0</div>
         <div class="stat-rich-label">Tickets sold</div>
         <div class="stat-rich-sub" id="rpt-tickets-sub">in period</div>
       </div>
       <div class="stat-rich">
-        <div class="stat-rich-icon" style="background:rgba(30,93,216,.1)">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+        <div class="stat-rich-icon stat-icon-blue">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
         </div>
         <div class="stat-rich-val" id="rpt-avg">$0.00</div>
         <div class="stat-rich-label">Avg ticket value</div>
         <div class="stat-rich-sub">revenue per ticket</div>
       </div>
       <div class="stat-rich">
-        <div class="stat-rich-icon" style="background:var(--accent-10)">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-dk)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h12a4 4 0 0 1 4 4v13H8a4 4 0 0 1-4-4Z"/><path d="M4 17a4 4 0 0 1 4-4h12"/></svg>
+        <div class="stat-rich-icon stat-icon-amber">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h12a4 4 0 0 1 4 4v13H8a4 4 0 0 1-4-4Z"/><path d="M4 17a4 4 0 0 1 4-4h12"/></svg>
         </div>
         <div class="stat-rich-val" id="rpt-books-closed">0</div>
         <div class="stat-rich-label">Books closed</div>
@@ -923,9 +950,13 @@
     <div class="modal-title" style="color:var(--red-text)">⚠ Reset Data</div>
     <p style="font-size:13px;color:var(--text-muted);margin:0 0 10px">Choose what to clear. <strong style="color:var(--text-main)">This cannot be undone.</strong></p>
     <div id="reset-current-counts" class="reset-counts-bar">Loading counts…</div>
+    <div class="reset-confirm-row">
+      <label class="reset-confirm-label" for="reset-confirm-input">Confirmation required</label>
+      <input id="reset-confirm-input" class="reset-confirm-input" type="text" autocomplete="off" autocorrect="off" spellcheck="false" oninput="_onResetConfirmInput()" />
+    </div>
     <div style="display:flex;flex-direction:column;gap:6px">
 
-      <button class="reset-opt reset-opt-1" onmousedown="confirmReset('packs',event)" ontouchstart="confirmReset('packs',event)">
+      <button class="reset-opt reset-opt-1" disabled onmousedown="confirmReset('packs',event)" ontouchstart="confirmReset('packs',event)">
         <div class="reset-opt-header">
           <span class="reset-opt-level">L1</span>
           <span class="reset-opt-name">Reset Shift</span>
@@ -940,7 +971,7 @@
         </div>
       </button>
 
-      <button class="reset-opt reset-opt-2" onmousedown="confirmReset('all',event)" ontouchstart="confirmReset('all',event)">
+      <button class="reset-opt reset-opt-2" disabled onmousedown="confirmReset('all',event)" ontouchstart="confirmReset('all',event)">
         <div class="reset-opt-header">
           <span class="reset-opt-level">L2</span>
           <span class="reset-opt-name">Reset Everything</span>
@@ -955,7 +986,7 @@
         </div>
       </button>
 
-      <button class="reset-opt reset-opt-3" onmousedown="confirmReset('books',event)" ontouchstart="confirmReset('books',event)">
+      <button class="reset-opt reset-opt-3" disabled onmousedown="confirmReset('books',event)" ontouchstart="confirmReset('books',event)">
         <div class="reset-opt-header">
           <span class="reset-opt-level">L3</span>
           <span class="reset-opt-name">Reset Books</span>
@@ -970,7 +1001,7 @@
         </div>
       </button>
 
-      <button class="reset-opt reset-opt-4" onmousedown="confirmReset('catalog',event)" ontouchstart="confirmReset('catalog',event)">
+      <button class="reset-opt reset-opt-4" disabled onmousedown="confirmReset('catalog',event)" ontouchstart="confirmReset('catalog',event)">
         <div class="reset-opt-header">
           <span class="reset-opt-level">L4</span>
           <span class="reset-opt-name">Reset Catalog</span>

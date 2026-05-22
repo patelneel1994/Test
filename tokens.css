@@ -71,4 +71,8 @@
   --radius-sm: 12px;   /* scan inputs, secondary cards */
   --radius-xs:  8px;   /* inline badges, small buttons */
   /* 999px — pills, tags, full-round buttons (used inline) */
+
+  /* ── EASING ─────────────────────────────────────────────────── */
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-out-expo:  cubic-bezier(0.16, 1, 0.3, 1);
 }
