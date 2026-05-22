@@ -1528,6 +1528,7 @@ function renderLotteryResult(state) {
   if (state.type === 'success') {
     const { parsed: p, game: g } = state;
     const tpp = parseInt(g.tickets_per_pack, 10);
+    const bcHtml = p.raw ? `<div style="margin-top:10px">${_renderBarcodeBreakdown(p.raw, p.gameNumber)}</div>` : '';
     el.innerHTML = `
       <div class="lottery-card lottery-success" style="margin-top:12px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
@@ -1539,6 +1540,7 @@ function renderLotteryResult(state) {
           <div><span class="sub-lbl">Book</span> #${p.packNumber}</div>
           <div><span class="sub-lbl">Tickets</span> ${tpp > 0 ? tpp.toLocaleString() : '—'}</div>
         </div>
+        ${bcHtml}
       </div>`;
   }
 }
@@ -3976,6 +3978,8 @@ async function loadDashAnalytics() {
 function _renderDashAnalytics(days, summaryEl, container) {
   if (!days.length) {
     container.innerHTML = '<div class="log-empty" style="border:none;padding:8px 0">No closed days in this range.</div>';
+    const periodEl = document.getElementById('dash-period-rev');
+    if (periodEl) periodEl.style.display = 'none';
     return;
   }
 
@@ -3984,6 +3988,15 @@ function _renderDashAnalytics(days, summaryEl, container) {
   const totalRev  = closedDays.reduce((s, d) => s + parseFloat(d.total_revenue || 0), 0);
   const totalTix  = closedDays.reduce((s, d) => s + (d.total_tickets_sold || 0), 0);
   const avgRev    = closedDays.length ? totalRev / closedDays.length : 0;
+
+  // Update period revenue in the top stats card
+  const periodEl = document.getElementById('dash-period-rev');
+  if (periodEl) {
+    const presetLabel = { month: 'This month', lastmonth: 'Last month', '3months': '3 months', custom: 'Selected range' }[_dashAnalyticsPreset] || 'Period';
+    periodEl.textContent = `${presetLabel}: $${totalRev.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · ${closedDays.length} day${closedDays.length !== 1 ? 's' : ''}`;
+    periodEl.style.display = '';
+  }
+
   if (summaryEl) {
     summaryEl.innerHTML = `
       <div class="da-summary-row">

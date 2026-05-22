@@ -1016,6 +1016,7 @@ body {
 .stat-rich-val { font-family: 'Space Grotesk', sans-serif; font-size: 36px; font-weight: 800; line-height: 1; color: var(--ink); }
 .stat-rich-label { font-size: 11.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-60); }
 .stat-rich-sub { font-size: 12px; color: var(--ink-60); margin-top: 2px; }
+.stat-rich-period { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--ink-60); border-top: 1px solid var(--ink-10); padding-top: 7px; margin-top: 4px; }
 
 /* Stat icon color variants — replaces inline style drift */
 .stat-icon-red   { background: rgba(225,59,59,.15);  color: var(--brand-red); }
