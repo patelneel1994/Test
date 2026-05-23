@@ -1500,7 +1500,7 @@ function renderLotteryResult(state) {
         location:         pk.location,
       };
     }
-    const canLoad = !!_currentDay && !!_currentShift;
+    const canLoad = _canMoveOrActivate();
     const statusLine = pk.status === 'received'
       ? (canLoad
           ? `<div class="lottery-card-sub" style="margin-bottom:8px">Ready to load — pick a station:</div>
@@ -1798,16 +1798,22 @@ async function confirmMovePack(newLocation, e) {
   if (!_pendingMoveId) return;
   const prevLocation = (_packInfoCache[_pendingMoveId] || {}).location;
   try {
-    await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(_pendingMoveId)}`,
-      { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ location: newLocation }) });
-    _logPackEvent(_pendingMoveId, 'moved', { location_from: prevLocation || null, location_to: newLocation });
+    await _commitMovePack(_pendingMoveId, newLocation, prevLocation);
     closeMovePackModal();
     await loadLotteryStock();
   } catch (err) { showError('Move failed', err.message); }
 }
 
 // ===== MOVE RECEIVED PACKS =====
+
+async function _commitMovePack(packId, newLocation, prevLocation) {
+  const toStation = _isStation(newLocation);
+  const patchBody = toStation ? { location: newLocation, status: 'activated' } : { location: newLocation };
+  await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(packId)}`,
+    { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify(patchBody) });
+  _logPackEvent(packId, toStation ? 'activated' : 'moved', { location_from: prevLocation || null, location_to: newLocation });
+}
 
 // ===== MOVE BOOKS MODAL =====
 
@@ -1905,14 +1911,8 @@ function _removeMoveQueueItem(i, e) {
 async function confirmMoveBooks(newLocation, e) {
   if (e) e.preventDefault();
   if (!_moveBooksQueue.length) { _setMoveStatus('Scan at least one book first', 'error'); return; }
-  const ids = _moveBooksQueue.map(q => q.id);
   try {
-    await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=in.(${ids.join(',')})`,
-      { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ location: newLocation }) });
-    for (const q of _moveBooksQueue) {
-      _logPackEvent(q.id, 'moved', { location_from: q.location, location_to: newLocation });
-    }
+    await Promise.all(_moveBooksQueue.map(q => _commitMovePack(q.id, newLocation, q.location)));
     closeMoveBooksModal();
     await Promise.all([loadLotteryStock(), loadLocationView()]);
   } catch (err) { showError('Move failed', err.message); }
@@ -1920,19 +1920,18 @@ async function confirmMoveBooks(newLocation, e) {
 
 async function moveReceivedPack(packId, newLocation, e) {
   if (e) e.preventDefault();
+  if (_isStation(newLocation) && !_canMoveOrActivate()) { showError('No day open', 'Open a day first.'); return; }
   const prevLocation = (_packInfoCache[packId] || {}).location || null;
   if (prevLocation === newLocation) return;
   try {
-    await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(packId)}`,
-      { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ location: newLocation }) });
-    _logPackEvent(packId, 'moved', { location_from: prevLocation, location_to: newLocation });
+    await _commitMovePack(packId, newLocation, prevLocation);
     await Promise.all([loadLotteryStock(), loadLocationView()]);
   } catch (err) { showError('Move failed', err.message); }
 }
 
 async function restoreRemovedPack(packId, location, e) {
   if (e) e.preventDefault();
+  if (_isStation(location) && !_canMoveOrActivate()) { showError('No day open', 'Open a day first.'); return; }
   try {
     const newStatus = _isStation(location) ? 'activated' : 'received';
     await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(packId)}`,
@@ -2005,6 +2004,7 @@ async function confirmEditPack(e) {
 
 function openActivationForm(id, location, e) {
   if (e) e.preventDefault();
+  if (!_canMoveOrActivate()) { showError('No day open', 'Open a day first.'); return; }
   const info = _packInfoCache[id] || {};
   _pendingActivation = { id, location, ticketsPerPack: info.ticketsPerPack || 0 };
   document.getElementById('activation-modal-title').textContent = `Activate → ${location}`;
@@ -2077,8 +2077,13 @@ async function confirmActivation(e) {
 
 // ===== PACK ROW RENDERERS =====
 
+// Single source of truth: can packs be moved or activated right now?
+function _canMoveOrActivate() {
+  return _dbCaps.hasFullDayTracking ? !!_currentDay : true;
+}
+
 function _packActionHtml(p) {
-  if (!_currentDay) return '';
+  if (!_canMoveOrActivate()) return '';
   if (p.status === 'received') {
     const loc      = p.location || 'Office';
     const stations = _getStations();
@@ -2123,7 +2128,7 @@ function _packActionHtml(p) {
 }
 
 function _packRemoveBtn(p) {
-  if (!_currentDay) return '';
+  if (!_canMoveOrActivate()) return '';
   if (p.status === 'activated') return `
     <button class="pack-remove-btn"
       onmousedown="removePackAtTicket('${p.id}',${p.start_ticket},event)"
@@ -3288,14 +3293,26 @@ function renderDayHistory(days) {
 
       const eventsHtml = events.map(ev => {
         const pack = ev.lottery_packs || {}, game = pack.lottery_games || {};
-        const packLabel = game.game_name ? `${game.game_name} #${pack.pack_number}` : (pack.pack_number ? `#${pack.pack_number}` : '');
+        const gameName = game.game_name || (pack.game_number ? `#${pack.game_number}` : '');
         const detail = _packEventDetail(ev);
         const t = new Date(ev.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const bcHtml = _evBarcodeInline(pack.raw_barcode, pack.game_number);
+        const soldCount = (ev.ticket_before != null && ev.ticket_after != null && ev.ticket_before !== ev.ticket_after)
+          ? Math.abs(ev.ticket_after - ev.ticket_before) : 0;
+        const price = parseFloat(game.price || 0);
+        const soldPill = soldCount > 0
+          ? `<span class="sev-sold">${soldCount} sold${price > 0 ? ` · $${(soldCount * price).toFixed(2)}` : ''}</span>` : '';
         return `<div class="shift-event-row ev-${ev.action}">
-          <span class="shift-event-badge ev-badge-${ev.action}">${ev.action}</span>
-          <span class="shift-event-pack">${packLabel}</span>
-          <span class="shift-event-detail">${detail}</span>
-          <span class="shift-event-time">${t}</span>
+          <div class="sev-top">
+            <span class="shift-event-badge ev-badge-${ev.action}">${ev.action}</span>
+            ${gameName ? `<span class="shift-event-pack">${gameName}</span>` : ''}
+            <span class="shift-event-time">${t}</span>
+          </div>
+          <div class="sev-bottom">
+            ${bcHtml ? `<span class="sev-bc">${bcHtml}</span>` : ''}
+            ${detail ? `<span class="shift-event-detail">${detail}</span>` : ''}
+            ${soldPill}
+          </div>
         </div>`;
       }).join('');
 
@@ -3310,8 +3327,8 @@ function renderDayHistory(days) {
           </div>
           <div class="shift-history-sub">${s.total_tickets_sold || 0} tickets sold</div>
           ${s.notes ? `<div class="shift-history-notes"><span class="shift-note-icon">📝</span>${s.notes}</div>` : ''}
-          ${eventsHtml  ? `<div class="shift-events-list">${eventsHtml}</div>` : ''}
-          ${entriesHtml ? `<div class="shift-history-entries">${entriesHtml}</div>` : ''}
+          ${eventsHtml  ? `<div class="shift-section-label">Pack Events</div><div class="shift-events-list">${eventsHtml}</div>` : ''}
+          ${entriesHtml ? `<div class="shift-section-label">Audit Entries</div><div class="shift-history-entries">${entriesHtml}</div>` : ''}
         </div>`;
     }
 
@@ -3630,7 +3647,7 @@ async function loadReceiveQueue() {
       byLoc[loc].push(p);
     }
     const allLocs = [...locOrder, ...Object.keys(byLoc).filter(l => !locOrder.includes(l))];
-    const canLoad = !!_currentDay && !!_currentShift;
+    const canLoad = _canMoveOrActivate();
     let html = '';
     for (const loc of allLocs) {
       const ps = byLoc[loc];
