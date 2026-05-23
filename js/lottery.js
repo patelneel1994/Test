@@ -3268,10 +3268,12 @@ function renderDayHistory(days) {
     const groupId      = `day-group-${idx}`;
     const collapsed    = idx >= 2 ? ' collapsed' : '';           // expand first 2
     const dateStr      = new Date(day.opened_at).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
-    const dayRev       = parseFloat(day.total_revenue || 0);
-    const dayTix       = day.total_tickets_sold || 0;
-    const isOpen       = day.status === 'open';
+    const storedRev    = parseFloat(day.total_revenue || 0);
+    const storedTix    = day.total_tickets_sold || 0;
     const closedShifts = (day.lottery_shifts || []).filter(s => s.status === 'closed');
+    const dayRev       = storedRev  || closedShifts.reduce((sum, s) => sum + parseFloat(s.total_revenue || 0), 0);
+    const dayTix       = storedTix  || closedShifts.reduce((sum, s) => sum + (s.total_tickets_sold || 0), 0);
+    const isOpen       = day.status === 'open';
     const dayOpenTime  = day.opened_at  ? new Date(day.opened_at).toLocaleTimeString([],  { hour: '2-digit', minute: '2-digit' }) : null;
     const dayCloseTime = day.closed_at  ? new Date(day.closed_at).toLocaleTimeString([],  { hour: '2-digit', minute: '2-digit' }) : null;
     const badgeStyle   = isOpen ? 'background:var(--amber-bg);color:var(--amber-text);border-color:var(--amber-border)' : '';
