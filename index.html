@@ -1054,6 +1054,28 @@
   </div>
 </div>
 
+<!-- RETURN TO LOTTERY MODAL -->
+<div class="modal-overlay" id="return-lottery-modal">
+  <div class="modal rlt-modal">
+    <div class="modal-handle"></div>
+    <div class="rlt-header">
+      <div class="rlt-title-row">
+        <span class="modal-title" style="margin:0">Return to Lottery</span>
+        <span class="scan-count-badge" id="rlt-count" style="display:none"></span>
+      </div>
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:10px">Scan each book being returned. Ticket position is taken from the barcode.</div>
+      <input class="modal-input" id="rlt-scan-input" type="text" inputmode="numeric" placeholder="Scan barcode…" autocomplete="off" style="margin-bottom:4px" />
+      <div id="rlt-scan-error" style="display:none;font-size:12px;color:var(--red-text);min-height:16px"></div>
+    </div>
+    <div id="rlt-book-list" class="rlt-book-list-scroll"></div>
+    <div class="rlt-footer">
+      <button class="modal-close" style="flex:1;margin:0;padding:11px" onclick="closeReturnToLotteryModal()">Cancel</button>
+      <button class="modal-add-btn" id="rlt-confirm-btn" disabled style="flex:2;margin:0;background:var(--amber-text);border-color:var(--amber-border)"
+        onmousedown="confirmReturnToLottery(event)" ontouchstart="confirmReturnToLottery(event)">Confirm Return</button>
+    </div>
+  </div>
+</div>
+
 <!-- SOLD OUT MODAL -->
 <div class="modal-overlay" id="soldout-modal">
   <div class="modal">
@@ -1112,7 +1134,10 @@
 <div class="modal-overlay modal-overlay-center" id="move-books-modal">
   <div class="modal modal-card">
     <div class="modal-card-hdr">
-      <div class="modal-card-title">Move Books</div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="modal-card-title">Move Books</div>
+        <span class="scan-count-badge" id="move-books-count" style="display:none"></span>
+      </div>
       <button class="modal-card-x" onclick="closeMoveBooksModal()">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>

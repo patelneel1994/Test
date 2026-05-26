@@ -2,33 +2,57 @@
 function _capWords(el) { el.value = el.value.replace(/\b\w/g, c => c.toUpperCase()); }
 
 // ===== LOCATION CONFIG =====
-// Stations = places where books get activated & audited (configurable)
-// Office   = fixed staging location (always present)
+// Stations   = places where books get activated & audited (configurable)
+// Office     = fixed staging location (always present)
+// Extra      = fixed secondary staging location (always present, presence-audited on open-day)
 // Extra locs = optional extra staging areas (configurable)
+// All stored in Supabase `lottery_locations` table; cached in memory after load.
+
+let _locationsCache = null; // { stations: string[], extras: string[] }
 
 function _getStations() {
-  try {
-    const s = localStorage.getItem('lottery_stations');
-    if (s) { const a = JSON.parse(s); if (Array.isArray(a) && a.length) return a; }
-  } catch (_) {}
-  return ['Station 1'];
+  return _locationsCache ? _locationsCache.stations : ['Station 1'];
 }
 
 function _getExtraLocs() {
+  return _locationsCache ? _locationsCache.extras : [];
+}
+
+async function _loadLotteryLocations() {
   try {
-    const s = localStorage.getItem('lottery_extra_locs');
-    if (s) { const a = JSON.parse(s); if (Array.isArray(a)) return a; }
-  } catch (_) {}
-  return [];
+    const res = await sbFetch(
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_locations?select=name,type&order=sort_order.asc,id.asc`
+    );
+    const rows = await res.json();
+    if (Array.isArray(rows)) {
+      _locationsCache = {
+        stations: rows.filter(r => r.type === 'station').map(r => r.name),
+        extras:   rows.filter(r => r.type === 'extra').map(r => r.name),
+      };
+      if (!_locationsCache.stations.length) _locationsCache.stations = ['Station 1'];
+    }
+  } catch (_) {
+    // Fallback to localStorage if table doesn't exist yet
+    try {
+      const s = localStorage.getItem('lottery_stations');
+      const e = localStorage.getItem('lottery_extra_locs');
+      _locationsCache = {
+        stations: (s ? JSON.parse(s) : null) || ['Station 1'],
+        extras:   (e ? JSON.parse(e) : null) || [],
+      };
+    } catch (_2) {
+      _locationsCache = { stations: ['Station 1'], extras: [] };
+    }
+  }
 }
 
-function _saveStations(arr)   { localStorage.setItem('lottery_stations',   JSON.stringify(arr)); }
-function _saveExtraLocs(arr)  { localStorage.setItem('lottery_extra_locs', JSON.stringify(arr)); }
-
-// Ordered list for display: stations → extra staging → Office
+// Ordered list for display: stations → extra staging → Extra → Office
 function _getLocOrderAll() {
-  return [..._getStations(), ..._getExtraLocs(), 'Office'];
+  return [..._getStations(), ..._getExtraLocs(), 'Extra', 'Office'];
 }
+
+// Fixed staging locations (hardcoded, always present)
+const _FIXED_STAGING = ['Extra', 'Office'];
 
 // Is this location a "station" (audit-eligible)?
 function _isStation(loc) { return _getStations().includes(loc); }
@@ -68,6 +92,12 @@ let _moveBooksQueue = []; // { id, packNumber, gameName, location }
 
 // ---- DB-state load guard ----
 let _lotteryDbStateReady = false;
+
+// ===== ADMIN CHECK =====
+// Placeholder — replace body with real auth lookup when a user/role system is added.
+function isAdmin() {
+  return false;
+}
 
 // ===== DB CAPABILITIES CHECK =====
 // Run once; determines which columns/tables exist so queries don't crash.
@@ -115,6 +145,9 @@ const _INV_TITLES   = {
 
 async function openInventory(context, skipPrompt = false) {
   if (_dbCaps.hasFullDayTracking) {
+    if (context === 'open-day' && _currentDay) {
+      showError('Day already open', 'A day is already open. Close it before opening a new one.'); return;
+    }
     if (context.startsWith('close') && !_currentDay) {
       showError('No day open', 'Open a day first.'); return;
     }
@@ -1003,6 +1036,19 @@ async function _invCommitClose(type) {
     entries.push({ pack_id: p.id, tickets_sold: sold, revenue, ticket_at_open: lastTicket, ticket_at_close: currentTick });
   }
 
+  // Add any tickets sold on packs that were removed mid-shift (logged at removal time)
+  if (_dbCaps.hasFullDayTracking && _currentShift) {
+    const activeIds  = new Set(_invPacks.map(p => p.id));
+    const existRes   = await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_shift_entries?shift_id=eq.${_currentShift.id}&select=pack_id,tickets_sold,revenue`);
+    const existEntries = await existRes.json();
+    for (const en of (Array.isArray(existEntries) ? existEntries : [])) {
+      if (!activeIds.has(en.pack_id)) {
+        totalSold += parseInt(en.tickets_sold || 0, 10);
+        totalRev  += parseFloat(en.revenue || 0);
+      }
+    }
+  }
+
   const invNotes = (document.getElementById('inv-notes-input')?.value || '').trim() || null;
   let shiftId;
   if (_dbCaps.hasFullDayTracking && _currentShift) {
@@ -1342,7 +1388,7 @@ function setReceiveLocation(loc) {
 function renderReceiveLocationButtons() {
   const el = document.getElementById('recv-loc-btns');
   if (!el) return;
-  const locs = ['Office', ..._getExtraLocs(), ..._getStations()];
+  const locs = ['Office', 'Extra', ..._getExtraLocs(), ..._getStations()];
   el.innerHTML = locs.map(loc =>
     `<button class="recv-loc-pill-btn${loc === _receiveLocation ? ' active' : ''}"
       data-loc="${loc}" onclick="setReceiveLocation('${loc}')">${loc}</button>`
@@ -1633,6 +1679,7 @@ const PACK_STATUS = {
 };
 const PACK_LOC_CSS = {
   'Office':        'loc-office',
+  'Extra':         'loc-extra',
   'Station Booth': 'loc-station',
   'Front - Extra': 'loc-front',
 };
@@ -1683,12 +1730,198 @@ async function confirmRemovePack(e) {
       { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
         body: JSON.stringify(update) });
     _logPackEvent(_pendingRemoveId, 'removed', { ticket_before: prevTicket ?? null, ticket_after: removedAtTicket });
+    if (removedAtTicket != null && _currentShift) {
+      const info = _packInfoCache[_pendingRemoveId] || {};
+      const shiftBaseline = info.lastShiftTicket ?? info.startTicket;
+      const dir   = info.loadingDirection || 'asc';
+      const price = info.price || 0;
+      if (shiftBaseline != null) {
+        const sold = _soldTickets(removedAtTicket, shiftBaseline, dir);
+        if (sold > 0) {
+          await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_shift_entries`,
+            { method: 'POST', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+              body: JSON.stringify([{ pack_id: _pendingRemoveId, shift_id: _currentShift.id,
+                tickets_sold: sold, revenue: sold * price,
+                ticket_at_open: shiftBaseline, ticket_at_close: removedAtTicket }]) });
+        }
+      }
+    }
     closeRemoveModal();
     await loadLotteryStock(); loadLotteryDbStats();
     await _refreshInvAfterLoad(); loadReceiveQueue();
   } catch (err) {
     showError('Remove failed', err.message);
   } finally { if (btn) btn.disabled = false; }
+}
+
+// ===== RETURN TO LOTTERY =====
+
+let _rltPacks       = [];
+let _rltList        = [];
+let _rltScanCleanup = null;
+
+async function openReturnToLotteryModal(e) {
+  if (e) e.preventDefault();
+  if (!isAdmin()) { showError('Access denied', 'Return to Lottery is restricted to admins.'); return; }
+  _rltList = [];
+  const scanInp  = document.getElementById('rlt-scan-input');
+  const errEl    = document.getElementById('rlt-scan-error');
+  const listEl   = document.getElementById('rlt-book-list');
+  const btn      = document.getElementById('rlt-confirm-btn');
+  const countEl  = document.getElementById('rlt-count');
+  if (scanInp)  scanInp.value = '';
+  if (errEl)    errEl.style.display = 'none';
+  if (listEl)   listEl.innerHTML = '<div class="rlt-empty">Scan a book to add it to the return list</div>';
+  if (btn)      btn.disabled = true;
+  if (countEl)  countEl.style.display = 'none';
+  document.getElementById('return-lottery-modal').classList.add('open');
+
+  try {
+    const sel = _dbCaps.hasLoadingDirection
+      ? 'id,game_number,pack_number,start_ticket,last_shift_ticket,loading_direction,status,lottery_games(game_name,price,tickets_per_pack)'
+      : 'id,game_number,pack_number,start_ticket,last_shift_ticket,status,lottery_games(game_name,price,tickets_per_pack)';
+    const res  = await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?status=in.(activated,received)&select=${sel}&order=game_number.asc,pack_number.asc&limit=200`);
+    const data = await res.json();
+    _rltPacks  = Array.isArray(data) ? data : [];
+  } catch { _rltPacks = []; }
+
+  if (scanInp) {
+    const onKey   = e => { if (e.key === 'Enter') _rltHandleScan(scanInp.value.trim()); };
+    const onPaste = () => { setTimeout(() => _rltHandleScan(scanInp.value.trim()), 50); };
+    scanInp.addEventListener('keydown', onKey);
+    scanInp.addEventListener('paste', onPaste);
+    _rltScanCleanup = () => { scanInp.removeEventListener('keydown', onKey); scanInp.removeEventListener('paste', onPaste); };
+    setTimeout(() => scanInp.focus(), 120);
+  }
+}
+
+function closeReturnToLotteryModal() {
+  if (_rltScanCleanup) { _rltScanCleanup(); _rltScanCleanup = null; }
+  document.getElementById('return-lottery-modal').classList.remove('open');
+  _rltPacks = []; _rltList = [];
+}
+
+function _rltFlashError(msg) {
+  const el = document.getElementById('rlt-scan-error');
+  if (!el) return;
+  el.textContent = msg || 'Unrecognized barcode';
+  el.style.display = '';
+  setTimeout(() => { el.style.display = 'none'; }, 2500);
+}
+
+function _rltHandleScan(raw) {
+  const scanInp = document.getElementById('rlt-scan-input');
+  if (scanInp) scanInp.value = '';
+  if (!raw) return;
+  const result = parseLotteryBarcode(raw);
+  if (!result) { _rltFlashError('Could not read barcode'); return; }
+
+  let parsed, pack;
+  if (result.ambiguous) {
+    for (const candidate of result.candidates) {
+      pack = _rltPacks.find(p => p.game_number === candidate.gameNumber && p.pack_number === candidate.packNumber);
+      if (pack) { parsed = candidate; break; }
+    }
+  } else {
+    parsed = result;
+    pack = _rltPacks.find(p => p.game_number === parsed.gameNumber && p.pack_number === parsed.packNumber);
+  }
+  if (!pack) { _rltFlashError('Book not found in active or received list'); return; }
+  if (_rltList.some(b => b.id === pack.id)) { _rltFlashError('Book already added'); return; }
+
+  const game = pack.lottery_games || {};
+  _rltList.push({
+    id:              pack.id,
+    gameName:        game.game_name || `Game #${pack.game_number}`,
+    packNumber:      pack.pack_number,
+    status:          pack.status,
+    lastShiftTicket: pack.last_shift_ticket ?? pack.start_ticket,
+    scannedTicket:   parsed ? parsed.ticketPosition : null,
+    dir:             (pack.loading_direction || 'asc').toLowerCase(),
+    price:           parseFloat(game.price || 0),
+  });
+  _renderRltList();
+  setTimeout(() => { if (scanInp) scanInp.focus(); }, 80);
+}
+
+function _rltRemoveItem(id) {
+  _rltList = _rltList.filter(b => b.id !== id);
+  _renderRltList();
+}
+
+function _renderRltList() {
+  const listEl   = document.getElementById('rlt-book-list');
+  const btn      = document.getElementById('rlt-confirm-btn');
+  const countEl  = document.getElementById('rlt-count');
+  if (!listEl) return;
+  if (countEl) {
+    if (_rltList.length) {
+      countEl.textContent = `${_rltList.length} book${_rltList.length !== 1 ? 's' : ''}`;
+      countEl.style.display = '';
+    } else {
+      countEl.style.display = 'none';
+    }
+  }
+  if (!_rltList.length) {
+    listEl.innerHTML = '<div class="rlt-empty">Scan a book to add it to the return list</div>';
+    if (btn) btn.disabled = true;
+    return;
+  }
+  if (btn) btn.disabled = false;
+  listEl.innerHTML = _rltList.map(b => {
+    const isActive = b.status === 'activated';
+    return `<div class="rlt-book-row" id="rlt-row-${b.id}">
+      <div class="rlt-book-info">
+        <span class="rlt-book-name">${b.gameName} <span class="rlt-pack-num">#${b.packNumber}</span></span>
+        <span class="rlt-status-pill ${isActive ? 'rlt-active' : 'rlt-received'}">${isActive ? 'Active' : 'Received'}</span>
+      </div>
+      ${isActive ? `<div class="rlt-ticket-row">
+        <span class="rlt-ticket-label">At ticket #</span>
+        <span class="rlt-ticket-val">${b.scannedTicket ?? '—'}</span>
+      </div>` : '<div class="rlt-ticket-row"><span class="rlt-ticket-label" style="font-style:italic">No tickets sold — full book</span></div>'}
+      <button class="rlt-remove-btn" onmousedown="_rltRemoveItem('${b.id}')" ontouchstart="_rltRemoveItem('${b.id}')">✕</button>
+    </div>`;
+  }).join('');
+}
+
+async function confirmReturnToLottery(e) {
+  if (e) e.preventDefault();
+  if (!_rltList.length) return;
+  const btn = document.getElementById('rlt-confirm-btn');
+  if (btn) btn.disabled = true;
+  try {
+    await Promise.all(_rltList.map(async b => {
+      const update = { status: 'removed' };
+      let returnedAtTicket = null;
+      if (b.status === 'activated') {
+        const ticketNum = b.scannedTicket;
+        if (ticketNum == null || isNaN(ticketNum) || ticketNum < 0) throw new Error(`No ticket position for book #${b.packNumber} — rescan the book`);
+        update.start_ticket      = ticketNum;
+        update.last_shift_ticket = ticketNum;
+        returnedAtTicket         = ticketNum;
+      }
+      await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(b.id)}`,
+        { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+          body: JSON.stringify(update) });
+      _logPackEvent(b.id, 'returned_to_lottery', { ticket_before: b.lastShiftTicket ?? null, ticket_after: returnedAtTicket, notes: 'Returned to lottery warehouse' });
+      if (returnedAtTicket != null && _currentShift && b.lastShiftTicket != null) {
+        const sold = _soldTickets(returnedAtTicket, b.lastShiftTicket, b.dir);
+        if (sold > 0) {
+          await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_shift_entries`,
+            { method: 'POST', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+              body: JSON.stringify([{ pack_id: b.id, shift_id: _currentShift.id,
+                tickets_sold: sold, revenue: sold * b.price,
+                ticket_at_open: b.lastShiftTicket, ticket_at_close: returnedAtTicket }]) });
+        }
+      }
+    }));
+    closeReturnToLotteryModal();
+    await loadLotteryStock(); loadLotteryDbStats();
+    await _refreshInvAfterLoad(); loadReceiveQueue();
+  } catch (err) {
+    showError('Return failed', err.message);
+    if (btn) btn.disabled = false;
+  }
 }
 
 let _pendingSoldOutId = null;
@@ -1822,6 +2055,8 @@ function openMoveBooksModal() {
   document.getElementById('move-books-modal').classList.add('open');
   _renderMoveBooksQueue();
   document.getElementById('move-books-status').textContent = '';
+  const countEl = document.getElementById('move-books-count');
+  if (countEl) countEl.style.display = 'none';
   // Render dynamic destination buttons from configured locations
   const destEl = document.getElementById('move-books-dest-btns');
   if (destEl) {
@@ -1880,8 +2115,17 @@ function _setMoveStatus(msg, type) {
 }
 
 function _renderMoveBooksQueue() {
-  const el = document.getElementById('move-books-list');
+  const el      = document.getElementById('move-books-list');
+  const countEl = document.getElementById('move-books-count');
   if (!el) return;
+  if (countEl) {
+    if (_moveBooksQueue.length) {
+      countEl.textContent  = `${_moveBooksQueue.length} book${_moveBooksQueue.length !== 1 ? 's' : ''}`;
+      countEl.style.display = '';
+    } else {
+      countEl.style.display = 'none';
+    }
+  }
   if (!_moveBooksQueue.length) {
     el.innerHTML = '<div class="move-books-empty">Scan a received book to add it…</div>'; return;
   }
@@ -2088,7 +2332,7 @@ function _packActionHtml(p) {
     const loc      = p.location || 'Office';
     const stations = _getStations();
     const extras   = _getExtraLocs();
-    const stagingLocs = ['Office', ...extras].filter(l => l !== loc);
+    const stagingLocs = [..._FIXED_STAGING, ...extras].filter(l => l !== loc);
     const moveButtons = stagingLocs.map(dest =>
       `<button class="pack-act-btn act-move-office${loc === dest ? ' act-move-active' : ''}"
         onmousedown="moveReceivedPack('${p.id}','${dest}',event)"
@@ -2144,8 +2388,8 @@ function _packEditBtn(_p) {
   return '';
 }
 
-function renderPackRow(p, ticketsPerPack, gameName) {
-  _packInfoCache[p.id] = { ticketsPerPack, gameName: gameName || '', packNumber: p.pack_number, startTicket: p.start_ticket, endTicket: p.end_ticket ?? null, lastShiftTicket: p.last_shift_ticket ?? null, loadingDirection: (p.loading_direction || 'asc').toLowerCase(), location: p.location };
+function renderPackRow(p, ticketsPerPack, gameName, price) {
+  _packInfoCache[p.id] = { ticketsPerPack, gameName: gameName || '', packNumber: p.pack_number, startTicket: p.start_ticket, endTicket: p.end_ticket ?? null, lastShiftTicket: p.last_shift_ticket ?? null, loadingDirection: (p.loading_direction || 'asc').toLowerCase(), location: p.location, price: parseFloat(price || 0) };
   const st       = PACK_STATUS[p.status] || { label: p.status, css: '' };
   const locCss   = PACK_LOC_CSS[p.location] || 'loc-office';
   const isActive = p.status === 'activated';
@@ -2175,7 +2419,7 @@ function renderPackRowByLoc(p) {
   const gName  = game.game_name || `Game #${p.game_number}`;
   const price  = parseFloat(game.price || 0);
   const tpp    = game.tickets_per_pack || 0;
-  _packInfoCache[p.id] = { ticketsPerPack: tpp, gameName: gName, packNumber: p.pack_number, startTicket: p.start_ticket, endTicket: p.end_ticket ?? null, lastShiftTicket: p.last_shift_ticket ?? null, loadingDirection: (p.loading_direction || 'asc').toLowerCase(), location: p.location };
+  _packInfoCache[p.id] = { ticketsPerPack: tpp, gameName: gName, packNumber: p.pack_number, startTicket: p.start_ticket, endTicket: p.end_ticket ?? null, lastShiftTicket: p.last_shift_ticket ?? null, loadingDirection: (p.loading_direction || 'asc').toLowerCase(), location: p.location, price };
   const st      = PACK_STATUS[p.status] || { label: p.status, css: '' };
   const isActive = p.status === 'activated';
   const dir     = p.loading_direction;
@@ -2325,7 +2569,7 @@ async function loadLotteryCatalog() {
       sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_games?select=game_number,game_name,price,tickets_per_pack,active&order=game_number.asc${activeFilter}&limit=1000`),
       sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=game_number,pack_number,status,raw_barcode&order=game_number.asc,id.asc&limit=1000`),
       _dbCaps.hasPackEvents
-        ? sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_pack_events?select=action,created_at,ticket_after,location_to,lottery_packs(game_number,pack_number)&order=created_at.asc&limit=5000`)
+        ? sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_pack_events?select=action,created_at,ticket_before,ticket_after,location_to,shift_id,lottery_shifts(opened_at),lottery_packs(game_number,pack_number)&order=created_at.asc&limit=5000`)
         : Promise.resolve(null),
     ]);
     const games  = await gRes.json();
@@ -2364,7 +2608,7 @@ async function loadLotteryCatalog() {
     const _EVT_LABELS = {
       received: 'Received', activated: 'Loaded', soldout: 'Sold Out',
       removed: 'Removed', moved: 'Moved', adjusted: 'Adjusted', discrepancy: 'Discrepancy',
-      restored: 'Restored',
+      restored: 'Restored', returned_to_lottery: 'Returned to Lottery',
     };
     for (const ev of (Array.isArray(evtRaw) ? evtRaw : [])) {
       const gn = ev.lottery_packs?.game_number;
@@ -2373,10 +2617,16 @@ async function loadLotteryCatalog() {
       if (!packHistory[gn]) packHistory[gn] = {};
       if (!packHistory[gn][pn]) packHistory[gn][pn] = [];
       const isPartialLoad = ev.action === 'activated' && ev.ticket_after > 0;
+      const shiftTime = ev.lottery_shifts?.opened_at
+        ? new Date(ev.lottery_shifts.opened_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        : null;
       packHistory[gn][pn].push({
-        label: isPartialLoad ? 'Partial Load' : (_EVT_LABELS[ev.action] || ev.action),
-        cls:   `ph-evt-${ev.action}`,
-        date:  ev.created_at,
+        action:      ev.action,
+        label:       isPartialLoad ? 'Partial Load' : (_EVT_LABELS[ev.action] || ev.action),
+        cls:         `ph-evt-${ev.action}`,
+        date:        ev.created_at,
+        ticketAfter: ev.ticket_after ?? null,
+        shiftTime,
       });
     }
 
@@ -2475,7 +2725,9 @@ function _renderLotteryCatalog() {
           const d = new Date(e.date);
           const dateFmt = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
           const timeFmt = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-          return `${i > 0 ? '<span class="ph-arrow">→</span>' : ''}<span class="ph-step"><span class="ph-evt ${e.cls}">${e.label}</span><span class="ph-date">${dateFmt} ${timeFmt}</span></span>`;
+          const ticketStr = e.ticketAfter != null ? `<span class="ph-ticket-tag">#${e.ticketAfter}</span>` : '';
+          const shiftStr  = e.shiftTime ? `<span class="ph-shift-tag">Shift ${e.shiftTime}</span>` : '';
+          return `${i > 0 ? '<span class="ph-arrow">→</span>' : ''}<span class="ph-step"><span class="ph-evt ${e.cls}">${e.label}${ticketStr}</span>${shiftStr}<span class="ph-date">${dateFmt} ${timeFmt}</span></span>`;
         }).join('');
         const bc = gameBarcodes[pn];
         const bcRow = bc
@@ -2676,6 +2928,8 @@ function _renderBulkMoveBar(_rows) {
   bar.innerHTML = `<div class="bulk-move-row">
     <button class="pack-act-btn act-move-tva" style="font-size:12px;padding:6px 12px"
       onmousedown="openMoveBooksModal()" ontouchstart="openMoveBooksModal()">Move Books…</button>
+    ${isAdmin() ? `<button class="pack-act-btn act-return-lottery" style="font-size:12px;padding:6px 12px"
+      onmousedown="openReturnToLotteryModal(event)" ontouchstart="openReturnToLotteryModal(event)">Return to Lottery…</button>` : ''}
     <span class="bulk-move-sep"></span>
     <button class="pack-act-btn bulk-reset-btn" onmousedown="openResetModal()" ontouchstart="openResetModal()">⚠ Reset All</button>
   </div>`;
@@ -2726,7 +2980,7 @@ function renderLotteryStockByGame(rows) {
           </div>
         </div>
         <div class="cat-stock">${_pills(activated, received, soldOut) || '<span class="cat-stock-empty">No books</span>'}</div>
-        <div class="stk-packs">${visible.map(p => renderPackRow(p, g.ticketsPerPack, g.gameName)).join('')}</div>
+        <div class="stk-packs">${visible.map(p => renderPackRow(p, g.ticketsPerPack, g.gameName, g.price)).join('')}</div>
       </div>`;
   }).join('') + '</div>';
 }
@@ -3067,7 +3321,24 @@ async function loadShiftHistory() {
         `&order=opened_at.desc&limit=60${dateFilter}`
       );
       const days = await res.json();
-      renderDayHistory(Array.isArray(days) ? days : []);
+      const daysArr = Array.isArray(days) ? days : [];
+
+      // Fetch live active packs when a day is currently open
+      let activePacks = [];
+      if (daysArr.some(d => d.status === 'open')) {
+        try {
+          const packSel = _dbCaps.hasLoadingDirection
+            ? 'game_number,pack_number,location,start_ticket,last_shift_ticket,loading_direction,lottery_games(game_name,price,tickets_per_pack)'
+            : 'game_number,pack_number,location,start_ticket,last_shift_ticket,lottery_games(game_name,price,tickets_per_pack)';
+          const apRes = await sbFetch(
+            `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?status=eq.activated&select=${packSel}&order=location.asc,pack_number.asc&limit=100`
+          );
+          const ap = await apRes.json();
+          if (Array.isArray(ap)) activePacks = ap;
+        } catch (_) {}
+      }
+
+      renderDayHistory(daysArr, activePacks);
     } else {
       const res = await sbFetch(
         `${CONFIG.supabaseUrl}/rest/v1/lottery_shifts` +
@@ -3107,8 +3378,9 @@ function _packEventDetail(ev) {
     case 'received':  return `received → ${ev.location_to || ''}${ev.ticket_after != null ? ` at #${ev.ticket_after}` : ''}`;
     case 'activated': return `loaded to ${ev.location_to || '?'}${ev.ticket_after != null ? ` from #${ev.ticket_after}` : ''}${ev.notes ? ` (${ev.notes})` : ''}`;
     case 'moved':     return `${ev.location_from || '?'} → ${ev.location_to || '?'}`;
-    case 'removed':   return `removed at #${ev.ticket_after ?? '?'}`;
-    case 'restored':  return ev.notes || 'brought back from removed';
+    case 'removed':             return `removed at #${ev.ticket_after ?? '?'}`;
+    case 'returned_to_lottery': return `returned to lottery${ev.ticket_after != null ? ` at #${ev.ticket_after}` : ''}`;
+    case 'restored':            return ev.notes || 'brought back from removed';
     case 'soldout':   return `sold out at #${ev.ticket_after ?? '?'}`;
     case 'adjusted':  return `position ${ev.ticket_before ?? '?'} → ${ev.ticket_after ?? '?'}${ev.notes ? ` · ${ev.notes}` : ''}`;
     default:          return ev.notes || '';
@@ -3182,13 +3454,15 @@ function _toggleDayGroup(id) {
 
 const _chevronSvg = `<svg class="shift-day-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
 
-function renderDayHistory(days) {
+function renderDayHistory(days, activePacks = []) {
   const el = document.getElementById('shift-history-container');
   if (!el) return;
   if (!days.length) { el.innerHTML = '<div class="log-empty" style="padding:12px 0;border:none">No history yet</div>'; return; }
 
-  const openDay    = days.find(d => d.status === 'open');
+  // Only the most recent open day — extras are duplicate artifacts
+  const openDay    = days.find(d => d.status === 'open') || null;
   const closedDays = days.filter(d => d.status === 'closed');
+  const displayDays = [...(openDay ? [openDay] : []), ...closedDays];
   const lastDay    = closedDays[0] || null;
 
   // Find most recent closed shift
@@ -3204,18 +3478,86 @@ function renderDayHistory(days) {
 
   // ── Today status banner ───────────────────────────────────────────────────
   if (openDay) {
-    const hasOpenShift = (openDay.lottery_shifts || []).some(s => s.status === 'open');
+    const openShift    = (openDay.lottery_shifts || []).find(s => s.status === 'open');
     const closedShifts = (openDay.lottery_shifts || []).filter(s => s.status === 'closed');
     const liveRev      = closedShifts.reduce((s, sh) => s + parseFloat(sh.total_revenue || 0), 0);
     const liveTix      = closedShifts.reduce((s, sh) => s + (sh.total_tickets_sold || 0), 0);
-    const statusLabel  = hasOpenShift ? 'Shift Open' : 'No Active Shift';
+    const dayOpenTime  = new Date(openDay.opened_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    // ── Active packs (live scan state) ──
+    let activePacksHtml = '';
+    if (activePacks.length) {
+      const byLoc = {};
+      for (const p of activePacks) {
+        const loc = p.location || 'Unknown';
+        if (!byLoc[loc]) byLoc[loc] = [];
+        byLoc[loc].push(p);
+      }
+      const locRows = Object.entries(byLoc).map(([loc, packs]) => {
+        const packRows = packs.map(p => {
+          const game = p.lottery_games || {};
+          const name = game.game_name || `#${p.game_number}`;
+          const pos  = p.last_shift_ticket != null ? `#${p.last_shift_ticket}` : 'not scanned';
+          const tpp  = game.tickets_per_pack || 0;
+          const sold = (p.loading_direction === 'desc' && p.start_ticket != null && p.last_shift_ticket != null)
+            ? p.start_ticket - p.last_shift_ticket
+            : (p.loading_direction !== 'desc' && p.start_ticket != null && p.last_shift_ticket != null)
+              ? p.last_shift_ticket - p.start_ticket : null;
+          const soldStr = sold != null && sold >= 0
+            ? `${sold} sold${game.price > 0 ? ` · $${(sold * parseFloat(game.price)).toFixed(2)}` : ''}`
+            : '';
+          const progress = tpp > 0 && sold != null && sold >= 0
+            ? `<div class="cpb-bar"><div class="cpb-fill" style="width:${Math.min(100, (sold/tpp)*100).toFixed(1)}%"></div></div>` : '';
+          return `<div class="cp-pack-row">
+            <span class="cp-pack-name">${name} <span class="cp-pack-num">#${p.pack_number}</span></span>
+            <span class="cp-pack-pos">${pos}</span>
+            ${soldStr ? `<span class="cp-pack-sold">${soldStr}</span>` : ''}
+            ${progress}
+          </div>`;
+        }).join('');
+        return `<div class="cp-loc-group"><div class="cp-loc-label">${loc}</div>${packRows}</div>`;
+      }).join('');
+      activePacksHtml = `<div class="cp-section-title">Active Packs <span class="cp-count">${activePacks.length}</span></div><div class="cp-packs">${locRows}</div>`;
+    } else {
+      activePacksHtml = `<div class="cp-section-title">Active Packs</div><div class="cp-empty">No active packs at stations</div>`;
+    }
+
+    // ── Current shift activity (pack events) ──
+    let shiftActivityHtml = '';
+    if (openShift) {
+      const shiftTime = new Date(openShift.opened_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const events = ((openShift.lottery_pack_events || [])
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at)))
+        .slice(0, 15);
+      const evRows = events.map(ev => {
+        const pack = ev.lottery_packs || {}, game = pack.lottery_games || {};
+        const name = game.game_name || (pack.game_number ? `#${pack.game_number}` : '');
+        const detail = _packEventDetail(ev);
+        const t = new Date(ev.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        return `<div class="cp-event-row ev-${ev.action}">
+          <span class="cp-ev-badge ev-badge-${ev.action}">${ev.action}</span>
+          ${name ? `<span class="cp-ev-name">${name}</span>` : ''}
+          <span class="cp-ev-detail">${detail}</span>
+          <span class="cp-ev-time">${t}</span>
+        </div>`;
+      }).join('');
+      shiftActivityHtml = `
+        <div class="cp-section-title">Current Shift <span class="cp-shift-since">since ${shiftTime}</span></div>
+        <div class="cp-events">${evRows || '<div class="cp-empty">No activity logged yet this shift</div>'}</div>`;
+    }
+
     html += `
       <div class="shift-today-banner">
-        <div>
-          <div style="font-size:12px;font-weight:700;color:var(--green-text);margin-bottom:2px">Today — Day Open · ${statusLabel}</div>
-          <div style="font-size:11px;color:var(--green-text)">${closedShifts.length} shift${closedShifts.length !== 1 ? 's' : ''} closed · ${liveTix} tickets</div>
+        <div class="today-banner-hdr">
+          <div>
+            <div class="today-banner-title">Today · Day Open since ${dayOpenTime}</div>
+            <div class="today-banner-sub">${closedShifts.length} shift${closedShifts.length !== 1 ? 's' : ''} closed · ${liveTix} tickets · $${liveRev.toFixed(2)}</div>
+          </div>
         </div>
-        <span class="shift-day-total-rev">$${liveRev.toFixed(2)}</span>
+        <div class="today-live-grid">
+          <div class="today-live-col">${activePacksHtml}</div>
+          ${openShift ? `<div class="today-live-col">${shiftActivityHtml}</div>` : ''}
+        </div>
       </div>`;
   }
 
@@ -3264,7 +3606,7 @@ function renderDayHistory(days) {
   html += `</div>`;
 
   // ── Collapsible day groups ────────────────────────────────────────────────
-  days.forEach((day, idx) => {
+  displayDays.forEach((day, idx) => {
     const groupId      = `day-group-${idx}`;
     const collapsed    = idx >= 2 ? ' collapsed' : '';           // expand first 2
     const dateStr      = new Date(day.opened_at).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
@@ -3484,7 +3826,7 @@ async function _ensureLotteryDbState() {
   if (_lotteryDbStateReady) return;
   _lotteryDbStateReady = true;
   await checkDbCapabilities();
-  await loadCurrentDayShift();
+  await Promise.all([loadCurrentDayShift(), _loadLotteryLocations()]);
 }
 
 // Receive sub-section — called when switching to receive sub-tab
@@ -3741,8 +4083,8 @@ async function deleteReceivedPack(packId, gameName, e) {
 
 const _GAME_COLORS  = ['#E13B3B','#1E5DD8','#0E8F5A','#8B5CF6','#F97316','#0F8C8C','#B8002E','#D44A8B'];
 const _GAME_EMOJIS  = ['🍀','💎','💵','👑','🎰','🧩','♛','🎯'];
-const _ACT_COLORS   = { received:'#8A6A00', activated:'#0E8F5A', moved:'#8B5CF6', soldout:'#E13B3B', discrepancy:'#B91C1C', adjusted:'#6B7280', removed:'#B91C1C', restored:'#0E8F5A' };
-const _ACT_LABELS   = { received:'Received', activated:'Activated', moved:'Moved', soldout:'Sold out', discrepancy:'Discrepancy', adjusted:'Adjusted', removed:'Removed', restored:'Restored' };
+const _ACT_COLORS   = { received:'#8A6A00', activated:'#0E8F5A', moved:'#8B5CF6', soldout:'#E13B3B', discrepancy:'#B91C1C', adjusted:'#6B7280', removed:'#B91C1C', restored:'#0E8F5A', returned_to_lottery:'#D97706' };
+const _ACT_LABELS   = { received:'Received', activated:'Activated', moved:'Moved', soldout:'Sold out', discrepancy:'Discrepancy', adjusted:'Adjusted', removed:'Removed', restored:'Restored', returned_to_lottery:'Returned to Lottery' };
 
 // ── Shared ticket-info helpers (used everywhere a pack row is rendered) ──
 function _dirPill(dir) {
@@ -4282,25 +4624,28 @@ async function loadSettingsSection() {
   const el = document.getElementById('settings-content');
   if (!el) return;
   el.innerHTML = '<div class="summary-loading">Loading…</div>';
-  let counts = {};
+  await _loadLotteryLocations();
+  let counts = {}, totals = {};
   try {
+    // Fetch all packs (all statuses) so we can show active badges AND guard deletes
     const res = await sbFetch(
-      `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=location,status&status=in.(activated,received)&limit=2000`
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=location,status&limit=5000`
     );
     const packs = await res.json();
     if (Array.isArray(packs)) {
       for (const p of packs) {
         const loc = p.location || 'Office';
         if (!counts[loc]) counts[loc] = { activated: 0, received: 0 };
+        totals[loc] = (totals[loc] || 0) + 1;
         if (p.status === 'activated') counts[loc].activated++;
         else if (p.status === 'received') counts[loc].received++;
       }
     }
   } catch (_) {}
-  renderSettingsUI(counts);
+  renderSettingsUI(counts, totals);
 }
 
-function renderSettingsUI(counts = {}) {
+function renderSettingsUI(counts = {}, totals = {}) {
   const el = document.getElementById('settings-content');
   if (!el) return;
   const stations  = _getStations();
@@ -4316,16 +4661,25 @@ function renderSettingsUI(counts = {}) {
       : `<div class="sloc-badges"><span class="sloc-badge sloc-empty">empty</span></div>`;
   };
 
-  const _row = (name, idx, type) => `
-    <div class="settings-loc-row" id="settings-loc-${type}-${idx}">
-      <input class="settings-loc-input" value="${name}"
-        onchange="settingsRenameLocation('${type}', ${idx}, this.value)"
-        onblur="settingsRenameLocation('${type}', ${idx}, this.value)" />
-      ${_badge(name)}
-      <button class="settings-loc-del" onclick="settingsRemoveLocation('${type}', ${idx})" title="Remove ${name}">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
-    </div>`;
+  const _row = (name, type) => {
+    const hasRefs = (totals[name] || 0) > 0;
+    const eName = name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    const delBtn = hasRefs
+      ? `<div class="settings-loc-del" style="opacity:0.25;cursor:default;pointer-events:none" title="Has pack history — rename only">
+           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+         </div>`
+      : `<button class="settings-loc-del" onclick="settingsRemoveLocation('${type}',this.closest('.settings-loc-row').querySelector('input').dataset.orig)" title="Remove ${eName}">
+           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+         </button>`;
+    return `
+      <div class="settings-loc-row">
+        <input class="settings-loc-input" value="${eName}" data-orig="${eName}" data-type="${type}"
+          onchange="settingsRenameLocation(this.dataset.type,this.dataset.orig,this.value);this.dataset.orig=this.value.trim()"
+          onblur="settingsRenameLocation(this.dataset.type,this.dataset.orig,this.value);this.dataset.orig=this.value.trim()" />
+        ${_badge(name)}
+        ${delBtn}
+      </div>`;
+  };
 
   el.innerHTML = `
     <div class="scan-card" style="margin-bottom:16px">
@@ -4337,7 +4691,7 @@ function renderSettingsUI(counts = {}) {
         <button class="log-act-btn" onclick="settingsAddStation()">+ Add Station</button>
       </div>
       <div class="settings-loc-hint">Books here can be audited. Use for registers and active sell points.</div>
-      <div class="settings-loc-list">${stations.map((s, i) => _row(s, i, 'station')).join('')}</div>
+      <div class="settings-loc-list">${stations.map(s => _row(s, 'station')).join('')}</div>
     </div>
 
     <div class="scan-card" style="margin-bottom:16px">
@@ -4355,67 +4709,98 @@ function renderSettingsUI(counts = {}) {
           ${_badge('Office')}
           <div class="settings-loc-tag">Fixed</div>
         </div>
-        ${extraLocs.map((s, i) => _row(s, i, 'extra')).join('')}
+        <div class="settings-loc-row settings-loc-fixed">
+          <div class="settings-loc-name">Extra</div>
+          ${_badge('Extra')}
+          <div class="settings-loc-tag">Fixed</div>
+        </div>
+        ${extraLocs.map(s => _row(s, 'extra')).join('')}
       </div>
     </div>`;
 }
 
-function settingsAddStation() {
+async function settingsAddStation() {
   const stations = _getStations();
-  stations.push(`Station ${stations.length + 1}`);
-  _saveStations(stations);
-  renderSettingsUI();
-  renderReceiveLocationButtons();
+  const name = `Station ${stations.length + 1}`;
+  try {
+    await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_locations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ name, type: 'station', sort_order: stations.length })
+    });
+    await _loadLotteryLocations();
+    await loadSettingsSection();
+    renderReceiveLocationButtons();
+  } catch (e) {
+    showError('Failed to add station', e.message);
+  }
 }
 
-function settingsAddExtraLoc() {
+async function settingsAddExtraLoc() {
   const extras = _getExtraLocs();
-  extras.push(`Location ${extras.length + 1}`);
-  _saveExtraLocs(extras);
-  renderSettingsUI();
-  renderReceiveLocationButtons();
-}
-
-async function settingsRemoveLocation(type, idx) {
-  if (type === 'station') {
-    const arr = _getStations();
-    if (arr.length <= 1) { showError('Cannot remove', 'At least one station is required.'); return; }
-    const stationName = arr[idx];
-    // Block removal if any activated packs are still at this station
-    try {
-      const res = await sbFetch(
-        `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?location=eq.${encodeURIComponent(stationName)}&status=eq.activated&limit=1`,
-        { headers: { 'Prefer': 'count=exact' } }
-      );
-      const count = parseInt((res.headers.get('content-range') || '').split('/')[1], 10) || 0;
-      if (count > 0) {
-        showError(
-          `Cannot remove ${stationName}`,
-          `${count} active book${count !== 1 ? 's are' : ' is'} still at ${stationName}. Move or close them before removing this station.`
-        );
-        return;
-      }
-    } catch (_) { /* if DB unreachable, fall through and allow */ }
-    arr.splice(idx, 1);
-    _saveStations(arr);
-  } else {
-    const arr = _getExtraLocs();
-    arr.splice(idx, 1);
-    _saveExtraLocs(arr);
+  const name = `Location ${extras.length + 1}`;
+  try {
+    await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_locations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ name, type: 'extra', sort_order: extras.length })
+    });
+    await _loadLotteryLocations();
+    await loadSettingsSection();
+    renderReceiveLocationButtons();
+  } catch (e) {
+    showError('Failed to add location', e.message);
   }
-  renderSettingsUI();
-  renderReceiveLocationButtons();
 }
 
-function settingsRenameLocation(type, idx, newName) {
+async function settingsRemoveLocation(type, name) {
+  if (type === 'station' && _getStations().length <= 1) {
+    showError('Cannot remove', 'At least one station is required.');
+    return;
+  }
+  try {
+    const res = await sbFetch(
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?location=eq.${encodeURIComponent(name)}&limit=1`,
+      { headers: { 'Prefer': 'count=exact' } }
+    );
+    const count = parseInt((res.headers.get('content-range') || '').split('/')[1], 10) || 0;
+    if (count > 0) {
+      showError(`Cannot remove "${name}"`, `${count} pack${count !== 1 ? 's have' : ' has'} been at this location. Rename it instead.`);
+      return;
+    }
+    await sbFetch(
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_locations?name=eq.${encodeURIComponent(name)}&type=eq.${encodeURIComponent(type)}`,
+      { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } }
+    );
+    await _loadLotteryLocations();
+    await loadSettingsSection();
+    renderReceiveLocationButtons();
+  } catch (e) {
+    showError('Failed to remove location', e.message);
+  }
+}
+
+async function settingsRenameLocation(type, oldName, newName) {
   const name = (newName || '').trim();
-  if (!name) return;
-  if (type === 'station') {
-    const arr = _getStations(); arr[idx] = name; _saveStations(arr);
-  } else {
-    const arr = _getExtraLocs(); arr[idx] = name; _saveExtraLocs(arr);
+  if (!name || name === oldName) return;
+  try {
+    await Promise.all([
+      sbFetch(
+        `${CONFIG.supabaseUrl}/rest/v1/lottery_locations?name=eq.${encodeURIComponent(oldName)}&type=eq.${encodeURIComponent(type)}`,
+        { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ name }) }
+      ),
+      sbFetch(
+        `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?location=eq.${encodeURIComponent(oldName)}`,
+        { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ location: name }) }
+      ),
+    ]);
+    await _loadLotteryLocations();
+    renderReceiveLocationButtons();
+  } catch (e) {
+    showError('Failed to rename location', e.message);
   }
-  renderReceiveLocationButtons();
 }
 
 // ===== REPORTS =====
