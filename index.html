@@ -1091,6 +1091,46 @@
   </div>
 </div>
 
+<!-- RESTORE SOLDOUT MODAL -->
+<div class="modal-overlay" id="restore-soldout-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Restore Book</div>
+    <div id="restore-soldout-info" style="font-size:13px;color:var(--text-muted);margin-bottom:10px"></div>
+    <div id="restore-soldout-detail" style="margin-bottom:14px;font-size:13px;line-height:1.5"></div>
+    <div style="margin-bottom:16px">
+      <label class="lottery-form-label" style="display:block;margin-bottom:5px">Resume at ticket #</label>
+      <input class="modal-input" id="restore-soldout-ticket" type="number" min="0" placeholder="e.g. 47"
+        style="width:100%;box-sizing:border-box" />
+      <div style="font-size:11px;color:var(--text-hint);margin-top:4px">Adjust if the soldout position was wrong — the next shift will count from this ticket onward.</div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="modal-close" style="flex:1;margin:0;padding:11px" onclick="closeRestoreSoldOutModal()">Cancel</button>
+      <button class="modal-add-btn" id="restore-soldout-confirm-btn" style="flex:2;margin:0"
+        onmousedown="confirmRestoreSoldOut(event)" ontouchstart="confirmRestoreSoldOut(event)">↩ Restore Book</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADMIN AUTH MODAL -->
+<div class="modal-overlay modal-overlay-center" id="admin-auth-modal">
+  <div class="modal" style="max-width:320px">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Admin Required</div>
+    <p style="font-size:13px;color:var(--text-muted);margin:0 0 16px">This action is restricted to admins.</p>
+    <label class="reset-confirm-label" for="admin-auth-input">Confirmation required</label>
+    <input id="admin-auth-input" class="reset-confirm-input" type="password" autocomplete="off"
+      autocorrect="off" spellcheck="false" placeholder="Enter admin password"
+      oninput="_onAdminAuthInput()"
+      onkeydown="if(event.key==='Enter')confirmAdminAuth(event)" />
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="modal-close" style="flex:1;margin:0;padding:11px" onclick="closeAdminAuthModal()">Cancel</button>
+      <button class="modal-add-btn" id="admin-auth-btn" style="flex:2;margin:0" disabled
+        onmousedown="confirmAdminAuth(event)" ontouchstart="confirmAdminAuth(event)">Unlock</button>
+    </div>
+  </div>
+</div>
+
 <!-- EDIT PACK MODAL -->
 <div class="modal-overlay" id="edit-pack-modal">
   <div class="modal">

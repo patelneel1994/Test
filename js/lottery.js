@@ -97,9 +97,58 @@ let _moveBooksQueue = []; // { id, packNumber, gameName, location }
 let _lotteryDbStateReady = false;
 
 // ===== ADMIN CHECK =====
-// Placeholder — replace body with real auth lookup when a user/role system is added.
-function isAdmin() {
-  return false;
+// Session-level admin unlock. Expires after ADMIN_SESSION_MS of inactivity.
+// Replace _adminUnlocked with a real auth lookup when a user/role system is added.
+const ADMIN_SESSION_MS = 2 * 60 * 1000;  // 2 minutes
+let _adminUnlocked  = false;
+let _adminCallback  = null;   // pending action waiting for admin auth
+let _adminExpireTimer = null; // auto-lock timer
+
+function isAdmin() { return _adminUnlocked; }
+
+function _lockAdmin() {
+  _adminUnlocked = false;
+  if (_adminExpireTimer) { clearTimeout(_adminExpireTimer); _adminExpireTimer = null; }
+}
+
+function _resetAdminTimer() {
+  if (_adminExpireTimer) clearTimeout(_adminExpireTimer);
+  _adminExpireTimer = setTimeout(_lockAdmin, ADMIN_SESSION_MS);
+}
+
+// Gate any action behind admin auth.
+// If already unlocked, resets the expiry timer and runs callback immediately.
+// Otherwise shows the admin-auth modal; callback fires on successful unlock.
+function requireAdmin(callback) {
+  if (_adminUnlocked) { _resetAdminTimer(); callback(); return; }
+  _adminCallback = callback;
+  const inp = document.getElementById('admin-auth-input');
+  if (inp) inp.value = '';
+  const btn = document.getElementById('admin-auth-btn');
+  if (btn) btn.disabled = true;
+  document.getElementById('admin-auth-modal').classList.add('open');
+  setTimeout(() => inp?.focus(), 120);
+}
+
+function _onAdminAuthInput() {
+  const val = (document.getElementById('admin-auth-input')?.value || '');
+  const btn = document.getElementById('admin-auth-btn');
+  if (btn) btn.disabled = (val !== 'Neel');
+}
+
+function confirmAdminAuth(e) {
+  if (e) e.preventDefault();
+  const val = (document.getElementById('admin-auth-input')?.value || '');
+  if (val !== 'Neel') return;
+  _adminUnlocked = true;
+  _resetAdminTimer();
+  closeAdminAuthModal();
+  if (_adminCallback) { const cb = _adminCallback; _adminCallback = null; cb(); }
+}
+
+function closeAdminAuthModal() {
+  document.getElementById('admin-auth-modal').classList.remove('open');
+  _adminCallback = null;
 }
 
 // ===== DB CAPABILITIES CHECK =====
@@ -2223,12 +2272,91 @@ async function restoreRemovedPack(packId, location, e) {
   } catch (err) { showError('Restore failed', err.message); }
 }
 
+let _pendingRestorePackId   = null;
+let _pendingRestoreLocation = null;
+
+function restoreSoldOutPack(packId, location, currentTicket, e) {
+  if (e) { e.preventDefault(); e.stopPropagation(); }
+  if (_isStation(location) && !_canMoveOrActivate()) { showError('No day open', 'Open a day first.'); return; }
+
+  _pendingRestorePackId   = packId;
+  _pendingRestoreLocation = location;
+
+  const info = _packInfoCache[packId] || {};
+  const infoEl = document.getElementById('restore-soldout-info');
+  if (infoEl) infoEl.textContent = info.gameName
+    ? `${info.gameName} · Book #${info.packNumber}`
+    : `Book ID: ${packId}`;
+
+  // last_shift_ticket = position at last legit shift close (unchanged by soldout modal action).
+  // start_ticket = overwritten by soldout to the theoretical final ticket — usually wrong.
+  // Default to last_shift_ticket as the resume point; fall back to currentTicket.
+  const lastShift   = info.lastShiftTicket ?? null;
+  const soldoutAt   = info.startTicket ?? currentTicket;
+  const resumeDefault = lastShift ?? currentTicket;
+
+  const detailEl = document.getElementById('restore-soldout-detail');
+  if (detailEl) {
+    const newStatus = _isStation(location) ? 'Activated' : 'Received';
+    const locationLine =
+      `<div style="margin-bottom:8px">` +
+      `<span style="background:var(--green-bg);color:var(--green-text);border:1px solid var(--green-border);border-radius:999px;padding:2px 10px;font-size:11px;font-weight:700">${newStatus}</span>` +
+      `<span style="color:var(--text-muted)"> at </span><strong>${location}</strong></div>`;
+    // Show the discrepancy when soldout overwrote the position
+    const ticketNote = (lastShift != null && lastShift !== soldoutAt)
+      ? `<div style="font-size:12px;color:var(--text-muted);background:var(--amber-bg);border:1px solid var(--amber-border);border-radius:6px;padding:6px 10px;line-height:1.5">
+           Last shift close: <strong>#${lastShift}</strong> &nbsp;·&nbsp; Soldout recorded at: <span style="color:var(--accent)">#${soldoutAt}</span><br>
+           <span style="font-size:11px">Resuming from last shift close — adjust below if needed.</span>
+         </div>`
+      : `<div style="font-size:12px;color:var(--text-muted)">Was at ticket <strong>#${resumeDefault}</strong></div>`;
+    detailEl.innerHTML = locationLine + ticketNote;
+  }
+
+  const ticketInp = document.getElementById('restore-soldout-ticket');
+  if (ticketInp) { ticketInp.value = resumeDefault; ticketInp.focus(); }
+
+  document.getElementById('restore-soldout-modal').classList.add('open');
+}
+
+function closeRestoreSoldOutModal() {
+  document.getElementById('restore-soldout-modal').classList.remove('open');
+  _pendingRestorePackId   = null;
+  _pendingRestoreLocation = null;
+}
+
+async function confirmRestoreSoldOut(e) {
+  if (e) e.preventDefault();
+  if (!_pendingRestorePackId || !_pendingRestoreLocation) return;
+  const ticketInp = document.getElementById('restore-soldout-ticket');
+  const ticket = ticketInp ? (parseInt(ticketInp.value, 10) || 0) : 0;
+  const btn = document.getElementById('restore-soldout-confirm-btn');
+  if (btn) btn.disabled = true;
+  try {
+    const packId   = _pendingRestorePackId;
+    const location = _pendingRestoreLocation;
+    const newStatus = _isStation(location) ? 'activated' : 'received';
+    // Preserve start_ticket as-is; re-anchor last_shift_ticket so the next audit
+    // computes sold tickets correctly from the confirmed resume position.
+    await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(packId)}`,
+      { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ status: newStatus, location, start_ticket: ticket, last_shift_ticket: ticket }) });
+    _logPackEvent(packId, 'restored', { location_to: location, ticket_after: ticket, notes: `Restored from accidental soldout → ${newStatus} at ${location}` });
+    closeRestoreSoldOutModal();
+    await loadLotteryStock(); loadLotteryDbStats();
+  } catch (err) { showError('Restore failed', err.message); }
+  finally { if (btn) btn.disabled = false; }
+}
+
 // ===== ACTIVATION MODAL =====
 
 // ===== EDIT PACK POSITION / END =====
 
 function openEditPackModal(id, startTicket, endTicket, e) {
   if (e) e.preventDefault();
+  requireAdmin(() => _doOpenEditPackModal(id, startTicket, endTicket));
+}
+
+function _doOpenEditPackModal(id, startTicket, endTicket) {
   _pendingEditPackId = id;
   const info = _packInfoCache[id] || {};
   const infoEl = document.getElementById('edit-pack-info');
@@ -2405,6 +2533,15 @@ function _packActionHtml(p) {
     ).join('');
     return `<div class="pack-move-row"><span class="pack-move-label">Bring back to</span>${stationBtns}</div>`;
   }
+  if (p.status === 'soldout') {
+    const locs = [..._getStations(), 'Office'];
+    const btns = locs.map(loc =>
+      `<button class="pack-act-btn act-station" style="font-size:11px;padding:5px 10px"
+        onmousedown="restoreSoldOutPack('${p.id}','${loc}',${p.start_ticket ?? 0},event)"
+        ontouchstart="restoreSoldOutPack('${p.id}','${loc}',${p.start_ticket ?? 0},event)">↩ ${loc}</button>`
+    ).join('');
+    return `<div class="pack-move-row"><span class="pack-move-label">Restore to</span>${btns}</div>`;
+  }
   return '';
 }
 
@@ -2421,8 +2558,11 @@ function _packRemoveBtn(p) {
   return '';
 }
 
-function _packEditBtn(_p) {
-  return '';
+function _packEditBtn(p) {
+  if (p.status !== 'activated') return '';
+  return `<button class="pack-remove-btn" style="color:var(--ink-60);font-size:13px" title="Edit ticket position"
+    onmousedown="openEditPackModal('${p.id}',${p.start_ticket ?? 0},${p.end_ticket ?? 'null'},event)"
+    ontouchstart="openEditPackModal('${p.id}',${p.start_ticket ?? 0},${p.end_ticket ?? 'null'},event)">✎</button>`;
 }
 
 function renderPackRow(p, ticketsPerPack, gameName, price) {
