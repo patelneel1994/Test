@@ -75,12 +75,14 @@ let _showInactiveGames   = false;
 let _pendingEditPackId   = null;
 let _currentDay          = null;
 let _currentShift        = null;
+let _shiftOpInProgress   = false;  // semaphore — blocks concurrent close/open operations
 let _dbCapsChecked       = false;
 const _dbCaps            = { hasLoadingDirection: false, hasFullDayTracking: false, hasPackEvents: false };
 const _packInfoCache     = {};
 
 // ---- Inventory state ----
 let _invContext       = null;
+let _invBusy          = false;  // re-entry guard — prevents double-tap creating duplicate days
 let _invPacks         = [];     // active packs
 let _invReceivedPacks = [];     // received (not yet activated) packs — shown in open-day/shift
 let _invData          = {};     // pack_id → ticket number
@@ -144,6 +146,7 @@ const _INV_TITLES   = {
 };
 
 async function openInventory(context, skipPrompt = false) {
+  if (_invBusy) return;
   if (_dbCaps.hasFullDayTracking) {
     if (context === 'open-day' && _currentDay) {
       showError('Day already open', 'A day is already open. Close it before opening a new one.'); return;
@@ -162,6 +165,7 @@ async function openInventory(context, skipPrompt = false) {
     }
   }
 
+  _invBusy           = true;
   _invContext        = context;
   _invData           = {};
   _invSoldOut        = {};
@@ -210,6 +214,8 @@ async function openInventory(context, skipPrompt = false) {
     document.getElementById('inventory-modal').classList.add('open');
     document.getElementById('inv-book-list').innerHTML = `<div class="item-nf-sub">Load failed: ${err.message}</div>`;
     _showAuditScanPanel();
+  } finally {
+    _invBusy = false;
   }
 }
 
@@ -1020,6 +1026,11 @@ async function _invCommitOpenShift() {
 }
 
 async function _invCommitClose(type) {
+  if (_shiftOpInProgress) {
+    console.warn('_invCommitClose: operation already in progress, ignoring duplicate call');
+    return;
+  }
+  _shiftOpInProgress = true;
   const entries = [];
   let totalSold = 0, totalRev = 0;
   for (const p of _invPacks) {
@@ -1059,10 +1070,15 @@ async function _invCommitClose(type) {
           total_tickets_sold: totalSold, total_revenue: totalRev,
           ...(invNotes ? { notes: invNotes } : {}) }) });
   } else {
+    // Legacy path: no current open shift record exists, create one at close time.
+    // Include opened_at so history never shows "?" — use day's opened_at as the best
+    // available estimate (the shift started when the day or the last shift-change started).
     const extraFields = (_dbCaps.hasFullDayTracking && _currentDay) ? { day_id: _currentDay.id } : {};
+    const fallbackOpenedAt = _currentDay?.opened_at || new Date().toISOString();
     const shiftRes = await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_shifts`,
       { method: 'POST', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
-        body: JSON.stringify({ shift_type: type, status: 'closed', closed_at: new Date().toISOString(),
+        body: JSON.stringify({ shift_type: type, status: 'closed',
+          opened_at: fallbackOpenedAt, closed_at: new Date().toISOString(),
           total_tickets_sold: totalSold, total_revenue: totalRev,
           ...(invNotes ? { notes: invNotes } : {}), ...extraFields }) });
     const shifts = await shiftRes.json();
@@ -1104,14 +1120,18 @@ async function _invCommitClose(type) {
   }
 
   if (type === 'day' && _currentDay) {
+    // Exclude the just-closed shift (already captured in totalSold/totalRev above)
+    // and only sum other closed shifts — avoids double-count or missed-row if the
+    // PATCH hasn't propagated before this SELECT fires.
     const dShiftsRes = await sbFetch(
-      `${CONFIG.supabaseUrl}/rest/v1/lottery_shifts?day_id=eq.${_currentDay.id}&select=total_tickets_sold,total_revenue`
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_shifts?day_id=eq.${_currentDay.id}&id=neq.${shiftId}&status=eq.closed&select=total_tickets_sold,total_revenue`
     );
     const dShifts   = await dShiftsRes.json();
-    const dayTotals = (Array.isArray(dShifts) ? dShifts : []).reduce(
+    const otherTotals = (Array.isArray(dShifts) ? dShifts : []).reduce(
       (acc, s) => ({ tickets: acc.tickets + (s.total_tickets_sold || 0), revenue: acc.revenue + parseFloat(s.total_revenue || 0) }),
       { tickets: 0, revenue: 0 }
     );
+    const dayTotals = { tickets: otherTotals.tickets + totalSold, revenue: otherTotals.revenue + totalRev };
     await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_days?id=eq.${_currentDay.id}`,
       { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
         body: JSON.stringify({ status: 'closed', closed_at: new Date().toISOString(),
@@ -1121,6 +1141,7 @@ async function _invCommitClose(type) {
   updateDayShiftButtons();
   await Promise.all([loadLotteryStock(), loadShiftHistory()]);
   loadLotteryDbStats();
+  _shiftOpInProgress = false;
 }
 
 // ===== DAY / SHIFT STATE =====
@@ -1140,6 +1161,21 @@ async function loadCurrentDayShift() {
       );
       const shifts = await sRes.json();
       _currentShift = Array.isArray(shifts) && shifts[0] ? shifts[0] : null;
+
+      // Day is open but no open shift — auto-open one so the next shift-close
+      // doesn't fall into the legacy path (which records no opened_at → "?" in history).
+      // Skip if a shift operation is already in progress to avoid racing with a close.
+      if (!_currentShift && !_shiftOpInProgress) {
+        try {
+          const newRes = await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_shifts`,
+            { method: 'POST', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
+              body: JSON.stringify({ day_id: _currentDay.id, shift_type: 'shift',
+                opened_at: new Date().toISOString(), status: 'open',
+                total_tickets_sold: 0, total_revenue: 0 }) });
+          const newShifts = await newRes.json();
+          _currentShift = Array.isArray(newShifts) && newShifts[0] ? newShifts[0] : null;
+        } catch (_) { /* non-fatal — will fall back to legacy path */ }
+      }
     } else {
       _currentShift = null;
     }
@@ -3166,6 +3202,8 @@ function recalcShiftTotals() {
 
 async function confirmShiftClose(e) {
   if (e) e.preventDefault();
+  if (_shiftOpInProgress) return;
+  _shiftOpInProgress = true;
   const confirmBtn = document.getElementById('shift-confirm-btn');
   if (confirmBtn) confirmBtn.disabled = true;
   try {
@@ -3195,11 +3233,14 @@ async function confirmShiftClose(e) {
             total_tickets_sold: totalSold, total_revenue: totalRev,
             ...(notes ? { notes } : {}) }) });
     } else {
-      // Legacy mode: create shift record on close
+      // Legacy mode: create shift record on close (auto-ensure means this is only
+      // reached in non-day-tracking mode; opened_at uses the day open time as a fallback).
       const extraFields = (_dbCaps.hasFullDayTracking && _currentDay) ? { day_id: _currentDay.id } : {};
+      const fallbackOpenedAt = _currentDay?.opened_at || new Date().toISOString();
       const shiftRes = await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_shifts`,
         { method: 'POST', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
           body: JSON.stringify({ shift_type: _pendingShiftType,
+            opened_at: fallbackOpenedAt, closed_at: new Date().toISOString(), status: 'closed',
             total_tickets_sold: totalSold, total_revenue: totalRev,
             ...(notes ? { notes } : {}), ...extraFields }) });
       const shifts = await shiftRes.json();
@@ -3226,15 +3267,16 @@ async function confirmShiftClose(e) {
     if (_dbCaps.hasFullDayTracking) {
       _currentShift = null;
       if (_pendingShiftType === 'day' && _currentDay) {
-        // Sum all shifts for this day to compute day totals
+        // Sum all OTHER closed shifts (exclude the just-closed one, already in totalSold/totalRev)
         const dShiftsRes = await sbFetch(
-          `${CONFIG.supabaseUrl}/rest/v1/lottery_shifts?day_id=eq.${_currentDay.id}&select=total_tickets_sold,total_revenue`
+          `${CONFIG.supabaseUrl}/rest/v1/lottery_shifts?day_id=eq.${_currentDay.id}&id=neq.${shiftId}&status=eq.closed&select=total_tickets_sold,total_revenue`
         );
         const dShifts  = await dShiftsRes.json();
-        const dayTotals = (Array.isArray(dShifts) ? dShifts : []).reduce(
+        const otherTotals = (Array.isArray(dShifts) ? dShifts : []).reduce(
           (acc, s) => ({ tickets: acc.tickets + (s.total_tickets_sold || 0), revenue: acc.revenue + parseFloat(s.total_revenue || 0) }),
           { tickets: 0, revenue: 0 }
         );
+        const dayTotals = { tickets: otherTotals.tickets + totalSold, revenue: otherTotals.revenue + totalRev };
         await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_days?id=eq.${_currentDay.id}`,
           { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
             body: JSON.stringify({ status: 'closed', closed_at: new Date().toISOString(),
@@ -3248,7 +3290,7 @@ async function confirmShiftClose(e) {
     await Promise.all([loadLotteryStock(), loadShiftHistory()]);
     loadLotteryDbStats();
   } catch (err) { showError('Close failed', err.message); }
-  finally { if (confirmBtn) confirmBtn.disabled = false; }
+  finally { if (confirmBtn) confirmBtn.disabled = false; _shiftOpInProgress = false; }
 }
 
 // ===== SHIFT / DAY HISTORY =====
@@ -3313,17 +3355,46 @@ async function loadShiftHistory() {
   try {
     if (_dbCaps.hasFullDayTracking) {
       const eventsSelect = _dbCaps.hasPackEvents
-        ? `,lottery_pack_events(id,action,location_from,location_to,ticket_before,ticket_after,notes,created_at,lottery_packs(pack_number,game_number,raw_barcode,lottery_games(game_name,price)))`
+        ? `,lottery_pack_events(id,pack_id,action,location_from,location_to,ticket_before,ticket_after,notes,created_at,lottery_packs(pack_number,game_number,raw_barcode,lottery_games(game_name,price)))`
         : '';
+
+      // ── Query 1: days (no embedded shifts — PostgREST embedding silently caps
+      //            nested collections which caused only the last shift to appear)
       const res = await sbFetch(
         `${CONFIG.supabaseUrl}/rest/v1/lottery_days` +
-        `?select=id,opened_at,closed_at,status,total_tickets_sold,total_revenue,notes,lottery_shifts(id,opened_at,closed_at,total_tickets_sold,total_revenue,status,notes,lottery_shift_entries(pack_id,tickets_sold,revenue,ticket_at_open,ticket_at_close,lottery_packs(pack_number,game_number,lottery_games(game_name)))${eventsSelect})` +
+        `?select=id,opened_at,closed_at,status,total_tickets_sold,total_revenue,notes` +
         `&order=opened_at.desc&limit=60${dateFilter}`
       );
       const days = await res.json();
       const daysArr = Array.isArray(days) ? days : [];
 
-      // Fetch live active packs when a day is currently open
+      // ── Query 2: all shifts for those days as a flat top-level query
+      //            so PostgREST returns every row without any embedding limit.
+      if (daysArr.length) {
+        try {
+          const dayIds  = daysArr.map(d => d.id).join(',');
+          const shiftSel =
+            `id,day_id,opened_at,closed_at,status,shift_type,total_tickets_sold,total_revenue,notes,` +
+            `lottery_shift_entries(pack_id,tickets_sold,revenue,ticket_at_open,ticket_at_close,` +
+              `lottery_packs(pack_number,game_number,lottery_games(game_name,price)))` +
+            eventsSelect;
+          const sRes = await sbFetch(
+            `${CONFIG.supabaseUrl}/rest/v1/lottery_shifts` +
+            `?day_id=in.(${dayIds})&select=${shiftSel}&order=opened_at.asc&limit=1000`
+          );
+          const allShifts = await sRes.json();
+          if (Array.isArray(allShifts)) {
+            const byDay = {};
+            for (const s of allShifts) {
+              if (!byDay[s.day_id]) byDay[s.day_id] = [];
+              byDay[s.day_id].push(s);
+            }
+            for (const d of daysArr) d.lottery_shifts = byDay[d.id] || [];
+          }
+        } catch (_) { /* non-fatal — days render without shift detail */ }
+      }
+
+      // ── Query 3: live active packs when a day is currently open
       let activePacks = [];
       if (daysArr.some(d => d.status === 'open')) {
         try {
@@ -3387,6 +3458,114 @@ function _packEventDetail(ev) {
   }
 }
 
+// ── Per-pack ticket summary (shared by day-level and shift-level views) ─────
+// entries = lottery_shift_entries[]  (may be from multiple shifts when building day summary)
+// events  = lottery_pack_events[]    (same)
+// Returns inner HTML rows for a .shift-pack-tick-list, or '' if nothing to show.
+const _PACK_STATUS_ACTIONS = new Set(['removed', 'returned_to_lottery', 'soldout', 'restored']);
+
+function _buildPackTicketRows(entries, events) {
+  const byPack = new Map(); // pack_id → { pack, openTick, closeTick, sold, rev, statusEvents[] }
+
+  for (const en of (entries || [])) {
+    const id   = en.pack_id;
+    if (!id) continue;
+    const pack = en.lottery_packs || {};
+    if (!byPack.has(id)) byPack.set(id, { pack, openTick: null, closeTick: null, sold: 0, rev: 0, statusEvents: [] });
+    const row = byPack.get(id);
+    if (!row.pack.game_number && pack.game_number) row.pack = pack;
+    // openTick: keep first seen (earliest shift = day start for that pack)
+    if (en.ticket_at_open  != null && row.openTick  === null) row.openTick  = en.ticket_at_open;
+    // closeTick: always overwrite so last shift wins (= day end for that pack)
+    if (en.ticket_at_close != null) row.closeTick = en.ticket_at_close;
+    row.sold += en.tickets_sold    || 0;
+    row.rev  += parseFloat(en.revenue || 0);
+  }
+
+  for (const ev of (events || [])) {
+    if (!_PACK_STATUS_ACTIONS.has(ev.action)) continue;
+    const id = ev.pack_id;
+    if (!id) continue;
+    const pack = ev.lottery_packs || {};
+    if (!byPack.has(id)) byPack.set(id, { pack, openTick: null, closeTick: null, sold: 0, rev: 0, statusEvents: [] });
+    const row = byPack.get(id);
+    if (!row.pack.game_number && pack.game_number) row.pack = pack;
+    row.statusEvents.push(ev);
+  }
+
+  if (!byPack.size) return '';
+
+  const sorted = [...byPack.values()].sort((a, b) => {
+    const ga = parseInt(a.pack.game_number || 0), gb = parseInt(b.pack.game_number || 0);
+    return ga !== gb ? ga - gb : parseInt(a.pack.pack_number || 0) - parseInt(b.pack.pack_number || 0);
+  });
+
+  return sorted.map(({ pack, openTick, closeTick, sold, rev, statusEvents }) => {
+    const game    = pack.lottery_games || {};
+    const name    = game.game_name || (pack.game_number ? `Game #${pack.game_number}` : '?');
+    const packNum = pack.pack_number || '?';
+    const price   = parseFloat(game.price || 0);
+    const dotBg   = _priceColor(price).bg;
+    const abbr    = String(pack.game_number || '').slice(-2).padStart(2, '0');
+
+    const tickRange = (openTick != null && closeTick != null)
+      ? `<span class="spt-range">#${openTick}<span class="spt-arrow">→</span>#${closeTick}</span>`
+      : openTick != null ? `<span class="spt-range">from #${openTick}</span>`
+      : closeTick != null ? `<span class="spt-range">to #${closeTick}</span>` : '';
+
+    const _BADGE_LABEL = { removed: 'Removed', returned_to_lottery: 'Returned', soldout: 'Sold Out', restored: 'Restored' };
+    const badges = statusEvents.map(ev => {
+      const tick  = ev.ticket_after ?? ev.ticket_before;
+      const label = _BADGE_LABEL[ev.action] || ev.action;
+      return `<span class="spt-badge spt-${ev.action.replace(/_/g,'-')}">${label}${tick != null ? ` #${tick}` : ''}</span>`;
+    }).join('');
+
+    return `<div class="shift-pack-tick-row">
+      <div class="spt-dot" style="background:${dotBg}">${abbr}</div>
+      <div class="spt-info">
+        <div class="spt-top">
+          <span class="spt-name">${name}</span>
+          <span class="spt-packnum">#${packNum}</span>
+          ${badges}
+        </div>
+        <div class="spt-bottom">
+          ${tickRange}
+          ${sold > 0 ? `<span class="spt-sold">${sold} sold</span>` : ''}
+          ${rev  > 0 ? `<span class="spt-rev">$${rev.toFixed(2)}</span>` : ''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Audit entry card renderer (shared across all shift/history views) ──────
+function _renderShiftEntryCard(en) {
+  const pack      = en.lottery_packs || {}, game = pack.lottery_games || {};
+  const name      = game.game_name || `Game #${pack.game_number}`;
+  const price     = parseFloat(game.price || 0);
+  const dotBg     = price > 0 ? (_priceColor(price).bg || 'linear-gradient(135deg,#a8a29e,#78716c)') : 'linear-gradient(135deg,#a8a29e,#78716c)';
+  const abbr      = String(pack.game_number || '').slice(-2).padStart(2, '0');
+  const rev       = parseFloat(en.revenue || 0);
+  const sold      = en.tickets_sold || 0;
+  const isSuspect = sold === 0 && en.ticket_at_open != null;
+  const tickRange = (en.ticket_at_open != null && en.ticket_at_close != null)
+    ? `<span class="aec-range">#${en.ticket_at_open}<span class="aec-arrow">→</span>#${en.ticket_at_close}</span>` : '';
+  return `<div class="audit-entry-card${isSuspect ? ' aec-flag' : ''}">
+    <div class="aec-dot" style="background:${dotBg}">${abbr}</div>
+    <div class="aec-body">
+      <div class="aec-top">
+        <span class="aec-name">${name}</span>
+        <span class="aec-book">#${pack.pack_number || '?'}</span>
+      </div>
+      <div class="aec-bottom">
+        ${tickRange}
+        <span class="aec-sold">${sold} sold</span>
+        <span class="aec-rev">$${rev.toFixed(2)}</span>
+      </div>
+    </div>
+  </div>`;
+}
+
 // Full day-tracking view: days → shifts → entries
 const _PRICE_COLORS = {
   1:  { bg: 'linear-gradient(135deg,#22c55e,#16a34a)', shadow: '#16a34a40' },
@@ -3448,6 +3627,11 @@ function _copyBarcode(btn, barcode) {
 }
 
 function _toggleDayGroup(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle('collapsed');
+}
+
+function _toggleShiftGroup(id) {
   const el = document.getElementById(id);
   if (el) el.classList.toggle('collapsed');
 }
@@ -3584,13 +3768,7 @@ function renderDayHistory(days, activePacks = []) {
     const dateStr     = new Date(lastShiftDay.opened_at).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
     const openT       = lastShift.opened_at ? new Date(lastShift.opened_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '?';
     const closeT      = lastShift.closed_at ? new Date(lastShift.closed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '?';
-    const entriesHtml = (lastShift.lottery_shift_entries || []).map(en => {
-      const pack = en.lottery_packs || {}, game = pack.lottery_games || {};
-      return `<div class="last-close-entry">
-        <span>${game.game_name || `#${pack.game_number}`} #${pack.pack_number}</span>
-        <span>#${en.ticket_at_open}→#${en.ticket_at_close} · ${en.tickets_sold}t · $${parseFloat(en.revenue).toFixed(2)}</span>
-      </div>`;
-    }).join('');
+    const entriesHtml = (lastShift.lottery_shift_entries || []).map(_renderShiftEntryCard).join('');
     html += `
       <div class="last-close-card">
         <div class="last-close-label">Last Shift Close</div>
@@ -3610,36 +3788,78 @@ function renderDayHistory(days, activePacks = []) {
     const groupId      = `day-group-${idx}`;
     const collapsed    = idx >= 2 ? ' collapsed' : '';           // expand first 2
     const dateStr      = new Date(day.opened_at).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
+    const allDayShifts  = (day.lottery_shifts || []);
+    // Self-heal: if any shift has no opened_at (created via the legacy close-only path),
+    // estimate it from the preceding shift's closed_at or the day's opened_at, then
+    // patch the record in the background so it's correct on the next load.
+    const _byId = allDayShifts.slice().sort((a, b) => (a.id || 0) - (b.id || 0));
+    _byId.forEach((s, i) => {
+      if (!s.opened_at) {
+        const prev = _byId[i - 1];
+        const estimate = prev?.closed_at || day.opened_at || null;
+        if (estimate) {
+          s.opened_at = estimate;   // fix local object for immediate correct display
+          sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_shifts?id=eq.${s.id}`,
+            { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+              body: JSON.stringify({ opened_at: estimate }) }).catch(() => {});
+        }
+      }
+    });
+    const closedShifts  = allDayShifts.filter(s => s.status === 'closed');
+    // Compute from loaded shift records first — they're the authoritative per-shift data.
+    // Fall back to the stored day totals only if no shift data loaded yet (e.g. open day with no closed shifts).
+    const computedRev  = closedShifts.reduce((sum, s) => sum + parseFloat(s.total_revenue || 0), 0);
+    const computedTix  = closedShifts.reduce((sum, s) => sum + (s.total_tickets_sold || 0), 0);
     const storedRev    = parseFloat(day.total_revenue || 0);
     const storedTix    = day.total_tickets_sold || 0;
-    const closedShifts = (day.lottery_shifts || []).filter(s => s.status === 'closed');
-    const dayRev       = storedRev  || closedShifts.reduce((sum, s) => sum + parseFloat(s.total_revenue || 0), 0);
-    const dayTix       = storedTix  || closedShifts.reduce((sum, s) => sum + (s.total_tickets_sold || 0), 0);
+    const dayRev       = computedRev || storedRev;
+    const dayTix       = computedTix || storedTix;
     const isOpen       = day.status === 'open';
-    const dayOpenTime  = day.opened_at  ? new Date(day.opened_at).toLocaleTimeString([],  { hour: '2-digit', minute: '2-digit' }) : null;
-    const dayCloseTime = day.closed_at  ? new Date(day.closed_at).toLocaleTimeString([],  { hour: '2-digit', minute: '2-digit' }) : null;
+    const dayOpenTime  = day.opened_at  ? new Date(day.opened_at).toLocaleTimeString([],  { hour: 'numeric', minute: '2-digit', hour12: true }) : null;
+    const dayCloseTime = day.closed_at  ? new Date(day.closed_at).toLocaleTimeString([],  { hour: 'numeric', minute: '2-digit', hour12: true }) : null;
     const badgeStyle   = isOpen ? 'background:var(--amber-bg);color:var(--amber-text);border-color:var(--amber-border)' : '';
+    // For open days the currently active shift is already shown in the today banner — skip it here to
+    // avoid duplication. ALL other shifts (closed + any orphaned-open ones from a partial close) are
+    // included so nothing is silently hidden from the history view.
+    // A shift is "truly active" only if it is status='open' AND has no closed_at yet.
+    // Shifts that are status='open' but already have a closed_at are orphaned (partial close) — show them.
+    const activeOpenId  = isOpen ? (allDayShifts.find(s => s.status === 'open' && !s.closed_at)?.id ?? null) : null;
+    const displayShifts = allDayShifts
+      .filter(s => s.id !== activeOpenId)
+      .sort((a, b) => new Date(a.opened_at || 0) - new Date(b.opened_at || 0));
+    const activeShifts  = displayShifts.filter(s => (s.total_tickets_sold || 0) > 0 || (s.lottery_shift_entries || []).length > 0 || (s.lottery_pack_events || []).length > 0);
+
+    // ── Day-level ticket summary (aggregate across all shifts) ──
+    // Entries are iterated in shift order (asc) so openTick = earliest, closeTick = latest.
+    const allDayEntries    = displayShifts.flatMap(s => s.lottery_shift_entries || []);
+    const allDayEvents     = displayShifts.flatMap(s => s.lottery_pack_events   || []);
+    const dayPackRows      = _buildPackTicketRows(allDayEntries, allDayEvents);
+    const dayTicketSummary = dayPackRows
+      ? `<div class="shift-section-label day-tick-label">Day Ticket Summary</div><div class="shift-pack-tick-list day-tick-summary">${dayPackRows}</div>`
+      : '';
+
+    const shiftChevron = `<svg class="shift-group-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
 
     let shiftsHtml = '';
-    for (const s of closedShifts) {
-      const openTime  = s.opened_at ? new Date(s.opened_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '?';
-      const closeTime = s.closed_at ? new Date(s.closed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '?';
+    displayShifts.forEach((s, sIdx) => {
+      const shiftGroupId = `shift-group-${idx}-${sIdx}`;
+      const isOpenShift = s.status !== 'closed';
+      const openTime  = s.opened_at ? new Date(s.opened_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true }) : '?';
+      const closeTime = (!isOpenShift && s.closed_at) ? new Date(s.closed_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true }) : null;
       const entries   = s.lottery_shift_entries || [];
       const events    = (s.lottery_pack_events  || []).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      const shiftTix  = s.total_tickets_sold || 0;
+      const isEmpty   = !isOpenShift && shiftTix === 0 && !entries.length && !events.length;
 
-      const entriesHtml = entries.map(en => {
-        const pack = en.lottery_packs || {}, game = pack.lottery_games || {};
-        return `<div class="shift-history-entry">
-          <span class="shift-history-entry-game">${game.game_name || `#${pack.game_number}`} #${pack.pack_number}</span>
-          <span class="shift-history-entry-detail">#${en.ticket_at_open}→#${en.ticket_at_close} · ${en.tickets_sold} sold · $${parseFloat(en.revenue).toFixed(2)}</span>
-        </div>`;
-      }).join('');
+      // ── Per-shift ticket summary ──
+      const shiftPackRows = _buildPackTicketRows(entries, events);
 
+      // Pack events log (activation / move / adjust detail — contextual, not ticket range)
       const eventsHtml = events.map(ev => {
         const pack = ev.lottery_packs || {}, game = pack.lottery_games || {};
         const gameName = game.game_name || (pack.game_number ? `#${pack.game_number}` : '');
         const detail = _packEventDetail(ev);
-        const t = new Date(ev.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const t = new Date(ev.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
         const bcHtml = _evBarcodeInline(pack.raw_barcode, pack.game_number);
         const soldCount = (ev.ticket_before != null && ev.ticket_after != null && ev.ticket_before !== ev.ticket_after)
           ? Math.abs(ev.ticket_after - ev.ticket_before) : 0;
@@ -3660,21 +3880,42 @@ function renderDayHistory(days, activePacks = []) {
         </div>`;
       }).join('');
 
+      const timeRange   = closeTime ? `${openTime} – ${closeTime}` : `${openTime} – …`;
+      const statusBadge = isOpenShift
+        ? `<span class="shift-empty-badge" style="background:var(--amber-bg);color:var(--amber-text);border-color:var(--amber-border)">In Progress</span>`
+        : (isEmpty ? '<span class="shift-empty-badge">No audit</span>' : '');
+      const hasDetail   = !!(shiftPackRows || eventsHtml || s.notes);
+
       shiftsHtml += `
-        <div class="shift-history-item">
-          <div class="shift-history-hdr">
-            <div style="display:flex;align-items:center;gap:6px">
+        <div class="shift-group collapsed${isEmpty ? ' shift-empty' : ''}" id="${shiftGroupId}">
+          <div class="shift-group-header" onclick="_toggleShiftGroup('${shiftGroupId}')">
+            <div class="shift-group-header-left">
               <span class="shift-history-type shift-type-shift">Shift</span>
-              <span class="shift-history-date">${openTime} – ${closeTime}</span>
+              <span class="shift-history-date">${timeRange}</span>
+              ${statusBadge}
             </div>
-            <span class="shift-history-rev">$${parseFloat(s.total_revenue || 0).toFixed(2)}</span>
+            <div class="shift-group-header-right">
+              <span class="shift-history-rev">$${parseFloat(s.total_revenue || 0).toFixed(2)}</span>
+              <span class="shift-group-sub">${shiftTix} tickets</span>
+              ${hasDetail ? shiftChevron : ''}
+            </div>
           </div>
-          <div class="shift-history-sub">${s.total_tickets_sold || 0} tickets sold</div>
-          ${s.notes ? `<div class="shift-history-notes"><span class="shift-note-icon">📝</span>${s.notes}</div>` : ''}
-          ${eventsHtml  ? `<div class="shift-section-label">Pack Events</div><div class="shift-events-list">${eventsHtml}</div>` : ''}
-          ${entriesHtml ? `<div class="shift-section-label">Audit Entries</div><div class="shift-history-entries">${entriesHtml}</div>` : ''}
+          ${hasDetail ? `
+          <div class="shift-group-body">
+            ${s.notes ? `<div class="shift-history-notes"><span class="shift-note-icon">📝</span>${s.notes}</div>` : ''}
+            ${shiftPackRows ? `<div class="shift-section-label">Tickets</div><div class="shift-pack-tick-list">${shiftPackRows}</div>` : ''}
+            ${eventsHtml    ? `<div class="shift-section-label">Pack Events</div><div class="shift-events-list">${eventsHtml}</div>` : ''}
+          </div>` : ''}
         </div>`;
-    }
+    });
+
+    const activeShiftCount  = activeShifts.length;
+    const closedDisplayed   = displayShifts.filter(s => s.status === 'closed');
+    const skippedCount      = closedDisplayed.length - activeShiftCount;
+    const totalCount        = displayShifts.length;
+    const shiftSummary      = skippedCount > 0
+      ? `${totalCount} shift${totalCount !== 1 ? 's' : ''} · ${activeShiftCount} audited · ${skippedCount} skipped`
+      : `${totalCount} shift${totalCount !== 1 ? 's' : ''}`;
 
     html += `
       <div class="shift-day-group${collapsed}" id="${groupId}">
@@ -3684,7 +3925,7 @@ function renderDayHistory(days, activePacks = []) {
               <span class="shift-day-label">${dateStr}</span>
               <span class="shift-day-closed-badge" style="${badgeStyle}">${isOpen ? 'Open' : 'Closed'}</span>
             </div>
-            <div class="shift-day-times">${dayOpenTime ? `Opened ${dayOpenTime}` : ''}${dayCloseTime ? ` · Closed ${dayCloseTime}` : ''} · ${closedShifts.length} shift${closedShifts.length !== 1 ? 's' : ''} · ${dayTix} tickets</div>
+            <div class="shift-day-times">${dayOpenTime ? `Opened ${dayOpenTime}` : ''}${dayCloseTime ? ` · Closed ${dayCloseTime}` : ''} · ${shiftSummary} · ${dayTix} tickets</div>
             ${day.notes ? `<div class="shift-history-notes" style="margin-top:3px"><span class="shift-note-icon">📝</span>${day.notes}</div>` : ''}
           </div>
           <div class="shift-day-header-right">
@@ -3693,9 +3934,11 @@ function renderDayHistory(days, activePacks = []) {
           </div>
         </div>
         <div class="shift-day-body">
-          ${shiftsHtml || '<div class="log-empty" style="padding:8px 0;border:none;font-size:12px">No closed shifts</div>'}
+          ${dayTicketSummary}
+          ${displayShifts.length ? `<div class="shift-section-label" style="margin-top:${dayPackRows ? '10px' : '0'}">Shifts</div>` : ''}
+          ${shiftsHtml || '<div class="log-empty" style="padding:8px 0;border:none;font-size:12px">No shifts</div>'}
           <div class="shift-day-total">
-            <span>${dayTix} tickets · ${closedShifts.length} shift${closedShifts.length !== 1 ? 's' : ''}</span>
+            <span>${dayTix} tickets · ${totalCount} shift${totalCount !== 1 ? 's' : ''}</span>
             <span class="shift-day-total-rev">$${dayRev.toFixed(2)}</span>
           </div>
         </div>
@@ -3740,13 +3983,7 @@ function renderShiftHistory(shifts) {
       const dateStr = new Date(s.closed_at).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
       const timeStr = new Date(s.closed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       const entries = (s.lottery_shift_entries || []);
-      const entriesHtml = entries.map(en => {
-        const pack = en.lottery_packs || {}, game = pack.lottery_games || {};
-        return `<div class="last-close-entry">
-          <span>${game.game_name || `#${pack.game_number}`} #${pack.pack_number}</span>
-          <span>${en.tickets_sold}t · $${parseFloat(en.revenue).toFixed(2)}</span>
-        </div>`;
-      }).join('');
+      const entriesHtml = entries.map(_renderShiftEntryCard).join('');
       html += `
         <div class="last-close-card">
           <div class="last-close-label">${label}</div>
@@ -3780,13 +4017,7 @@ function renderShiftHistory(shifts) {
       const typeCss     = s.shift_type === 'day' ? 'shift-type-day' : 'shift-type-shift';
       const typeLabel   = s.shift_type === 'day' ? 'Day Close' : 'Shift';
       const timeStr     = new Date(s.closed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const entriesHtml = (s.lottery_shift_entries || []).map(en => {
-        const pack = en.lottery_packs || {}, game = pack.lottery_games || {};
-        return `<div class="shift-history-entry">
-          <span class="shift-history-entry-game">${game.game_name || `#${pack.game_number}`} #${pack.pack_number}</span>
-          <span class="shift-history-entry-detail">#${en.ticket_at_open}→#${en.ticket_at_close} · ${en.tickets_sold} sold · $${parseFloat(en.revenue).toFixed(2)}</span>
-        </div>`;
-      }).join('');
+      const entriesHtml = (s.lottery_shift_entries || []).map(_renderShiftEntryCard).join('');
       shiftsHtml += `
         <div class="shift-history-item">
           <div class="shift-history-hdr">
