@@ -66,6 +66,23 @@
   /* Brand aliases (keep old references working) */
   --brand-10:       rgba(225,59,59,.10);
 
+  /* ── PACK / INVENTORY STATUS TOKENS ────────────────────────────
+     One source of truth for every status color badge in the app.
+     Active      → green  (reuses --green-*)
+     Low Inventory → amber (reuses --amber-*)
+     Sold Out    → gray   (new)
+     Attention Needed → red (reuses --red-*)
+     Received    → blue   (new)
+  ────────────────────────────────────────────────────────────── */
+  /* Received — Blue */
+  --st-received-bg:     #eff6ff;
+  --st-received-border: #bfdbfe;
+  --st-received-text:   #1d4ed8;
+  /* Sold Out — neutral gray */
+  --st-soldout-bg:      rgba(26,22,18,.06);
+  --st-soldout-border:  var(--ink-15);
+  --st-soldout-text:    var(--ink-60);
+
   /* ── BORDER RADIUS ──────────────────────────────────────────── */
   --radius:    16px;   /* cards, modals, panels */
   --radius-sm: 12px;   /* scan inputs, secondary cards */

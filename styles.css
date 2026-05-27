@@ -492,10 +492,10 @@ body {
 .cat-cnt-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .cat-cnt-pill.cp-active   { background: rgba(14,143,90,.10);  color: #0a7a4e; }
 .cat-cnt-pill.cp-active   .cat-cnt-dot { background: #0E8F5A; }
-.cat-cnt-pill.cp-received { background: rgba(255,203,69,.15); color: #7a5a00; }
-.cat-cnt-pill.cp-received .cat-cnt-dot { background: #d4a000; }
-.cat-cnt-pill.cp-soldout  { background: rgba(26,22,18,.07);   color: var(--ink-60); }
-.cat-cnt-pill.cp-soldout  .cat-cnt-dot { background: var(--ink-30); }
+.cat-cnt-pill.cp-received { background: var(--st-received-bg); color: var(--st-received-text); }
+.cat-cnt-pill.cp-received .cat-cnt-dot { background: var(--st-received-text); }
+.cat-cnt-pill.cp-soldout  { background: var(--st-soldout-bg);  color: var(--st-soldout-text); }
+.cat-cnt-pill.cp-soldout  .cat-cnt-dot { background: var(--st-soldout-text); }
 /* Barcode section */
 .cat-bc { padding: 12px 18px; border-bottom: 1px solid var(--ink-10); }
 .cat-bc-lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-50); margin-bottom: 7px; }
@@ -544,9 +544,9 @@ body {
 .ph-arrow     { font-size: 10px; color: var(--text-hint); }
 .ph-evt       { font-size: 10px; font-weight: 700; border-radius: 3px; padding: 2px 5px; border: 1px solid; white-space: nowrap; }
 .ph-date      { font-size: 10px; color: var(--text-hint); white-space: nowrap; }
-.ph-evt-received   { background: var(--bg); color: var(--text-muted); border-color: var(--border); }
+.ph-evt-received   { background: var(--st-received-bg); color: var(--st-received-text); border-color: var(--st-received-border); }
 .ph-evt-activated  { background: var(--green-bg); color: var(--green-text); border-color: var(--green-border); }
-.ph-evt-soldout    { background: var(--primary-bg); color: var(--primary); border-color: var(--primary-border); }
+.ph-evt-soldout    { background: var(--st-soldout-bg); color: var(--st-soldout-text); border-color: var(--st-soldout-border); }
 .ph-evt-removed    { background: var(--red-bg); color: var(--red-text); border-color: var(--red-border); }
 .ph-evt-moved      { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
 .ph-evt-adjusted   { background: var(--surface); color: var(--text-hint); border-color: var(--border); }
@@ -617,10 +617,12 @@ body {
 
 /* Status pills */
 .pack-status-pill { font-family: 'Space Grotesk', sans-serif; font-size: 10px; font-weight: 700; border-radius: 999px; padding: 2px 8px; text-transform: uppercase; letter-spacing: .04em; border: 1px solid; white-space: nowrap; }
-.status-received  { background: rgba(26,22,18,.06); color: var(--text-muted); border-color: var(--border); }
-.status-activated { background: var(--green-bg); color: var(--green-text); border-color: var(--green-border); }
-.status-soldout   { background: var(--accent-10); color: var(--accent-dk); border-color: var(--amber-border); }
-.status-removed   { background: var(--red-bg); color: var(--red-text); border-color: var(--red-border); }
+.status-received      { background: var(--st-received-bg);   color: var(--st-received-text);   border-color: var(--st-received-border); }
+.status-activated     { background: var(--green-bg);          color: var(--green-text);          border-color: var(--green-border); }
+.status-low-inventory { background: var(--amber-bg);          color: var(--amber-text);          border-color: var(--amber-border); }
+.status-soldout       { background: var(--st-soldout-bg);     color: var(--st-soldout-text);     border-color: var(--st-soldout-border); }
+.status-removed,
+.status-attention     { background: var(--red-bg);            color: var(--red-text);            border-color: var(--red-border); }
 
 /* Location pills */
 .pack-loc-pill { font-family: 'Space Grotesk', sans-serif; font-size: 10px; font-weight: 700; border-radius: 999px; padding: 2px 8px; border: 1px solid; white-space: nowrap; }
@@ -708,8 +710,8 @@ body {
 .rlt-book-name        { font-size: 13px; font-weight: 700; color: var(--text-main); }
 .rlt-pack-num         { font-weight: 400; color: var(--text-muted); }
 .rlt-status-pill      { font-size: 10px; font-weight: 700; border-radius: 999px; padding: 2px 8px; border: 1px solid; }
-.rlt-active           { background: var(--green-bg); color: var(--green-text); border-color: var(--green-border); }
-.rlt-received         { background: rgba(0,0,0,.04); color: var(--text-muted); border-color: var(--border); }
+.rlt-active           { background: var(--green-bg);         color: var(--green-text);         border-color: var(--green-border); }
+.rlt-received         { background: var(--st-received-bg);   color: var(--st-received-text);   border-color: var(--st-received-border); }
 .rlt-ticket-row       { display: flex; align-items: center; gap: 8px; }
 .rlt-ticket-label     { font-size: 12px; color: var(--text-muted); }
 .rlt-ticket-val       { font-size: 13px; font-weight: 700; color: var(--text-main); font-family: 'JetBrains Mono', monospace; }
@@ -937,10 +939,12 @@ body {
 .itab-tbl-loc svg { flex-shrink: 0; }
 /* Status badge */
 .itab-status { font-family: 'Space Grotesk', sans-serif; font-size: 10px; font-weight: 700; border-radius: 999px; padding: 2px 8px; text-transform: uppercase; letter-spacing: .04em; border: 1px solid; white-space: nowrap; }
-.itab-status-activated { color: var(--green-text); border-color: var(--green-border); background: var(--green-bg); }
-.itab-status-received  { color: var(--amber-text); border-color: var(--amber-border); background: var(--amber-bg); }
-.itab-status-soldout   { color: var(--text-muted); border-color: var(--border); background: var(--bg); }
-.itab-status-removed   { color: var(--red-text); border-color: var(--red-border); background: #fff5f5; }
+.itab-status-activated     { background: var(--green-bg);          color: var(--green-text);          border-color: var(--green-border); }
+.itab-status-low-inventory { background: var(--amber-bg);          color: var(--amber-text);          border-color: var(--amber-border); }
+.itab-status-received      { background: var(--st-received-bg);    color: var(--st-received-text);    border-color: var(--st-received-border); }
+.itab-status-soldout       { background: var(--st-soldout-bg);     color: var(--st-soldout-text);     border-color: var(--st-soldout-border); }
+.itab-status-removed,
+.itab-status-attention     { background: var(--red-bg);            color: var(--red-text);            border-color: var(--red-border); }
 /* Progress cell */
 .itab-tbl-cell-progress { min-width: 0; padding-right: 8px; }
 .itab-row-progress-info { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
@@ -965,16 +969,36 @@ body {
 
 /* ── LAST CLOSE SUMMARY CARDS ──────────────────────────────────────────────── */
 .last-close-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
-.last-close-card { background: var(--bg); border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; min-width: 0; }
-.last-close-empty { opacity: 0.6; }
+.last-close-card { background: var(--bg); border: 1.5px solid var(--border); border-radius: var(--radius-sm); min-width: 0; overflow: hidden; }
+.last-close-empty { opacity: 0.6; padding: 10px 12px; }
 .last-close-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-bottom: 4px; }
 .last-close-date { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .last-close-time { font-size: 11px; color: var(--text-muted); margin-bottom: 5px; }
 .last-close-rev  { font-family: 'Space Grotesk', sans-serif; font-size: 20px; font-weight: 800; color: var(--green-text); line-height: 1.15; }
 .last-close-sub  { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 .last-close-entries { margin-top: 8px; display: flex; flex-direction: column; gap: 5px; border-top: 1px solid var(--border); padding-top: 6px; }
-.last-close-entry { display: none; } /* replaced by audit-entry-card */
-/* compact variant inside last-close-card */
+.last-close-entry { display: none; }
+/* Collapsible last-close card */
+.lsc-collapsible .lsc-summary { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: 10px 12px; cursor: pointer; user-select: none; transition: background .12s; }
+.lsc-collapsible .lsc-summary:hover { background: var(--ink-5); }
+.lsc-summary-right { text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.lsc-chevron { color: var(--text-hint); transition: transform .18s var(--ease-out-quart); margin-top: 4px; }
+.lsc-collapsible.lsc-open .lsc-chevron { transform: rotate(180deg); }
+.lsc-detail { overflow: hidden; max-height: 0; transition: max-height .25s var(--ease-out-quart); border-top: 1px solid var(--border); padding: 0 12px; }
+.lsc-collapsible.lsc-open .lsc-detail { max-height: 800px; padding: 8px 12px 10px; transition: max-height .3s var(--ease-out-quart); }
+/* Shift rows inside last day card detail */
+.lsc-shift-row { display: flex; align-items: center; gap: 6px; padding: 4px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+.lsc-shift-row:last-child { border-bottom: none; }
+.lsc-shift-time  { color: var(--text-muted); flex: 1; }
+.lsc-shift-stats { color: var(--ink-60); font-size: 11px; text-align: right; }
+/* Stub rows for collapsed summary-only day groups */
+.shift-stub-hint { font-size: 10px; color: var(--text-hint); text-align: center; padding: 4px 0 6px; font-style: italic; }
+.shift-stub-row  { display: flex; justify-content: space-between; align-items: center; padding: 5px 2px; border-bottom: 1px solid var(--border); }
+.shift-stub-row:last-of-type { border-bottom: none; }
+.shift-stub-left { display: flex; align-items: center; gap: 6px; }
+.shift-stub-rev  { font-size: 12px; color: var(--text-muted); }
+/* compact shift-pack-tick-list inside lsc-detail */
+.lsc-detail .shift-pack-tick-row { padding: 2px 0; }
 .last-close-entries .audit-entry-card { padding: 6px 8px; border-radius: 6px; }
 .last-close-entries .aec-dot { width: 28px; height: 28px; font-size: 11px; border-radius: 6px; }
 .last-close-entries .aec-name { font-size: 11.5px; }
