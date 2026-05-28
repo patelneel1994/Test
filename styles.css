@@ -1315,6 +1315,9 @@ body {
 .audit-book-card.audit-book-matched { border-color: var(--green-border); background: #f0fdf8; }
 .audit-book-card.audit-book-flagged { border-color: var(--red-border); background: #fff5f5; }
 .audit-book-card.audit-book-soldout { border-color: var(--ink-15); background: #f8f6f2; opacity: .85; }
+.audit-book-card.audit-book-pending { background: #f0f4ff; border-color: rgba(14,93,216,.2); }
+.audit-book-card.audit-book-lined-pending { border-color: rgba(217,119,6,.35); background: rgba(254,243,199,.5); }
+.audit-line-badge { display:inline-block; padding:1px 7px; border-radius:4px; background:var(--design-blue,#1E5DD8); color:#fff; font-size:10px; font-weight:800; letter-spacing:.5px; margin-right:5px; vertical-align:middle; }
 .audit-book-dot { width: 38px; height: 38px; border-radius: 10px; color: #fff; display: flex; align-items: center; justify-content: center; font-family: 'Space Grotesk', sans-serif; font-weight: 800; font-size: 13px; flex-shrink: 0; }
 .audit-book-body { flex: 1; min-width: 0; }
 .audit-book-hdr { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-bottom: 3px; }

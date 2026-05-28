@@ -235,8 +235,8 @@ async function openInventory(context, skipPrompt = false) {
 
   try {
     const sel = _dbCaps.hasLoadingDirection
-      ? `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,loading_direction,location,lottery_games(game_name,price,tickets_per_pack)`
-      : `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,location,lottery_games(game_name,price,tickets_per_pack)`;
+      ? `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,loading_direction,location,station_line,lottery_games(game_name,price,tickets_per_pack)`
+      : `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,location,station_line,lottery_games(game_name,price,tickets_per_pack)`;
     const base = `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=${sel}&order=location.asc,pack_number.asc&limit=200`;
     const isOpenDay = context === 'open-day';
     const isClose   = !isOpenDay && context.startsWith('close');
@@ -414,13 +414,8 @@ function closeInventoryModal() {
 // ===== AUDIT SOLD-OUT STAGING =====
 
 function _invMarkSoldOut(packId) {
-  const info = _packInfoCache[packId] || {};
-  const finalTicket = _calcSoldOutFinalTicket(info);
-  if (finalTicket == null) { showError('Cannot mark sold out', 'Ticket count unknown for this book.'); return; }
-  _invSoldOut[packId] = finalTicket;
-  _invData[packId]    = finalTicket;
-  _renderInvList();
-  _updateInvProgress();
+  // Kept for any legacy callers — routes through the shared openSoldOutModal
+  openSoldOutModal(packId, null, null);
 }
 
 function _invUnmarkSoldOut(packId) {
@@ -594,6 +589,13 @@ function _renderInvList() {
   for (const loc of locOrder) {
     const packs = byLoc[loc];
     if (!packs || !packs.length) continue;
+    // Sort by station_line ascending — nulls (unassigned) appear after numbered slots
+    packs.sort((a, b) => {
+      if (a.station_line == null && b.station_line == null) return 0;
+      if (a.station_line == null) return 1;
+      if (b.station_line == null) return -1;
+      return a.station_line - b.station_line;
+    });
     html += `<div class="audit-loc-group"><div class="audit-loc-label">${loc}</div>`;
     for (const p of packs) {
       const game     = p.lottery_games || {};
@@ -612,6 +614,7 @@ function _renderInvList() {
         lastShiftTicket:   p.last_shift_ticket ?? null,
         loadingDirection:  dir,
         location:          p.location,
+        stationLine:       p.station_line ?? null,
       };
 
       // ── Sold-out staged ──
@@ -667,18 +670,24 @@ function _renderInvList() {
         ? `<span class="audit-badge audit-badge-flag">Flag</span>`
         : `<span class="audit-badge audit-badge-ok">Match</span>`;
 
-      const soldOutBtn = `<button class="pack-act-btn act-soldout" style="font-size:11px;padding:5px 10px"
-            onmousedown="_invMarkSoldOut('${p.id}')"
-            ontouchstart="_invMarkSoldOut('${p.id}')">Sold Out</button>`;
+      // Close-shift / close-day: any staff. Open-day: admin gate + extra warning in modal.
+      const soldOutBtn = isClose
+        ? `<button class="pack-act-btn act-soldout" style="font-size:11px;padding:5px 10px"
+            onmousedown="openSoldOutModal('${p.id}',null,event)"
+            ontouchstart="openSoldOutModal('${p.id}',null,event)">Sold Out</button>`
+        : `<button class="pack-act-btn act-soldout" style="font-size:11px;padding:5px 10px;opacity:.7"
+            onmousedown="requireAdmin(()=>openSoldOutModal('${p.id}',null,null));event.preventDefault()"
+            ontouchstart="requireAdmin(()=>openSoldOutModal('${p.id}',null,null));event.preventDefault()">Sold Out</button>`;
       const removeBtn = isOpenDay ? `<button class="pack-remove-btn"
             onmousedown="removePackAtTicket('${p.id}',${p.start_ticket ?? 0},event)"
             ontouchstart="removePackAtTicket('${p.id}',${p.start_ticket ?? 0},event)" title="Remove">✕</button>` : '';
 
       html += `
-        <div class="audit-book-card${hasVal ? (hasViolation ? ' audit-book-flagged' : ' audit-book-matched') : ''}" id="inv-row-${p.id}">
+        <div class="audit-book-card${hasVal ? (hasViolation ? ' audit-book-flagged' : ' audit-book-matched') : (p.station_line != null ? ' audit-book-lined-pending' : ' audit-book-pending')}" id="inv-row-${p.id}">
           <div class="audit-book-dot" style="background:${dotColor}">${String(p.game_number).slice(-2)}</div>
           <div class="audit-book-body">
             <div class="audit-book-hdr">
+              ${p.station_line != null ? `<span class="audit-line-badge">LINE ${p.station_line}</span>` : ''}
               <span class="audit-book-name">${game.game_name || `Game #${p.game_number}`}</span>
               <span class="audit-book-num">#${p.pack_number}</span>
               ${_dirPill(dir)}
@@ -702,6 +711,10 @@ function _renderInvList() {
   }
 
   // ── Received books (open-day only) ──
+  // "Load Received Books" section removed — was shown during open-day audit to activate
+  // received packs directly from the audit screen. Removed to simplify the open-day flow.
+  // To restore: uncomment the block below and remove this comment.
+  /*
   if (isOpenDay && _invReceivedPacks.length) {
     html += `<div class="audit-loc-group"><div class="audit-loc-label">Load Received Books</div>`;
     for (const p of _invReceivedPacks) {
@@ -736,6 +749,7 @@ function _renderInvList() {
     }
     html += '</div>';
   }
+  */
 
   el.innerHTML = html;
 
@@ -783,7 +797,7 @@ function _handleInvBarcode(raw) {
   const isOpenDay = _invContext === 'open-day';
   const row = document.getElementById(`inv-row-${pack.id}`);
   const st  = document.getElementById(`inv-status-${pack.id}`);
-  if (row) row.classList.add('inv-scanned');
+  if (row) { row.classList.add('inv-scanned'); row.classList.remove('audit-book-lined-pending', 'audit-book-pending'); }
 
   // Last-scan feedback in left panel
   const hasViolation = _invDirectionViolation(pack.id, parsed.ticketPosition);
@@ -867,12 +881,13 @@ function _handleInvManual(packId) {
     const isClose = _invContext && _invContext.startsWith('close');
     const violation = isClose ? _invDirectionViolation(packId, val) : false;
     inp.classList.toggle('inv-input-error', violation);
-    if (row) { row.classList.toggle('inv-scanned', !violation); row.classList.toggle('inv-row-violation', violation); }
+    if (row) { row.classList.toggle('inv-scanned', !violation); row.classList.toggle('inv-row-violation', violation); row.classList.remove('audit-book-pending', 'audit-book-lined-pending'); }
     if (st)  st.textContent = violation ? '⚠' : '✓';
   } else {
     delete _invData[packId];
     inp.classList.remove('inv-input-error');
-    if (row) { row.classList.remove('inv-scanned'); row.classList.remove('inv-row-violation'); }
+    const p = _invPacks.find(x => x.id === packId);
+    if (row) { row.classList.remove('inv-scanned', 'inv-row-violation'); row.classList.add(p?.station_line != null ? 'audit-book-lined-pending' : 'audit-book-pending'); }
     if (st)  st.textContent = '○';
   }
   if (_invContext && _invContext.startsWith('close')) { _updateInvCalc(packId); _updateInvTotals(); }
@@ -2038,9 +2053,9 @@ async function confirmReturnToLottery(e) {
   }
 }
 
-let _pendingSoldOutId = null;
-
+let _pendingSoldOutId         = null;
 let _pendingSoldOutFinalTicket = null;
+let _pendingSoldOutStage       = false; // true when called from inside an audit (stages; no immediate DB write)
 
 function _calcSoldOutFinalTicket(info) {
   const dir = info.loadingDirection || 'asc';
@@ -2065,7 +2080,9 @@ function _packNoSalesYet(info) {
 
 function openSoldOutModal(id, _unused, e) {
   if (e) e.preventDefault();
-  _pendingSoldOutId = id;
+  _pendingSoldOutId    = id;
+  // Auto-detect audit context: stage locally when inside a close audit; commit to DB otherwise
+  _pendingSoldOutStage = !!(_invContext && _invContext.startsWith('close'));
   const info = _packInfoCache[id] || {};
   const dir  = info.loadingDirection || 'asc';
 
@@ -2111,7 +2128,14 @@ function openSoldOutModal(id, _unused, e) {
          </div>`
       : '';
 
-    detailEl.innerHTML = barcodeRow + calcRow + cautionBanner;
+    const openDayWarning = (_invContext === 'open-day')
+      ? `<div style="background:var(--amber-bg);border:1px solid var(--amber-border);border-radius:8px;padding:9px 12px;margin-top:8px;font-size:12px;line-height:1.55;color:var(--ink)">
+           <strong>⚠ You are in Day Open audit.</strong><br>
+           Only mark sold out if tickets were sold after the previous day was closed. This action is admin-gated.
+         </div>`
+      : '';
+
+    detailEl.innerHTML = barcodeRow + calcRow + cautionBanner + openDayWarning;
   }
 
   document.getElementById('soldout-modal').classList.add('open');
@@ -2128,6 +2152,19 @@ async function confirmSoldOut(e) {
   if (!_pendingSoldOutId) return;
   const finalTicket = _pendingSoldOutFinalTicket;
   if (finalTicket == null) { showError('Cannot mark sold out', 'End ticket is unknown for this pack.'); return; }
+
+  if (_pendingSoldOutStage) {
+    // ── Audit path — stage locally, no DB write until shift is confirmed ──
+    const packId = _pendingSoldOutId;
+    closeSoldOutModal();
+    _invSoldOut[packId] = finalTicket;
+    _invData[packId]    = finalTicket;
+    _renderInvList();
+    _updateInvProgress();
+    return;
+  }
+
+  // ── Stock view path — commit immediately to DB ──
   const btn = document.getElementById('soldout-confirm-btn');
   if (btn) btn.disabled = true;
   try {
@@ -2187,7 +2224,7 @@ async function confirmMovePack(newLocation, e) {
 
 async function _commitMovePack(packId, newLocation, prevLocation) {
   const toStation = _isStation(newLocation);
-  const patchBody = toStation ? { location: newLocation, status: 'activated' } : { location: newLocation };
+  const patchBody = toStation ? { location: newLocation, status: 'activated', station_line: null } : { location: newLocation, station_line: null };
   await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(packId)}`,
     { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
       body: JSON.stringify(patchBody) });
@@ -2325,19 +2362,42 @@ async function restoreRemovedPack(packId, location, e) {
   requireAdmin(() => _doRestoreRemovedPack(packId, location));
 }
 
-async function _doRestoreRemovedPack(packId, location) {
-  try {
-    const newStatus = _isStation(location) ? 'activated' : 'received';
-    await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(packId)}`,
-      { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ status: newStatus, location, start_ticket: 0, last_shift_ticket: 0 }) });
-    _logPackEvent(packId, 'restored', { location_to: location, notes: `Brought back from removed — ${newStatus} at ${location}` });
-    await loadLotteryStock(); loadLotteryDbStats();
-  } catch (err) { showError('Restore failed', err.message); }
+function _doRestoreRemovedPack(packId, location) {
+  _pendingRestorePackId   = packId;
+  _pendingRestoreLocation = location;
+  _pendingRestoreType     = 'removed';
+
+  const info = _packInfoCache[packId] || {};
+  const infoEl = document.getElementById('restore-soldout-info');
+  if (infoEl) infoEl.textContent = info.gameName
+    ? `${info.gameName} · Book #${info.packNumber}`
+    : `Book ID: ${packId}`;
+
+  const detailEl = document.getElementById('restore-soldout-detail');
+  if (detailEl) {
+    const newStatus = _isStation(location) ? 'Activated' : 'Received';
+    detailEl.innerHTML =
+      `<div style="margin-bottom:8px">` +
+      `<span style="background:var(--green-bg);color:var(--green-text);border:1px solid var(--green-border);border-radius:999px;padding:2px 10px;font-size:11px;font-weight:700">${newStatus}</span>` +
+      `<span style="color:var(--text-muted)"> at </span><strong>${location}</strong></div>` +
+      `<div style="font-size:12px;color:var(--text-muted)">This book was removed. Default is ticket #0 (full book). Enter a higher number if it was partially used before removal.</div>`;
+  }
+
+  const titleEl = document.querySelector('#restore-soldout-modal .modal-title');
+  if (titleEl) titleEl.textContent = 'Restore Removed Book';
+
+  const hintEl = document.querySelector('#restore-soldout-modal .modal-ticket-hint');
+  if (hintEl) hintEl.textContent = 'The next shift will count from this ticket onward.';
+
+  const ticketInp = document.getElementById('restore-soldout-ticket');
+  if (ticketInp) { ticketInp.value = 0; ticketInp.focus(); }
+
+  document.getElementById('restore-soldout-modal').classList.add('open');
 }
 
 let _pendingRestorePackId   = null;
 let _pendingRestoreLocation = null;
+let _pendingRestoreType     = null; // 'soldout' | 'removed'
 
 function restoreSoldOutPack(packId, location, currentTicket, e) {
   if (e) { e.preventDefault(); e.stopPropagation(); }
@@ -2348,6 +2408,10 @@ function restoreSoldOutPack(packId, location, currentTicket, e) {
 function _doRestoreSoldOutPack(packId, location, currentTicket) {
   _pendingRestorePackId   = packId;
   _pendingRestoreLocation = location;
+  _pendingRestoreType     = 'soldout';
+
+  const titleEl = document.querySelector('#restore-soldout-modal .modal-title');
+  if (titleEl) titleEl.textContent = 'Restore Book';
 
   const info = _packInfoCache[packId] || {};
   const infoEl = document.getElementById('restore-soldout-info');
@@ -2406,8 +2470,12 @@ async function confirmRestoreSoldOut(e) {
     // computes sold tickets correctly from the confirmed resume position.
     await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(packId)}`,
       { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ status: newStatus, location, start_ticket: ticket, last_shift_ticket: ticket }) });
-    _logPackEvent(packId, 'restored', { location_to: location, ticket_after: ticket, notes: `Restored from accidental soldout → ${newStatus} at ${location}` });
+        body: JSON.stringify({ status: newStatus, location, start_ticket: ticket, last_shift_ticket: ticket, station_line: null }) });
+    const note = _pendingRestoreType === 'removed'
+      ? `Restored from removed — ${newStatus} at ${location}, starting ticket #${ticket}`
+      : `Restored from accidental soldout → ${newStatus} at ${location}`;
+    _logPackEvent(packId, 'restored', { location_to: location, ticket_after: ticket, notes: note });
+    _pendingRestoreType = null;
     closeRestoreSoldOutModal();
     await loadLotteryStock(); loadLotteryDbStats();
   } catch (err) { showError('Restore failed', err.message); }
