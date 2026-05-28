@@ -1261,8 +1261,16 @@ body {
 .act-body { flex: 1; min-width: 0; }
 .act-line { font-size: 13px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .act-detail { color: var(--text-muted); font-weight: 400; }
-.act-sub { font-size: 11px; color: var(--text-hint); margin-top: 1px; }
+.act-sub { font-size: 11px; color: var(--text-hint); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .act-time { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-hint); flex-shrink: 0; margin-left: 4px; }
+.act-tickets { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--text-muted); }
+.act-move { font-size: 11px; color: var(--text-muted); }
+.act-loc-pill { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 4px; background: var(--surface-2, rgba(0,0,0,.06)); color: var(--text-hint); vertical-align: middle; }
+.act-notes { font-size: 11px; color: var(--text-hint); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-style: italic; }
+.act-load-more-wrap { padding: 10px 0 2px; text-align: center; border-top: 1px solid var(--border); margin-top: 2px; }
+.act-load-more { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 5px 18px; font-size: 12px; color: var(--text-muted); cursor: pointer; transition: background 0.15s; }
+.act-load-more:hover:not(:disabled) { background: var(--surface-2, rgba(0,0,0,.05)); }
+.act-load-more:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ── SHIFT/DAY NOTES & TIMESTAMPS ────────────────────────────────────────── */
 .shift-history-notes { font-size: 12px; color: var(--text-muted); margin-top: 4px; display: flex; align-items: flex-start; gap: 5px; line-height: 1.4; }
@@ -1361,6 +1369,24 @@ body {
 .settings-loc-input:focus { border-color: var(--primary); outline: none; }
 .settings-loc-del { width: 30px; height: 30px; border-radius: 7px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text-muted); display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
 .settings-loc-del:hover { background: var(--red-bg); border-color: var(--red-border); color: var(--red-text); }
+.clear-slots-pack-row { display: flex; align-items: center; gap: 10px; padding: 6px 10px; background: var(--surface-2, rgba(0,0,0,.05)); border-radius: 7px; }
+.clear-slots-line { font-size: 11px; font-weight: 700; color: var(--text-hint); min-width: 46px; white-space: nowrap; }
+.clear-slots-book { font-size: 13px; color: var(--ink); }
+.pack-line-badge { display:inline-flex; align-items:center; justify-content:center; min-width:26px; height:20px; border-radius:5px; padding:0 5px; background:var(--design-blue,#1E5DD8); color:#fff; font-size:10px; font-weight:800; cursor:pointer; border:none; vertical-align:middle; }
+.pack-line-badge:hover { opacity:.85; }
+.pack-line-add { background:none; border:1px dashed var(--border); border-radius:5px; padding:1px 7px; font-size:10px; color:var(--text-hint); cursor:pointer; vertical-align:middle; }
+.pack-line-add:hover { border-color:var(--primary); color:var(--primary); }
+.slot-picker-grid { display:flex; flex-wrap:wrap; gap:7px; padding:12px 0 4px; }
+.slot-btn { width:42px; height:42px; border-radius:8px; border:1.5px solid var(--border); background:var(--surface); font-size:14px; font-weight:700; cursor:pointer; transition:background .1s,border-color .1s; }
+.slot-btn:hover:not(:disabled) { background:var(--surface-2); border-color:var(--primary); }
+.slot-btn-current { background:var(--design-blue,#1E5DD8); color:#fff; border-color:var(--design-blue,#1E5DD8); cursor:default; }
+.slot-btn-taken { background:rgba(217,119,6,.10); border-color:rgba(217,119,6,.35); color:var(--amber,#D97706); cursor:not-allowed; }
+.settings-station-item { display: flex; flex-direction: column; gap: 4px; }
+.settings-slots-row { display: flex; align-items: center; gap: 8px; padding: 2px 2px 0; }
+.settings-slots-label { font-size: 12px; color: var(--text-hint); white-space: nowrap; }
+.settings-slots-input { width: 58px; padding: 4px 8px; border: 1.5px solid var(--border); border-radius: 6px; font-size: 13px; font-weight: 600; font-family: inherit; background: var(--surface); color: var(--ink); }
+.settings-slots-input:focus { border-color: var(--primary); outline: none; }
+.settings-slots-hint { font-size: 11px; color: var(--text-hint); }
 .settings-loc-hint { font-size: 12px; color: var(--text-hint); margin-top: 4px; margin-bottom: 2px; }
 
 /* Reports screen */

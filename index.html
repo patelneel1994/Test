@@ -1113,6 +1113,38 @@
 </div>
 
 <!-- ADMIN AUTH MODAL -->
+<div class="modal-overlay modal-overlay-center" id="slot-picker-modal">
+  <div class="modal" style="max-width:340px">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="slot-picker-title">Assign slot</div>
+    <div id="slot-picker-grid"></div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="modal-close" style="flex:1;margin:0;padding:11px"
+        onclick="closeSlotPicker()">Cancel</button>
+      <button class="modal-close" id="slot-picker-clear"
+        style="flex:1;margin:0;padding:11px;color:var(--red-text)"
+        onclick="clearPackSlot(_pendingSlotPackId)">Clear slot</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay modal-overlay-center" id="clear-slots-modal">
+  <div class="modal" style="max-width:360px">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Remove slot structure?</div>
+    <p style="font-size:13px;color:var(--text-muted);margin:0 0 12px">
+      Removing the slot count from <strong id="clear-slots-station-name"></strong> will unassign
+      all line numbers from the books listed below. Each unassignment will be logged.
+    </p>
+    <div id="clear-slots-list" style="margin-bottom:16px;display:flex;flex-direction:column;gap:6px"></div>
+    <div style="display:flex;gap:8px">
+      <button class="modal-close" style="flex:1;margin:0;padding:11px" onclick="cancelClearSlots()">Cancel</button>
+      <button class="modal-add-btn" style="flex:2;margin:0;background:var(--red-text,#B91C1C)"
+        onmousedown="confirmClearSlots()" ontouchstart="confirmClearSlots()">Remove &amp; unassign all</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay modal-overlay-center" id="admin-auth-modal">
   <div class="modal" style="max-width:320px">
     <div class="modal-handle"></div>

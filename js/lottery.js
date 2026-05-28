@@ -8,7 +8,8 @@ function _capWords(el) { el.value = el.value.replace(/\b\w/g, c => c.toUpperCase
 // Extra locs = optional extra staging areas (configurable)
 // All stored in Supabase `lottery_locations` table; cached in memory after load.
 
-let _locationsCache = null; // { stations: string[], extras: string[] }
+let _locationsCache    = null; // { stations: string[], extras: string[] }
+let _stationSlotCounts = {};   // { 'Station 1': 8, 'Station 2': 6, ... } — null means unconfigured
 
 function _getStations() {
   return _locationsCache ? _locationsCache.stations : ['Station 1'];
@@ -18,10 +19,14 @@ function _getExtraLocs() {
   return _locationsCache ? _locationsCache.extras : [];
 }
 
+function _getStationSlotCount(name) {
+  return _stationSlotCounts[name] ?? null; // null = no slot count configured for this station
+}
+
 async function _loadLotteryLocations() {
   try {
     const res = await sbFetch(
-      `${CONFIG.supabaseUrl}/rest/v1/lottery_locations?select=name,type&order=sort_order.asc,id.asc`
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_locations?select=name,type,slot_count&order=sort_order.asc,id.asc`
     );
     const rows = await res.json();
     if (Array.isArray(rows)) {
@@ -30,6 +35,13 @@ async function _loadLotteryLocations() {
         extras:   rows.filter(r => r.type === 'extra').map(r => r.name),
       };
       if (!_locationsCache.stations.length) _locationsCache.stations = ['Station 1'];
+      // Rebuild slot count map — keys are full station name strings e.g. 'Station 1'
+      _stationSlotCounts = {};
+      for (const r of rows) {
+        if (r.type === 'station' && r.slot_count != null) {
+          _stationSlotCounts[r.name] = r.slot_count;
+        }
+      }
     }
   } catch (_) {
     // Fallback to localStorage if table doesn't exist yet
@@ -754,6 +766,16 @@ function _handleInvBarcode(raw) {
   }
 
   _invData[pack.id] = parsed.ticketPosition;
+
+  // Fire-and-forget audit scan log — records game, book, ticket, station, and exact scan time
+  _logPackEvent(pack.id, 'audit_scan', {
+    ticket_before: pack.last_shift_ticket ?? pack.start_ticket ?? null,
+    ticket_after:  parsed.ticketPosition,
+    location_to:   pack.location || null,
+    created_at:    new Date().toISOString(),
+    notes:         `${_invContext} · ${pack.lottery_games?.game_name || 'Game ' + pack.game_number} #${pack.pack_number} scanned at ticket #${parsed.ticketPosition}`,
+  });
+
   const inp = document.getElementById(`inv-inp-${pack.id}`);
   if (inp) inp.value = parsed.ticketPosition;
 
@@ -780,6 +802,7 @@ function _handleInvBarcode(raw) {
       </div>`;
   }
   if (st) st.textContent = hasViolation ? '!' : '✓';
+  if (hasViolation) beepViolation(); else beepSuccess();
 
   // Show discrepancy inline
   if (isOpenDay) {
@@ -820,6 +843,7 @@ function _handleInvBarcode(raw) {
 }
 
 function _flashInvScanError(msg) {
+  beepNotFound();
   const scanInp = document.getElementById('inv-scan-input');
   if (scanInp) {
     scanInp.placeholder = msg || 'Not found — try again';
@@ -1774,6 +1798,10 @@ let _pendingRemoveId = null;
 
 function removePackAtTicket(id, currentTicket, e) {
   if (e) e.preventDefault();
+  requireAdmin(() => _doRemovePackAtTicket(id, currentTicket));
+}
+
+function _doRemovePackAtTicket(id, currentTicket) {
   _pendingRemoveId = id;
   const info = _packInfoCache[id] || {};
   const infoEl = document.getElementById('remove-book-info');
@@ -2023,6 +2051,18 @@ function _calcSoldOutFinalTicket(info) {
   return dir === 'desc' ? 0 : tpp - 1;
 }
 
+// Returns true if the pack appears to have no tickets sold yet.
+// ASC: still at ticket #0. DESC: still at tickets_per_pack - 1.
+function _packNoSalesYet(info) {
+  const dir     = (info.loadingDirection || 'asc').toLowerCase();
+  const current = info.startTicket ?? 0;
+  if (dir === 'desc') {
+    const maxTick = info.ticketsPerPack > 0 ? info.ticketsPerPack - 1 : null;
+    return maxTick !== null && current >= maxTick;
+  }
+  return current === 0;
+}
+
 function openSoldOutModal(id, _unused, e) {
   if (e) e.preventDefault();
   _pendingSoldOutId = id;
@@ -2034,24 +2074,44 @@ function openSoldOutModal(id, _unused, e) {
 
   const baseline  = info.lastShiftTicket != null ? info.lastShiftTicket : info.startTicket;
   const sold      = (finalTicket != null && baseline != null) ? _soldTickets(finalTicket, baseline, dir) + 1 : null;
+  const noSales   = _packNoSalesYet(info);
+
+  // Formatted book identifier: GAME_NUMBER-PACK_NUMBER
+  const bookId = (info.gameNumber && info.packNumber)
+    ? `${info.gameNumber}-${info.packNumber}`
+    : info.packNumber ? `Book #${info.packNumber}` : id;
 
   const infoEl = document.getElementById('soldout-book-info');
   if (infoEl) infoEl.textContent = info.gameName ? `${info.gameName} · Book #${info.packNumber}` : `Book ID: ${id}`;
 
   const detailEl = document.getElementById('soldout-detail');
   if (detailEl) {
+    // Ticket calculation row
+    let calcRow = '';
     if (finalTicket != null) {
-      const soldLine = sold != null ? `${sold} ticket${sold !== 1 ? 's' : ''} sold` : '';
-      detailEl.innerHTML = `
-        <div class="soldout-calc-row">
+      const soldLine = sold != null ? `<span style="font-size:11.5px;color:var(--text-muted)">${sold} ticket${sold !== 1 ? 's' : ''} sold this shift</span>` : '';
+      calcRow = `<div class="soldout-calc-row">
           ${_dirPill(dir)}
           ${baseline != null ? `Last at ${_ticketAt(baseline, 'soldout')} →` : ''}
           Final ${_ticketAt(finalTicket, 'activated')}
         </div>
-        ${soldLine ? `<div class="soldout-sold-line">${soldLine}</div>` : ''}`;
+        ${soldLine}`;
     } else {
-      detailEl.innerHTML = `<div class="soldout-calc-row" style="color:var(--text-hint)">End ticket unknown — cannot auto-calculate</div>`;
+      calcRow = `<div class="soldout-calc-row" style="color:var(--text-hint)">End ticket unknown — cannot auto-calculate</div>`;
     }
+
+    // Formatted barcode line
+    const barcodeRow = `<div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;letter-spacing:.04em;color:var(--ink);background:var(--ink-10);border-radius:6px;padding:6px 10px;margin:8px 0 6px;text-align:center">${bookId}</div>`;
+
+    // Caution banner when no tickets appear sold
+    const cautionBanner = noSales
+      ? `<div style="background:var(--amber-bg);border:1px solid var(--amber-border);border-radius:8px;padding:9px 12px;margin-top:8px;font-size:12px;line-height:1.55;color:var(--ink)">
+           <strong>⚠ No tickets appear to have been sold from this book.</strong><br>
+           Check <strong>Extra storage</strong> before marking sold out — this book may still be in use.
+         </div>`
+      : '';
+
+    detailEl.innerHTML = barcodeRow + calcRow + cautionBanner;
   }
 
   document.getElementById('soldout-modal').classList.add('open');
@@ -2262,6 +2322,10 @@ async function moveReceivedPack(packId, newLocation, e) {
 async function restoreRemovedPack(packId, location, e) {
   if (e) e.preventDefault();
   if (_isStation(location) && !_canMoveOrActivate()) { showError('No day open', 'Open a day first.'); return; }
+  requireAdmin(() => _doRestoreRemovedPack(packId, location));
+}
+
+async function _doRestoreRemovedPack(packId, location) {
   try {
     const newStatus = _isStation(location) ? 'activated' : 'received';
     await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(packId)}`,
@@ -2278,7 +2342,10 @@ let _pendingRestoreLocation = null;
 function restoreSoldOutPack(packId, location, currentTicket, e) {
   if (e) { e.preventDefault(); e.stopPropagation(); }
   if (_isStation(location) && !_canMoveOrActivate()) { showError('No day open', 'Open a day first.'); return; }
+  requireAdmin(() => _doRestoreSoldOutPack(packId, location, currentTicket));
+}
 
+function _doRestoreSoldOutPack(packId, location, currentTicket) {
   _pendingRestorePackId   = packId;
   _pendingRestoreLocation = location;
 
@@ -2566,7 +2633,7 @@ function _packEditBtn(p) {
 }
 
 function renderPackRow(p, ticketsPerPack, gameName, price) {
-  _packInfoCache[p.id] = { ticketsPerPack, gameName: gameName || '', packNumber: p.pack_number, startTicket: p.start_ticket, endTicket: p.end_ticket ?? null, lastShiftTicket: p.last_shift_ticket ?? null, loadingDirection: (p.loading_direction || 'asc').toLowerCase(), location: p.location, price: parseFloat(price || 0) };
+  _packInfoCache[p.id] = { ticketsPerPack, gameName: gameName || '', gameNumber: p.game_number, packNumber: p.pack_number, startTicket: p.start_ticket, endTicket: p.end_ticket ?? null, lastShiftTicket: p.last_shift_ticket ?? null, loadingDirection: (p.loading_direction || 'asc').toLowerCase(), location: p.location, price: parseFloat(price || 0) };
   const st       = PACK_STATUS[p.status] || { label: p.status, css: '' };
   const locCss   = PACK_LOC_CSS[p.location] || 'loc-office';
   const isActive = p.status === 'activated';
@@ -2596,7 +2663,7 @@ function renderPackRowByLoc(p) {
   const gName  = game.game_name || `Game #${p.game_number}`;
   const price  = parseFloat(game.price || 0);
   const tpp    = game.tickets_per_pack || 0;
-  _packInfoCache[p.id] = { ticketsPerPack: tpp, gameName: gName, packNumber: p.pack_number, startTicket: p.start_ticket, endTicket: p.end_ticket ?? null, lastShiftTicket: p.last_shift_ticket ?? null, loadingDirection: (p.loading_direction || 'asc').toLowerCase(), location: p.location, price };
+  _packInfoCache[p.id] = { ticketsPerPack: tpp, gameName: gName, gameNumber: p.game_number, packNumber: p.pack_number, startTicket: p.start_ticket, endTicket: p.end_ticket ?? null, lastShiftTicket: p.last_shift_ticket ?? null, loadingDirection: (p.loading_direction || 'asc').toLowerCase(), location: p.location, price, stationLine: p.station_line ?? null };
   const st      = PACK_STATUS[p.status] || { label: p.status, css: '' };
   const isActive = p.status === 'activated';
   const dir     = p.loading_direction;
@@ -2605,6 +2672,12 @@ function renderPackRowByLoc(p) {
         ? Math.round(((tpp - 1 - p.start_ticket) / (tpp - 1 || 1)) * 100)
         : Math.round((p.start_ticket / tpp) * 100))
     : 0;
+  // Slot badge — only for activated packs at a station
+  const slotBadge = (isActive && _isStation(p.location))
+    ? (p.station_line != null
+        ? `<button class="pack-line-badge" onclick="openSlotPicker('${p.id}','${p.location}')" title="Change slot">L${p.station_line}</button>`
+        : `<button class="pack-line-add" onclick="openSlotPicker('${p.id}','${p.location}')" title="Assign slot">+ slot</button>`)
+    : '';
   return `
     <div class="lottery-stock-book">
       <div class="lottery-book-info">
@@ -2614,10 +2687,122 @@ function renderPackRowByLoc(p) {
         ${dir ? _dirPill(dir) : ''}
         ${p.status !== 'received' ? _ticketAt(p.start_ticket, p.status) : ''}
         <span style="font-size:11px;color:var(--text-muted)">${gName}</span>
+        ${slotBadge}
       </div>
       ${isActive && tpp > 0 ? `<div class="lottery-book-bar-wrap"><div class="lottery-book-bar" style="width:${pct}%"></div></div>` : ''}
       <div class="lottery-book-actions">${_packActionHtml(p)}${_packEditBtn(p)}${_packRemoveBtn(p)}</div>
     </div>`;
+}
+
+// ===== SLOT PICKER =====
+
+let _pendingSlotPackId   = null;
+let _pendingSlotLocation = null;
+
+function openSlotPicker(packId, location) {
+  _pendingSlotPackId   = packId;
+  _pendingSlotLocation = location;
+
+  const slotCount  = _getStationSlotCount(location);
+  const info       = _packInfoCache[packId] || {};
+  const currentSlot = info.stationLine ?? null;
+
+  // Build occupancy map from cache — skip the pack being reassigned
+  const occupied = {}; // { slotNum: { gameName, packNumber } }
+  for (const [pid, pi] of Object.entries(_packInfoCache)) {
+    if (pi.location === location && pi.stationLine != null && pid !== packId) {
+      occupied[pi.stationLine] = pi;
+    }
+  }
+
+  document.getElementById('slot-picker-title').textContent = `Assign slot — ${location}`;
+
+  const gridEl = document.getElementById('slot-picker-grid');
+  if (slotCount) {
+    let html = '<div class="slot-picker-grid">';
+    for (let i = 1; i <= slotCount; i++) {
+      const isCurrent = i === currentSlot;
+      const takenBy   = occupied[i];
+      const cls = isCurrent ? 'slot-btn slot-btn-current'
+                : takenBy   ? 'slot-btn slot-btn-taken'
+                : 'slot-btn';
+      const title = takenBy
+        ? `Taken by ${takenBy.gameName} #${takenBy.packNumber}`
+        : isCurrent ? 'Currently assigned' : `Assign to Line ${i}`;
+      html += `<button class="${cls}" title="${title}" onclick="confirmSlotAssignment(${i})">${i}</button>`;
+    }
+    html += '</div>';
+    gridEl.innerHTML = html;
+  } else {
+    // No slot count configured — free-form number input
+    gridEl.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 0">
+        <span style="font-size:13px;color:var(--text-muted)">Line</span>
+        <input id="slot-picker-free-input" type="number" min="1"
+          class="settings-slots-input" style="width:72px"
+          value="${currentSlot ?? ''}" placeholder="—" />
+        <button class="modal-add-btn" style="margin:0;padding:8px 16px"
+          onclick="confirmSlotAssignment(parseInt(document.getElementById('slot-picker-free-input').value,10))">Assign</button>
+      </div>`;
+  }
+
+  const clearBtn = document.getElementById('slot-picker-clear');
+  if (clearBtn) clearBtn.style.display = currentSlot != null ? '' : 'none';
+
+  document.getElementById('slot-picker-modal').classList.add('open');
+}
+
+async function confirmSlotAssignment(slotNum) {
+  if (!_pendingSlotPackId || !slotNum || isNaN(slotNum) || slotNum < 1) return;
+  const packId   = _pendingSlotPackId;
+  const location = _pendingSlotLocation;
+
+  // Double-check occupancy (cache may have been stale)
+  for (const [pid, pi] of Object.entries(_packInfoCache)) {
+    if (pi.location === location && pi.stationLine === slotNum && pid !== packId) {
+      showError(`Slot ${slotNum} is taken`,
+        `${location} Line ${slotNum} is occupied by ${pi.gameName} #${pi.packNumber}. Unassign it first.`);
+      return;
+    }
+  }
+
+  document.getElementById('slot-picker-modal').classList.remove('open');
+  _pendingSlotPackId = null;
+  _pendingSlotLocation = null;
+
+  try {
+    await sbFetch(
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(packId)}`,
+      { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ station_line: slotNum }) }
+    );
+    await loadLotteryStock();
+  } catch (e) {
+    showError('Failed to assign slot', e.message);
+  }
+}
+
+async function clearPackSlot(packId) {
+  document.getElementById('slot-picker-modal').classList.remove('open');
+  _pendingSlotPackId   = null;
+  _pendingSlotLocation = null;
+
+  try {
+    await sbFetch(
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(packId)}`,
+      { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ station_line: null }) }
+    );
+    await loadLotteryStock();
+  } catch (e) {
+    showError('Failed to clear slot', e.message);
+  }
+}
+
+function closeSlotPicker() {
+  _pendingSlotPackId   = null;
+  _pendingSlotLocation = null;
+  document.getElementById('slot-picker-modal').classList.remove('open');
 }
 
 // ===== LOTTERY CATALOG (game definitions) =====
@@ -2970,6 +3155,10 @@ let _editGameNumber = null;
 
 
 function openEditGame(gameNumber) {
+  requireAdmin(() => _doOpenEditGame(gameNumber));
+}
+
+function _doOpenEditGame(gameNumber) {
   const g = _catalogGameCache[gameNumber];
   if (!g) return;
   _editGameNumber = g.game_number;
@@ -3030,6 +3219,10 @@ async function softDeleteGame(gameNumber) {
 }
 
 async function reactivateGame(gameNumber) {
+  requireAdmin(() => _doReactivateGame(gameNumber));
+}
+
+async function _doReactivateGame(gameNumber) {
   try {
     const res = await sbFetch(
       `${CONFIG.supabaseUrl}/rest/v1/lottery_games?game_number=eq.${encodeURIComponent(gameNumber)}`,
@@ -3066,8 +3259,8 @@ async function loadLotteryStock() {
   const el = document.getElementById('lottery-stock-container');
   el.innerHTML = '<div class="summary-loading">Loading…</div>';
   const select = _dbCaps.hasLoadingDirection
-    ? `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,loading_direction,status,location,lottery_games(game_name,price,tickets_per_pack)`
-    : `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,status,location,lottery_games(game_name,price,tickets_per_pack)`;
+    ? `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,loading_direction,status,location,station_line,lottery_games(game_name,price,tickets_per_pack)`
+    : `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,status,location,station_line,lottery_games(game_name,price,tickets_per_pack)`;
   // By-location view always shows all non-soldout packs so every book appears under its location
   const statusQ = _stockViewMode === 'location'
     ? 'status=in.(received,activated)'
@@ -4575,8 +4768,12 @@ async function deleteReceivedPack(packId, gameName, e) {
 
 const _GAME_COLORS  = ['#E13B3B','#1E5DD8','#0E8F5A','#8B5CF6','#F97316','#0F8C8C','#B8002E','#D44A8B'];
 const _GAME_EMOJIS  = ['🍀','💎','💵','👑','🎰','🧩','♛','🎯'];
-const _ACT_COLORS   = { received:'#8A6A00', activated:'#0E8F5A', moved:'#8B5CF6', soldout:'#E13B3B', discrepancy:'#B91C1C', adjusted:'#6B7280', removed:'#B91C1C', restored:'#0E8F5A', returned_to_lottery:'#D97706' };
-const _ACT_LABELS   = { received:'Received', activated:'Activated', moved:'Moved', soldout:'Sold out', discrepancy:'Discrepancy', adjusted:'Adjusted', removed:'Removed', restored:'Restored', returned_to_lottery:'Returned to Lottery' };
+const _ACT_COLORS   = { received:'#8A6A00', activated:'#0E8F5A', moved:'#8B5CF6', soldout:'#E13B3B', discrepancy:'#B91C1C', adjusted:'#6B7280', removed:'#B91C1C', restored:'#0E8F5A', returned_to_lottery:'#D97706', line_cleared:'#6B7280', audit_scan:'#0F8C8C' };
+const _ACT_LABELS   = { received:'Received', activated:'Activated', moved:'Moved', soldout:'Sold out', discrepancy:'Discrepancy', adjusted:'Adjusted', removed:'Removed', restored:'Restored', returned_to_lottery:'Returned to Lottery', line_cleared:'Line cleared', audit_scan:'Audit scan' };
+
+let _activityOffset  = 0;
+let _activityHasMore = false;
+const ACTIVITY_PAGE  = 10;
 
 // ── Shared ticket-info helpers (used everywhere a pack row is rendered) ──
 function _dirPill(dir) {
@@ -4657,7 +4854,9 @@ async function loadDashboard() {
       fetches.push(sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_shifts?day_id=eq.${snapDay.id}&select=total_revenue,total_tickets_sold&order=opened_at.asc`));
     }
     if (snapHasEvents) {
-      fetches.push(sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_pack_events?select=id,action,pack_id,created_at,ticket_before,ticket_after,notes,lottery_packs(pack_number,game_number,location,lottery_games(game_name))&order=created_at.desc&limit=20`));
+      // Discrepancy-only fetch — used for attention panel + flag count
+      // Activity feed loaded separately via loadDashActivity()
+      fetches.push(sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_pack_events?select=id,action,pack_id,created_at,notes,lottery_packs(pack_number,game_number,location,lottery_games(game_name))&action=eq.discrepancy&order=created_at.desc&limit=50`));
     }
 
     const results = await Promise.all(fetches);
@@ -4724,8 +4923,8 @@ async function loadDashboard() {
     // Attention panel
     _renderDashAttention(discEvents, activePacks, attentionEl);
 
-    // Activity feed
-    _renderDashActivity(eventArr, activityEl);
+    // Activity feed (non-blocking — loads independently with pagination)
+    loadDashActivity();
 
     // Analytics (non-blocking — loads independently)
     loadDashAnalytics();
@@ -5067,32 +5266,104 @@ function _renderDashAttention(discEvents, _activePacks, el) {
   el.innerHTML = rows;
 }
 
-function _renderDashActivity(events, el) {
+async function loadDashActivity(append = false) {
+  if (!_dbCaps.hasPackEvents) return;
+  const el = document.getElementById('dashboard-activity');
   if (!el) return;
-  if (!events.length) {
+
+  if (!append) {
+    _activityOffset = 0;
+    el.innerHTML = '<div class="summary-loading" style="font-size:13px;padding:8px 0">Loading…</div>';
+  } else {
+    const btn = el.querySelector('.act-load-more');
+    if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
+  }
+
+  try {
+    const sel = 'id,action,pack_id,created_at,ticket_before,ticket_after,notes,location_from,location_to,lottery_packs(pack_number,game_number,location,lottery_games(game_name))';
+    const res = await sbFetch(
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_pack_events?select=${sel}&order=created_at.desc&limit=${ACTIVITY_PAGE + 1}&offset=${_activityOffset}`
+    );
+    const rows = await res.json();
+    if (!Array.isArray(rows)) return;
+
+    const hasMore = rows.length > ACTIVITY_PAGE;
+    const page    = rows.slice(0, ACTIVITY_PAGE);
+    _activityOffset += page.length;
+
+    _renderDashActivity(page, el, append, hasMore);
+  } catch (err) {
+    if (!append) {
+      el.innerHTML = `<div style="font-size:13px;color:var(--text-hint);padding:8px 0">Could not load activity.</div>`;
+    } else {
+      const btn = el.querySelector('.act-load-more');
+      if (btn) { btn.disabled = false; btn.textContent = 'Load more'; }
+    }
+  }
+}
+
+function _renderDashActivity(events, el, append = false, hasMore = false) {
+  if (!el) return;
+
+  if (!append && !events.length) {
     el.innerHTML = `<div class="dash-empty-state" style="color:var(--text-hint);font-size:13px">No recent activity recorded.</div>`;
     return;
   }
-  const rows = events.slice(0, 12).map(e => {
-    const p      = e.lottery_packs || {};
-    const g      = p.lottery_games || {};
-    const name   = g.game_name || `Game ${p.game_number || '?'}`;
-    const action = _ACT_LABELS[e.action] || e.action;
-    const color  = _ACT_COLORS[e.action]  || 'var(--ink-60)';
-    const loc    = p.location || '';
+
+  const rows = events.map(e => {
+    const p       = e.lottery_packs || {};
+    const g       = p.lottery_games || {};
+    const name    = g.game_name || `Game ${p.game_number || '?'}`;
+    const packNum = p.pack_number ? ` #${p.pack_number}` : '';
+    const action  = _ACT_LABELS[e.action] || e.action;
+    const color   = _ACT_COLORS[e.action] || 'var(--ink-60)';
     const timeStr = e.created_at ? _fmtActivityTime(e.created_at) : '';
-    const detail = e.ticket_after != null ? `#${e.ticket_after}` : (e.notes ? e.notes.slice(0, 40) : `Book #${p.pack_number || '?'}`);
     const initial = (name[0] || '?').toUpperCase();
+
+    // Ticket / location detail
+    let detail = '';
+    if (e.action === 'moved' && (e.location_from || e.location_to)) {
+      detail = `<span class="act-move">${e.location_from || '?'} → ${e.location_to || '?'}</span>`;
+    } else if (e.ticket_before != null && e.ticket_after != null) {
+      detail = `<span class="act-tickets">#${e.ticket_before} → #${e.ticket_after}</span>`;
+    } else if (e.ticket_after != null) {
+      detail = `<span class="act-tickets">ticket #${e.ticket_after}</span>`;
+    }
+
+    // Location pill (destination or current location)
+    const locStr  = (e.action !== 'moved' ? (e.location_to || p.location || '') : '');
+    const locPill = locStr ? `<span class="act-loc-pill">${locStr}</span>` : '';
+
+    // Notes (truncated, only if not already shown as detail)
+    const notesText = e.notes && e.action !== 'moved' ? e.notes.slice(0, 60) : '';
+    const notesHtml = notesText ? `<div class="act-notes">${notesText}</div>` : '';
+
+    const subParts = [detail, locPill].filter(Boolean).join(' · ');
+
     return `<div class="act-item">
       <div class="act-icon" style="background:${color}22;color:${color}">${initial}</div>
       <div class="act-body">
-        <div class="act-line"><strong>${action}</strong> · <span class="act-detail">${name} ${detail}</span></div>
-        <div class="act-sub">${loc}</div>
+        <div class="act-line"><strong style="color:${color}">${action}</strong><span class="act-detail"> · ${name}${packNum}</span></div>
+        ${subParts ? `<div class="act-sub">${subParts}</div>` : ''}
+        ${notesHtml}
       </div>
       <div class="act-time">${timeStr}</div>
     </div>`;
   }).join('');
-  el.innerHTML = rows;
+
+  if (append) {
+    const existing = el.querySelector('.act-load-more-wrap');
+    if (existing) existing.remove();
+    el.insertAdjacentHTML('beforeend', rows);
+  } else {
+    el.innerHTML = rows;
+  }
+
+  if (hasMore) {
+    el.insertAdjacentHTML('beforeend', `<div class="act-load-more-wrap">
+      <button class="act-load-more" onclick="loadDashActivity(true)">Load more</button>
+    </div>`);
+  }
 }
 
 function _fmtActivityTime(isoStr) {
@@ -5163,7 +5434,7 @@ function renderSettingsUI(counts = {}, totals = {}) {
       : `<button class="settings-loc-del" onclick="settingsRemoveLocation('${type}',this.closest('.settings-loc-row').querySelector('input').dataset.orig)" title="Remove ${eName}">
            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
          </button>`;
-    return `
+    const nameRow = `
       <div class="settings-loc-row">
         <input class="settings-loc-input" value="${eName}" data-orig="${eName}" data-type="${type}"
           onchange="settingsRenameLocation(this.dataset.type,this.dataset.orig,this.value);this.dataset.orig=this.value.trim()"
@@ -5171,6 +5442,21 @@ function renderSettingsUI(counts = {}, totals = {}) {
         ${_badge(name)}
         ${delBtn}
       </div>`;
+    if (type !== 'station') return nameRow;
+    // Station-only: show slot count field below the name row
+    const slotCount = _getStationSlotCount(name);
+    const slotVal   = slotCount != null ? slotCount : '';
+    return `<div class="settings-station-item">
+      ${nameRow}
+      <div class="settings-slots-row">
+        <span class="settings-slots-label">Display slots</span>
+        <input class="settings-slots-input" type="number" min="1" max="99"
+          value="${slotVal}" placeholder="—"
+          onchange="saveStationSlotCount('${eName}', this.value, this)"
+          onblur="saveStationSlotCount('${eName}', this.value, this)" />
+        <span class="settings-slots-hint">physical slots at this station</span>
+      </div>
+    </div>`;
   };
 
   el.innerHTML = `
@@ -5293,6 +5579,137 @@ async function settingsRenameLocation(type, oldName, newName) {
   } catch (e) {
     showError('Failed to rename location', e.message);
   }
+}
+
+let _pendingClearSlots = null; // { name, inputEl, packs[] }
+
+async function saveStationSlotCount(name, rawVal, inputEl) {
+  const n = parseInt(rawVal, 10);
+  const slot_count = (!rawVal || rawVal === '' || isNaN(n) || n < 1) ? null : n;
+
+  // Skip if nothing changed
+  if (_stationSlotCounts[name] === slot_count) return;
+  if (slot_count === null && _stationSlotCounts[name] == null) return;
+
+  const current = _stationSlotCounts[name] ?? null;
+
+  // ── Clearing the slot count ──────────────────────────────────────────────
+  // Warn first; if any packs have line numbers assigned they must be unassigned
+  // and the action logged before the slot structure is removed.
+  if (slot_count === null) {
+    try {
+      const res = await sbFetch(
+        `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?location=eq.${encodeURIComponent(name)}&station_line=not.is.null` +
+        `&select=id,pack_number,game_number,station_line,lottery_games(game_name)&order=station_line.asc`
+      );
+      const packs = await res.json();
+      if (Array.isArray(packs) && packs.length > 0) {
+        // Packs are assigned — show confirmation modal before proceeding
+        _pendingClearSlots = { name, inputEl, packs };
+        const listHtml = packs.map(p => {
+          const gameName = p.lottery_games?.game_name || `Game ${p.game_number}`;
+          return `<div class="clear-slots-pack-row">
+            <span class="clear-slots-line">Line ${p.station_line}</span>
+            <span class="clear-slots-book">${gameName} <span style="font-family:monospace">#${p.pack_number}</span></span>
+          </div>`;
+        }).join('');
+        document.getElementById('clear-slots-station-name').textContent = name;
+        document.getElementById('clear-slots-list').innerHTML = listHtml;
+        document.getElementById('clear-slots-modal').classList.add('open');
+        return; // wait for confirm/cancel
+      }
+      // No assigned packs — safe to clear silently
+    } catch (e) {
+      showError('Slot check failed', e.message);
+      if (inputEl) inputEl.value = current ?? '';
+      return;
+    }
+  }
+
+  // ── Decreasing to a specific number ─────────────────────────────────────
+  // Block if any pack sits above the new ceiling.
+  if (slot_count !== null && (current === null || slot_count < current)) {
+    try {
+      const res = await sbFetch(
+        `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?location=eq.${encodeURIComponent(name)}&station_line=not.is.null&select=station_line&order=station_line.desc&limit=1`
+      );
+      const rows = await res.json();
+      if (Array.isArray(rows) && rows.length > 0) {
+        const maxLine = rows[0].station_line;
+        if (maxLine > slot_count) {
+          showError(
+            `Cannot reduce to ${slot_count} slot${slot_count === 1 ? '' : 's'}`,
+            `${name} has a book assigned to Line ${maxLine}. Unassign Line ${maxLine} before reducing the slot count below ${maxLine}.`
+          );
+          if (inputEl) inputEl.value = current ?? '';
+          return;
+        }
+      }
+    } catch (e) {
+      showError('Slot count check failed', e.message);
+      if (inputEl) inputEl.value = current ?? '';
+      return;
+    }
+  }
+
+  await _applyStationSlotCount(name, slot_count, inputEl, current);
+}
+
+async function _applyStationSlotCount(name, slot_count, inputEl, current) {
+  try {
+    await sbFetch(
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_locations?name=eq.${encodeURIComponent(name)}&type=eq.station`,
+      { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ slot_count }) }
+    );
+    if (slot_count == null) delete _stationSlotCounts[name];
+    else _stationSlotCounts[name] = slot_count;
+  } catch (e) {
+    showError('Failed to save slot count', e.message);
+    if (inputEl) inputEl.value = current ?? '';
+  }
+}
+
+async function confirmClearSlots() {
+  if (!_pendingClearSlots) return;
+  const { name, inputEl, packs } = _pendingClearSlots;
+  _pendingClearSlots = null;
+  document.getElementById('clear-slots-modal').classList.remove('open');
+
+  const current = _stationSlotCounts[name] ?? null;
+  try {
+    // Bulk-clear all station_line values for this station
+    await sbFetch(
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?location=eq.${encodeURIComponent(name)}&station_line=not.is.null`,
+      { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ station_line: null }) }
+    );
+    // Log each unassignment individually so the activity feed shows full context
+    for (const p of packs) {
+      _logPackEvent(p.id, 'line_cleared', {
+        location_to: name,
+        notes: `Line ${p.station_line} at ${name} cleared when slot structure was removed`,
+      });
+    }
+    // Now clear the slot count itself
+    await _applyStationSlotCount(name, null, inputEl, current);
+    // Refresh stock view if open so line badges disappear
+    if (document.getElementById('lottery-stock-section')?.style.display !== 'none') {
+      loadLotteryStock();
+    }
+  } catch (e) {
+    showError('Failed to clear slots', e.message);
+    if (inputEl) inputEl.value = current ?? '';
+  }
+}
+
+function cancelClearSlots() {
+  if (!_pendingClearSlots) return;
+  const { inputEl } = _pendingClearSlots;
+  const current = _stationSlotCounts[_pendingClearSlots.name] ?? null;
+  _pendingClearSlots = null;
+  document.getElementById('clear-slots-modal').classList.remove('open');
+  if (inputEl) inputEl.value = current ?? '';
 }
 
 // ===== REPORTS =====

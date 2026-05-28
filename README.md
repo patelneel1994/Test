@@ -36,6 +36,7 @@ Every physical book of tickets, from arrival to retirement.
 | `last_shift_ticket` | int | Position at start of current shift (audit baseline) |
 | `end_ticket` | int | Last ticket index in the book (`tickets_per_pack - 1`) |
 | `loading_direction` | text | `asc` (0→299) or `desc` (299→0) |
+| `station_line` | int (nullable) | Physical slot number at the current station (1-based). Null = unassigned. Cleared automatically when the book moves to a different location. |
 
 The core operational table. Every audit, move, and sale traces back here.
 
@@ -105,7 +106,7 @@ Append-only event log for every action taken on a book. Never updated.
 | `pack_id` | uuid → `lottery_packs` | |
 | `shift_id` | uuid → `lottery_shifts` | Which shift it happened in |
 | `day_id` | uuid → `lottery_days` | Which day it happened in |
-| `action` | text | `received`, `activated`, `moved`, `soldout`, `removed`, `adjusted`, `discrepancy` |
+| `action` | text | `received`, `activated`, `moved`, `soldout`, `removed`, `restored`, `adjusted`, `discrepancy`, `returned_to_lottery`, `line_cleared` |
 | `location_from` | text | Previous location (for moves) |
 | `location_to` | text | New location (for moves/activations) |
 | `ticket_before` | int | Position before change |
@@ -152,8 +153,32 @@ Scan barcode
 
 ## Locations
 
-Configured in `localStorage` (Settings tab). Two types:
+Stored in the `lottery_locations` table (Settings tab). Two types:
 
-- **Stations** (`lottery_stations`) — audit-eligible locations (Station 1, 2…). Books here can be activated and audited.
-- **Other locations** (`lottery_extra_locs`) — staging only. Books received here stay in `received` status.
-- **Office** — always present, fixed. Default receive location.
+- **Stations** — audit-eligible locations (Station 1, 2…). Books here can be activated and audited.
+- **Extra locations** — staging only. Books received here stay in `received` status.
+- **Office / Extra** — always present, fixed. Default receive location.
+
+### `lottery_locations`
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | uuid (PK) | |
+| `name` | text | Display name (e.g. `Station 1`) |
+| `type` | text | `station` or `extra` |
+| `sort_order` | int | Display order |
+| `slot_count` | int (nullable) | Number of physical display slots at this station. Null = unstructured (no slot grid). Only applies to stations. |
+
+---
+
+## Station Line Numbers
+
+Each station can have a configurable number of physical display slots ("lines"). Staff assign each active book to a slot so it can be identified by position during audit.
+
+- **Admin setup**: Set `slot_count` on a station in Settings. This defines how many numbered slot buttons appear in the picker.
+- **Assignment**: In the stock view (location view), each activated book at a station shows a blue **L3** badge (assigned) or a **+ slot** button (unassigned). Tapping opens the slot picker.
+- **One-to-one**: Each slot holds at most one book. Assigning to an occupied slot is blocked — the existing book must be unassigned first.
+- **Slot count decrease**: Cannot be reduced below the highest currently-assigned line number. Unassign those books first.
+- **Clearing slot structure**: Removing a station's `slot_count` entirely requires confirming a warning if any books have line numbers. All line numbers are cleared and each is logged as a `line_cleared` event.
+- **On move**: `station_line` is always cleared when a book moves to a different location. Staff reassign at the destination.
+- **Audit**: Line numbers appear on audit cards and the list sorts by line number (nulls last). Unscanned books with a line number are highlighted amber so staff know exactly which physical slot to check.
