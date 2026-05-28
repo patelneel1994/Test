@@ -401,6 +401,7 @@ body {
 
 /* MODAL (bottom sheet) */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0); z-index: 200; display: flex; align-items: flex-end; justify-content: center; visibility: hidden; pointer-events: none; transition: background .22s var(--ease-out-quart), visibility 0s .28s; }
+#admin-auth-modal { z-index: 600; }
 .modal-overlay.open { background: rgba(0,0,0,.45); visibility: visible; pointer-events: auto; transition: background .22s var(--ease-out-quart); }
 .modal { background: var(--surface); border-radius: var(--radius) var(--radius) 0 0; padding: 16px 20px 36px; width: 100%; max-width: 520px; max-height: 80vh; overflow-y: auto; }
 
