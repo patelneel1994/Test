@@ -1027,6 +1027,16 @@ function _updateInvProgress() {
 async function confirmInventory(e) {
   if (e) e.preventDefault();
   const btn = document.getElementById('inv-confirm-btn');
+
+  // Open-day: gate on discrepancies before committing
+  if (_invContext === 'open-day') {
+    const mismatches = _getOpenDayDiscrepancies();
+    if (mismatches.length) {
+      _showOpenDayDiscrepancyModal(mismatches);
+      return;
+    }
+  }
+
   if (btn) btn.disabled = true;
   try {
     if (_invContext === 'open-day')         await _invCommitOpenDay();
@@ -1037,6 +1047,65 @@ async function confirmInventory(e) {
     showError('Failed', err.message);
     if (btn) btn.disabled = false;
   }
+}
+
+function _getOpenDayDiscrepancies() {
+  return _invPacks.filter(p => {
+    if (!(p.id in _invData) || (p.id in _invSoldOut)) return false;
+    const baseline = p.last_shift_ticket != null ? p.last_shift_ticket : p.start_ticket;
+    return baseline != null && _invData[p.id] !== baseline;
+  });
+}
+
+function _showOpenDayDiscrepancyModal(mismatches) {
+  const rows = mismatches.map(p => {
+    const game     = p.lottery_games || {};
+    const info     = _packInfoCache[p.id] || {};
+    const baseline = p.last_shift_ticket != null ? p.last_shift_ticket : p.start_ticket;
+    const scanned  = _invData[p.id];
+    const dir      = (p.loading_direction || 'asc').toLowerCase();
+    const diff     = Math.abs(dir === 'desc' ? baseline - scanned : scanned - baseline);
+    const lineBadge = info.stationLine != null
+      ? `<span class="audit-line-badge" style="font-size:10px">LINE ${info.stationLine}</span> `
+      : '';
+    return `<div class="open-day-disc-row">
+      <div class="open-day-disc-book">
+        ${lineBadge}<strong>${game.game_name || `Game #${p.game_number}`}</strong>
+        <span style="font-family:monospace;font-size:12px;color:var(--text-muted)"> #${p.pack_number}</span>
+      </div>
+      <div class="open-day-disc-detail">
+        Last close <strong>#${baseline}</strong>
+        &nbsp;→&nbsp;
+        Scanned <strong>#${scanned}</strong>
+        &nbsp;·&nbsp;
+        <span style="color:var(--red-text)">⚠ ${diff} ticket${diff !== 1 ? 's' : ''} unaccounted</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  const listEl = document.getElementById('open-day-disc-list');
+  const cntEl  = document.getElementById('open-day-disc-count');
+  if (listEl) listEl.innerHTML = rows;
+  if (cntEl)  cntEl.textContent = mismatches.length;
+
+  document.getElementById('open-day-disc-modal').classList.add('open');
+}
+
+async function confirmOpenDayAnyway() {
+  document.getElementById('open-day-disc-modal').classList.remove('open');
+  const btn = document.getElementById('inv-confirm-btn');
+  if (btn) btn.disabled = true;
+  try {
+    await _invCommitOpenDay();
+    closeInventoryModal();
+  } catch (err) {
+    showError('Failed', err.message);
+    if (btn) btn.disabled = false;
+  }
+}
+
+function closeOpenDayDiscModal() {
+  document.getElementById('open-day-disc-modal').classList.remove('open');
 }
 
 function skipInventory() {
@@ -1133,7 +1202,8 @@ async function _invCommitClose(type) {
     const sold        = (p.id in _invSoldOut) ? baseSold + 1 : baseSold;
     const revenue     = sold * price;
     totalSold += sold; totalRev += revenue;
-    entries.push({ pack_id: p.id, tickets_sold: sold, revenue, ticket_at_open: lastTicket, ticket_at_close: currentTick });
+    const stationLine = (_packInfoCache[p.id] || {}).stationLine ?? null;
+    entries.push({ pack_id: p.id, tickets_sold: sold, revenue, ticket_at_open: lastTicket, ticket_at_close: currentTick, ...(stationLine != null ? { station_line: stationLine } : {}) });
   }
 
   // Add any tickets sold on packs that were removed mid-shift (logged at removal time)
@@ -1943,7 +2013,7 @@ function _rltHandleScan(raw) {
   if (scanInp) scanInp.value = '';
   if (!raw) return;
   const result = parseLotteryBarcode(raw);
-  if (!result) { _rltFlashError('Could not read barcode'); return; }
+  if (!result) { beepNotFound(); _rltFlashError('Could not read barcode'); return; }
 
   let parsed, pack;
   if (result.ambiguous) {
@@ -1955,8 +2025,8 @@ function _rltHandleScan(raw) {
     parsed = result;
     pack = _rltPacks.find(p => p.game_number === parsed.gameNumber && p.pack_number === parsed.packNumber);
   }
-  if (!pack) { _rltFlashError('Book not found in active or received list'); return; }
-  if (_rltList.some(b => b.id === pack.id)) { _rltFlashError('Book already added'); return; }
+  if (!pack) { beepNotFound(); _rltFlashError('Book not found in active or received list'); return; }
+  if (_rltList.some(b => b.id === pack.id)) { beepDuplicate(); _rltFlashError('Book already added'); return; }
 
   const game = pack.lottery_games || {};
   _rltList.push({
@@ -1969,6 +2039,7 @@ function _rltHandleScan(raw) {
     dir:             (pack.loading_direction || 'asc').toLowerCase(),
     price:           parseFloat(game.price || 0),
   });
+  beepSuccess();
   _renderRltList();
   setTimeout(() => { if (scanInp) scanInp.focus(); }, 80);
 }
@@ -2231,6 +2302,15 @@ async function _commitMovePack(packId, newLocation, prevLocation) {
   _logPackEvent(packId, toStation ? 'activated' : 'moved', { location_from: prevLocation || null, location_to: newLocation });
 }
 
+async function _adminMoveActivePack(packId, newStation) {
+  const prevLocation = (_packInfoCache[packId] || {}).location || null;
+  if (prevLocation === newStation) return;
+  try {
+    await _commitMovePack(packId, newStation, prevLocation);
+    await loadLotteryStock();
+  } catch (err) { showError('Move failed', err.message); }
+}
+
 // ===== MOVE BOOKS MODAL =====
 
 function openMoveBooksModal() {
@@ -2269,9 +2349,9 @@ async function _scanMoveBook(raw) {
   if (!raw) return;
   const statusEl = document.getElementById('move-books-status');
   const parsed = parseLotteryBarcode(raw);
-  if (!parsed) { _setMoveStatus('Could not read barcode', 'error'); return; }
+  if (!parsed) { beepNotFound(); _setMoveStatus('Could not read barcode', 'error'); return; }
   let candidate = parsed.ambiguous ? (await _resolveAmbiguousBarcode(parsed)) : parsed;
-  if (!candidate) { _setMoveStatus('Could not resolve barcode', 'error'); return; }
+  if (!candidate) { beepNotFound(); _setMoveStatus('Could not resolve barcode', 'error'); return; }
   statusEl.textContent = 'Looking up…';
   try {
     const res  = await sbFetch(
@@ -2280,15 +2360,24 @@ async function _scanMoveBook(raw) {
     );
     const rows = await res.json();
     const pack = Array.isArray(rows) && rows[0];
-    if (!pack) { _setMoveStatus(`Pack #${candidate.packNumber} not found — receive it first`, 'error'); return; }
-    if (pack.status !== 'received') { _setMoveStatus(`Pack #${pack.pack_number} is ${pack.status}, not received`, 'error'); return; }
-    if (_moveBooksQueue.find(q => q.id === pack.id)) { _setMoveStatus(`Pack #${pack.pack_number} already in list`, 'warn'); return; }
-    _moveBooksQueue.push({ id: pack.id, packNumber: pack.pack_number,
+    if (!pack) { beepNotFound(); _setMoveStatus(`Pack #${candidate.packNumber} not found — receive it first`, 'error'); return; }
+    if (pack.status !== 'received' && pack.status !== 'activated') {
+      beepNotFound(); _setMoveStatus(`Pack #${pack.pack_number} is ${pack.status} — can only move received or active books`, 'error'); return;
+    }
+    if (_moveBooksQueue.find(q => q.id === pack.id)) { beepDuplicate(); _setMoveStatus(`Pack #${pack.pack_number} already in list`, 'warn'); return; }
+    // Enforce mode consistency — can't mix received and activated in one move
+    const queueMode = _moveBooksQueue.length ? _moveBooksQueue[0].status : null;
+    if (queueMode && queueMode !== pack.status) {
+      beepNotFound(); _setMoveStatus(`Can't mix received and active books — clear the list first`, 'error'); return;
+    }
+    _moveBooksQueue.push({ id: pack.id, packNumber: pack.pack_number, status: pack.status,
       gameNumber: candidate.gameNumber,
       gameName: pack.lottery_games?.game_name || `Game #${candidate.gameNumber}`, location: pack.location || 'Office' });
+    beepSuccess();
     _setMoveStatus(`Added: ${pack.lottery_games?.game_name || `Game #${candidate.gameNumber}`} #${pack.pack_number}`, 'ok');
     _renderMoveBooksQueue();
-  } catch (err) { _setMoveStatus('Lookup failed: ' + err.message, 'error'); }
+    _updateMoveDestButtons();
+  } catch (err) { beepNotFound(); _setMoveStatus('Lookup failed: ' + err.message, 'error'); }
 }
 
 function _setMoveStatus(msg, type) {
@@ -2310,7 +2399,9 @@ function _renderMoveBooksQueue() {
     }
   }
   if (!_moveBooksQueue.length) {
-    el.innerHTML = '<div class="move-books-empty">Scan a received book to add it…</div>'; return;
+    el.innerHTML = '<div class="move-books-empty">Scan a book to add it…</div>';
+    _updateMoveDestButtons();
+    return;
   }
   el.innerHTML = _moveBooksQueue.map((q, i) => {
     const color = _gameColor(q.gameNumber || '0');
@@ -2333,11 +2424,40 @@ function _removeMoveQueueItem(i, e) {
   if (e) e.preventDefault();
   _moveBooksQueue.splice(i, 1);
   _renderMoveBooksQueue();
+  _updateMoveDestButtons();
 }
 
-async function confirmMoveBooks(newLocation, e) {
+function _updateMoveDestButtons() {
+  const destEl = document.getElementById('move-books-dest-btns');
+  if (!destEl) return;
+  const mode = _moveBooksQueue.length ? _moveBooksQueue[0].status : null;
+  // Activated books: stations only. Received or empty: all locations.
+  const locs = (mode === 'activated') ? _getStations() : _getLocOrderAll();
+  const noteEl = document.getElementById('move-books-admin-note');
+  if (noteEl) noteEl.style.display = mode === 'activated' ? '' : 'none';
+  destEl.innerHTML = locs.map(loc => {
+    const isStn = _isStation(loc);
+    const isOff = loc === 'Office';
+    const cls   = isStn ? 'dest-station' : isOff ? 'dest-office' : '';
+    return `<button class="move-dest-btn ${cls}"
+      onmousedown="confirmMoveBooks('${loc}',event)"
+      ontouchstart="confirmMoveBooks('${loc}',event)">${loc}</button>`;
+  }).join('');
+}
+
+function confirmMoveBooks(newLocation, e) {
   if (e) e.preventDefault();
   if (!_moveBooksQueue.length) { _setMoveStatus('Scan at least one book first', 'error'); return; }
+  const hasActive = _moveBooksQueue.some(q => q.status === 'activated');
+  if (hasActive) {
+    if (!_isStation(newLocation)) { _setMoveStatus('Active books can only move to a station', 'error'); return; }
+    requireAdmin(() => _doMoveBooks(newLocation));
+  } else {
+    _doMoveBooks(newLocation);
+  }
+}
+
+async function _doMoveBooks(newLocation) {
   try {
     await Promise.all(_moveBooksQueue.map(q => _commitMovePack(q.id, newLocation, q.location)));
     closeMoveBooksModal();
@@ -2650,13 +2770,7 @@ function _packActionHtml(p) {
     </div>`;
   }
   if (p.status === 'activated') {
-    const atStation = _isStation(p.location);
-    const moveBtn = atStation ? '' : `
-    <button class="pack-act-btn"
-      onmousedown="openMovePackModal('${p.id}',event)"
-      ontouchstart="openMovePackModal('${p.id}',event)">Move</button>`;
-    return `${moveBtn}
-    <button class="pack-act-btn act-soldout"
+    return `<button class="pack-act-btn act-soldout"
       onmousedown="openSoldOutModal('${p.id}',${p.start_ticket},event)"
       ontouchstart="openSoldOutModal('${p.id}',${p.start_ticket},event)">Sold Out</button>`;
   }
@@ -3777,7 +3891,7 @@ async function loadShiftHistory() {
       if (daysArr.length) {
         const fullSel =
           `id,day_id,opened_at,closed_at,status,shift_type,total_tickets_sold,total_revenue,notes,` +
-          `lottery_shift_entries(pack_id,tickets_sold,revenue,ticket_at_open,ticket_at_close,` +
+          `lottery_shift_entries(pack_id,tickets_sold,revenue,ticket_at_open,ticket_at_close,station_line,` +
             `lottery_packs(pack_number,game_number,lottery_games(game_name,price)))` +
           eventsSelect;
         const sumSel =
@@ -3837,7 +3951,7 @@ async function loadShiftHistory() {
     } else {
       const res = await sbFetch(
         `${CONFIG.supabaseUrl}/rest/v1/lottery_shifts` +
-        `?select=id,shift_type,closed_at,total_tickets_sold,total_revenue,notes,lottery_shift_entries(pack_id,tickets_sold,revenue,ticket_at_open,ticket_at_close,lottery_packs(pack_number,game_number,lottery_games(game_name,price)))` +
+        `?select=id,shift_type,closed_at,total_tickets_sold,total_revenue,notes,lottery_shift_entries(pack_id,tickets_sold,revenue,ticket_at_open,ticket_at_close,station_line,lottery_packs(pack_number,game_number,lottery_games(game_name,price)))` +
         `&order=closed_at.desc&limit=60${dateFilter.replace(/opened_at/g, 'closed_at')}`
       );
       const shifts = await res.json();
@@ -3963,6 +4077,15 @@ function _buildPackTicketRows(entries, events) {
 }
 
 // ── Audit entry card renderer (shared across all shift/history views) ──────
+function _sortShiftEntries(entries) {
+  return [...entries].sort((a, b) => {
+    if (a.station_line == null && b.station_line == null) return 0;
+    if (a.station_line == null) return 1;
+    if (b.station_line == null) return -1;
+    return a.station_line - b.station_line;
+  });
+}
+
 function _renderShiftEntryCard(en) {
   const pack      = en.lottery_packs || {}, game = pack.lottery_games || {};
   const name      = game.game_name || `Game #${pack.game_number}`;
@@ -3974,11 +4097,14 @@ function _renderShiftEntryCard(en) {
   const isSuspect = sold === 0 && en.ticket_at_open != null;
   const tickRange = (en.ticket_at_open != null && en.ticket_at_close != null)
     ? `<span class="aec-range">#${en.ticket_at_open}<span class="aec-arrow">→</span>#${en.ticket_at_close}</span>` : '';
+  const lineBadge = en.station_line != null
+    ? `<span class="audit-line-badge" style="font-size:9px;padding:1px 5px">L${en.station_line}</span> `
+    : '';
   return `<div class="audit-entry-card${isSuspect ? ' aec-flag' : ''}">
     <div class="aec-dot" style="background:${dotBg}">${abbr}</div>
     <div class="aec-body">
       <div class="aec-top">
-        <span class="aec-name">${name}</span>
+        ${lineBadge}<span class="aec-name">${name}</span>
         <span class="aec-book">#${pack.pack_number || '?'}</span>
       </div>
       <div class="aec-bottom">
@@ -4087,7 +4213,7 @@ async function _loadDayDetail(dayId, groupId) {
       : '';
     const shiftSel =
       `id,day_id,opened_at,closed_at,status,shift_type,total_tickets_sold,total_revenue,notes,` +
-      `lottery_shift_entries(pack_id,tickets_sold,revenue,ticket_at_open,ticket_at_close,` +
+      `lottery_shift_entries(pack_id,tickets_sold,revenue,ticket_at_open,ticket_at_close,station_line,` +
         `lottery_packs(pack_number,game_number,lottery_games(game_name,price)))` +
       evSel;
     const r = await sbFetch(
@@ -4504,7 +4630,7 @@ function renderShiftHistory(shifts) {
     if (s) {
       const dateStr = new Date(s.closed_at).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
       const timeStr = new Date(s.closed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const entries = (s.lottery_shift_entries || []);
+      const entries = _sortShiftEntries(s.lottery_shift_entries || []);
       const entriesHtml = entries.map(_renderShiftEntryCard).join('');
       html += `
         <div class="last-close-card">
@@ -4539,7 +4665,7 @@ function renderShiftHistory(shifts) {
       const typeCss     = s.shift_type === 'day' ? 'shift-type-day' : 'shift-type-shift';
       const typeLabel   = s.shift_type === 'day' ? 'Day Close' : 'Shift';
       const timeStr     = new Date(s.closed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const entriesHtml = (s.lottery_shift_entries || []).map(_renderShiftEntryCard).join('');
+      const entriesHtml = _sortShiftEntries(s.lottery_shift_entries || []).map(_renderShiftEntryCard).join('');
       shiftsHtml += `
         <div class="shift-history-item">
           <div class="shift-history-hdr">
@@ -5447,6 +5573,42 @@ function _fmtActivityTime(isoStr) {
   if (diffH   < 24) return `${diffH}h ago`;
   if (diffD   < 2)  return 'yesterday';
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+// ===== FLOATING JUMP NAV =====
+
+function jumpTo(target) {
+  let el = null;
+  if (target === 'top') {
+    const scroller = document.querySelector('.app-content') || window;
+    scroller.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+  if (target === 'shift-history') {
+    // Scroll to the shift history card header
+    el = document.getElementById('shift-history-container')?.closest('.scan-card');
+  }
+  if (target === 'last-day') {
+    // First day-group rendered = most recent day (history is desc order)
+    el = document.querySelector('#shift-history-container .shift-day-group');
+    if (!el) {
+      // History not loaded yet — load it then jump
+      loadShiftHistory().then(() => {
+        const g = document.querySelector('#shift-history-container .shift-day-group');
+        if (g) g.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      return;
+    }
+  }
+  if (el) {
+    const scroller = document.querySelector('.app-content');
+    if (scroller) {
+      const offset = el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - 8;
+      scroller.scrollTo({ top: offset, behavior: 'smooth' });
+    } else {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
 }
 
 // ===== SETTINGS =====

@@ -539,6 +539,19 @@
 
   </div><!-- /lsection-tracking -->
 
+  <!-- Floating jump nav — visible when lottery tracking section is active -->
+  <div class="float-jump-nav" id="float-jump-nav" style="display:none">
+    <button class="fjn-btn" onclick="jumpTo('top')" title="Go to top">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+    </button>
+    <button class="fjn-btn" onclick="jumpTo('shift-history')" title="Shift history">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    </button>
+    <button class="fjn-btn" onclick="jumpTo('last-day')" title="Last closed day">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+    </button>
+  </div>
+
   <!-- ── CATALOG SECTION ───────────────────────────────────────── -->
   <div id="lsection-catalog" style="display:none">
 
@@ -1022,6 +1035,24 @@
   </div>
 </div>
 
+<!-- OPEN DAY DISCREPANCY REVIEW MODAL -->
+<div class="modal-overlay modal-overlay-center" id="open-day-disc-modal">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Review before confirming</div>
+    <p style="font-size:13px;color:var(--text-muted);margin:0 0 14px">
+      <strong id="open-day-disc-count">0</strong> book(s) don't match the last close.
+      Review each discrepancy below — go back to correct any scan, or confirm anyway to proceed with the discrepancies logged.
+    </p>
+    <div id="open-day-disc-list" style="display:flex;flex-direction:column;gap:8px;max-height:340px;overflow-y:auto;margin-bottom:16px"></div>
+    <div style="display:flex;gap:8px">
+      <button class="modal-close" style="flex:1;margin:0;padding:11px" onclick="closeOpenDayDiscModal()">← Go back &amp; fix</button>
+      <button class="modal-add-btn" style="flex:2;margin:0;background:var(--red-text,#B91C1C)"
+        onmousedown="confirmOpenDayAnyway()" ontouchstart="confirmOpenDayAnyway()">Confirm anyway</button>
+    </div>
+  </div>
+</div>
+
 <!-- SHIFT AUDIT PROMPT -->
 <div class="modal-overlay" id="shift-audit-modal">
   <div class="modal">
@@ -1217,10 +1248,13 @@
     <div class="modal-card-body">
       <div class="modal-card-scan-row">
         <input class="scan-input" id="move-books-input" type="text" inputmode="text"
-          placeholder="Scan a received book barcode…" autocomplete="off" autocorrect="off" spellcheck="false" />
+          placeholder="Scan a book barcode…" autocomplete="off" autocorrect="off" spellcheck="false" />
       </div>
       <div id="move-books-status" class="move-books-status"></div>
       <div id="move-books-list" class="move-books-list"></div>
+      <div id="move-books-admin-note" style="display:none;font-size:12px;color:var(--amber-text,#92400e);background:var(--amber-bg);border:1px solid var(--amber-border);border-radius:7px;padding:7px 10px;margin-bottom:6px">
+        ⚠ Moving active books requires admin — you'll be prompted on confirm.
+      </div>
       <div class="move-dest-label">Move to location</div>
       <div id="move-books-dest-btns" class="move-dest-grid"></div>
     </div>

@@ -47,6 +47,18 @@ function switchLotterySection(section, { pushHash = true } = {}) {
 
   _setNavActive('nav-lottery-' + section);
 
+  // Show floating jump nav only in the tracking section; hide when at top
+  const fjn = document.getElementById('float-jump-nav');
+  if (fjn) {
+    if (section === 'tracking') {
+      fjn.style.display = '';
+      _initFjnScrollWatch();
+    } else {
+      fjn.style.display = 'none';
+      fjn.classList.remove('fjn-visible');
+    }
+  }
+
   if (pushHash) location.hash = 'lottery-' + section;
 
   if (typeof _updateContextBar === 'function') _updateContextBar(null);
@@ -70,3 +82,16 @@ function _routeFromHash() {
 }
 
 window.addEventListener('hashchange', () => _routeFromHash());
+
+let _fjnScrollBound = false;
+function _initFjnScrollWatch() {
+  if (_fjnScrollBound) return;
+  _fjnScrollBound = true;
+  const scroller = document.querySelector('.app-content');
+  if (!scroller) return;
+  scroller.addEventListener('scroll', () => {
+    const fjn = document.getElementById('float-jump-nav');
+    if (!fjn || fjn.style.display === 'none') return;
+    fjn.classList.toggle('fjn-visible', scroller.scrollTop > 200);
+  }, { passive: true });
+}

@@ -892,6 +892,9 @@ body {
 .inv-disc-summary-box { background: var(--amber-bg); border: 1.5px solid var(--amber-border); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 8px; }
 .inv-disc-summary-hdr { font-size: 12px; font-weight: 700; color: var(--amber-text); margin-bottom: 6px; }
 .inv-disc-row { font-size: 11px; color: var(--amber-text); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 2px; padding: 2px 0; border-top: 1px solid var(--amber-border); }
+.open-day-disc-row { padding: 10px 12px; background: var(--surface-2, rgba(0,0,0,.04)); border-radius: 8px; display: flex; flex-direction: column; gap: 4px; }
+.open-day-disc-book { font-size: 13px; color: var(--ink); display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.open-day-disc-detail { font-size: 12px; color: var(--text-muted); }
 .inv-dir-error { font-size: 11px; font-weight: 600; color: var(--red-text); }
 .inv-totals-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--bg); border-radius: var(--radius-xs); font-size: 13px; font-weight: 700; color: var(--text-muted); margin-top: 4px; }
 .inv-scan-err { border-color: var(--red-border) !important; background: var(--red-bg) !important; }
@@ -1317,7 +1320,7 @@ body {
 .audit-book-card.audit-book-soldout { border-color: var(--ink-15); background: #f8f6f2; opacity: .85; }
 .audit-book-card.audit-book-pending { background: #f0f4ff; border-color: rgba(14,93,216,.2); }
 .audit-book-card.audit-book-lined-pending { border-color: rgba(217,119,6,.35); background: rgba(254,243,199,.5); }
-.audit-line-badge { display:inline-block; padding:1px 7px; border-radius:4px; background:var(--design-blue,#1E5DD8); color:#fff; font-size:10px; font-weight:800; letter-spacing:.5px; margin-right:5px; vertical-align:middle; }
+.audit-line-badge { display:inline-flex; align-items:center; padding:3px 9px; border-radius:5px; background:var(--design-blue,#1E5DD8); color:#fff; font-size:11px; font-weight:900; letter-spacing:.6px; margin-right:6px; vertical-align:middle; box-shadow:0 1px 4px rgba(30,93,216,.35); }
 .audit-book-dot { width: 38px; height: 38px; border-radius: 10px; color: #fff; display: flex; align-items: center; justify-content: center; font-family: 'Space Grotesk', sans-serif; font-weight: 800; font-size: 13px; flex-shrink: 0; }
 .audit-book-body { flex: 1; min-width: 0; }
 .audit-book-hdr { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-bottom: 3px; }
@@ -1580,3 +1583,9 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
   animation: navBarIn .18s var(--ease-out-quart) both;
 }
 .nav-item { transition: background .15s var(--ease-out-quart), color .15s var(--ease-out-quart); }
+
+/* ── FLOATING JUMP NAV ─────────────────────────────────────────── */
+.float-jump-nav { position: fixed; right: 12px; bottom: 76px; z-index: 200; display: flex; flex-direction: column; gap: 5px; opacity: 0; pointer-events: none; transition: opacity .2s; }
+.float-jump-nav.fjn-visible { opacity: 1; pointer-events: auto; }
+.fjn-btn { width: 32px; height: 32px; border-radius: 50%; border: 1.5px solid var(--border); background: var(--surface); color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 6px rgba(0,0,0,.12); transition: background .12s, color .12s; }
+.fjn-btn:hover { background: var(--ink); color: var(--surface); border-color: var(--ink); }
