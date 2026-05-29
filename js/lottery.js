@@ -363,6 +363,12 @@ function _showAuditScanPanel() {
   const notesInp = document.getElementById('inv-notes-input');
   if (notesInp) notesInp.value = '';
 
+  // Show recovery button for all audit contexts
+  const fillWrap = document.getElementById('inv-fill-from-log-wrap');
+  if (fillWrap) fillWrap.style.display = '';
+  const fillStatus = document.getElementById('inv-fill-log-status');
+  if (fillStatus) fillStatus.textContent = '';
+
   document.getElementById('inv-book-list').innerHTML = '';
   _renderInvList();
   _updateInvProgress();
@@ -856,6 +862,52 @@ function _handleInvBarcode(raw) {
   if (scanInp) scanInp.focus();
 }
 
+async function fillAuditFromLog() {
+  if (!_dbCaps.hasPackEvents || !_invPacks.length) return;
+  const statusEl  = document.getElementById('inv-fill-log-status');
+  const windowSel = document.getElementById('inv-fill-log-window');
+  const minutes   = parseInt(windowSel?.value || '15', 10);
+
+  if (statusEl) statusEl.textContent = 'Looking up scan log…';
+
+  try {
+    const since   = new Date(Date.now() - minutes * 60 * 1000).toISOString();
+    const packIds = _invPacks.map(p => p.id).join(',');
+    const res = await sbFetch(
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_pack_events` +
+      `?select=pack_id,ticket_after,created_at` +
+      `&action=eq.audit_scan&pack_id=in.(${packIds})` +
+      `&created_at=gte.${encodeURIComponent(since)}` +
+      `&order=created_at.desc&limit=500`
+    );
+    const rows = await res.json();
+    if (!Array.isArray(rows) || !rows.length) {
+      if (statusEl) statusEl.textContent = `No scan events found in the last ${minutes} min.`;
+      return;
+    }
+
+    // Most recent scan per pack — skip already-staged sold-outs
+    let filled = 0;
+    const seen = new Set();
+    for (const ev of rows) {
+      if (seen.has(ev.pack_id) || ev.ticket_after == null) continue;
+      if (ev.pack_id in _invSoldOut) continue;
+      seen.add(ev.pack_id);
+      _invData[ev.pack_id] = ev.ticket_after;
+      filled++;
+    }
+
+    _renderInvList();
+    _updateInvProgress();
+    if (statusEl) statusEl.textContent = filled
+      ? `${filled} of ${_invPacks.length} books filled from the last ${minutes} min.`
+      : `No matching scans found in the last ${minutes} min.`;
+  } catch (err) {
+    if (statusEl) statusEl.textContent = 'Failed to load scan log.';
+    showError('Fill from log failed', err.message);
+  }
+}
+
 function _flashInvScanError(msg) {
   beepNotFound();
   const scanInp = document.getElementById('inv-scan-input');
@@ -1189,6 +1241,7 @@ async function _invCommitClose(type) {
     return;
   }
   _shiftOpInProgress = true;
+  try {
   const entries = [];
   let totalSold = 0, totalRev = 0;
   for (const p of _invPacks) {
@@ -1203,7 +1256,7 @@ async function _invCommitClose(type) {
     const revenue     = sold * price;
     totalSold += sold; totalRev += revenue;
     const stationLine = (_packInfoCache[p.id] || {}).stationLine ?? null;
-    entries.push({ pack_id: p.id, tickets_sold: sold, revenue, ticket_at_open: lastTicket, ticket_at_close: currentTick, ...(stationLine != null ? { station_line: stationLine } : {}) });
+    entries.push({ pack_id: p.id, tickets_sold: sold, revenue, ticket_at_open: lastTicket, ticket_at_close: currentTick, station_line: stationLine });
   }
 
   // Add any tickets sold on packs that were removed mid-shift (logged at removal time)
@@ -1300,7 +1353,9 @@ async function _invCommitClose(type) {
   updateDayShiftButtons();
   await Promise.all([loadLotteryStock(), loadShiftHistory()]);
   loadLotteryDbStats();
-  _shiftOpInProgress = false;
+  } finally {
+    _shiftOpInProgress = false;
+  }
 }
 
 // ===== DAY / SHIFT STATE =====
@@ -3892,7 +3947,7 @@ async function loadShiftHistory() {
         const fullSel =
           `id,day_id,opened_at,closed_at,status,shift_type,total_tickets_sold,total_revenue,notes,` +
           `lottery_shift_entries(pack_id,tickets_sold,revenue,ticket_at_open,ticket_at_close,station_line,` +
-            `lottery_packs(pack_number,game_number,lottery_games(game_name,price)))` +
+            `lottery_packs(pack_number,game_number,location,lottery_games(game_name,price)))` +
           eventsSelect;
         const sumSel =
           `id,day_id,opened_at,closed_at,status,shift_type,total_tickets_sold,total_revenue,notes`;
@@ -3951,7 +4006,7 @@ async function loadShiftHistory() {
     } else {
       const res = await sbFetch(
         `${CONFIG.supabaseUrl}/rest/v1/lottery_shifts` +
-        `?select=id,shift_type,closed_at,total_tickets_sold,total_revenue,notes,lottery_shift_entries(pack_id,tickets_sold,revenue,ticket_at_open,ticket_at_close,station_line,lottery_packs(pack_number,game_number,lottery_games(game_name,price)))` +
+        `?select=id,shift_type,closed_at,total_tickets_sold,total_revenue,notes,lottery_shift_entries(pack_id,tickets_sold,revenue,ticket_at_open,ticket_at_close,station_line,lottery_packs(pack_number,game_number,location,lottery_games(game_name,price)))` +
         `&order=closed_at.desc&limit=60${dateFilter.replace(/opened_at/g, 'closed_at')}`
       );
       const shifts = await res.json();
@@ -4009,7 +4064,7 @@ function _buildPackTicketRows(entries, events) {
     const id   = en.pack_id;
     if (!id) continue;
     const pack = en.lottery_packs || {};
-    if (!byPack.has(id)) byPack.set(id, { pack, openTick: null, closeTick: null, sold: 0, rev: 0, statusEvents: [] });
+    if (!byPack.has(id)) byPack.set(id, { pack, openTick: null, closeTick: null, sold: 0, rev: 0, statusEvents: [], stationLine: null, loc: null });
     const row = byPack.get(id);
     if (!row.pack.game_number && pack.game_number) row.pack = pack;
     // openTick: keep first seen (earliest shift = day start for that pack)
@@ -4018,6 +4073,9 @@ function _buildPackTicketRows(entries, events) {
     if (en.ticket_at_close != null) row.closeTick = en.ticket_at_close;
     row.sold += en.tickets_sold    || 0;
     row.rev  += parseFloat(en.revenue || 0);
+    // station_line and location — last entry wins (most recent shift's assignment)
+    if (en.station_line != null) row.stationLine = en.station_line;
+    if (!row.loc && pack.location) row.loc = pack.location;
   }
 
   for (const ev of (events || [])) {
@@ -4033,46 +4091,64 @@ function _buildPackTicketRows(entries, events) {
 
   if (!byPack.size) return '';
 
-  const sorted = [...byPack.values()].sort((a, b) => {
-    const ga = parseInt(a.pack.game_number || 0), gb = parseInt(b.pack.game_number || 0);
-    return ga !== gb ? ga - gb : parseInt(a.pack.pack_number || 0) - parseInt(b.pack.pack_number || 0);
-  });
+  const _BADGE_LABEL = { removed: 'Removed', returned_to_lottery: 'Returned', soldout: 'Sold Out', restored: 'Restored' };
 
-  return sorted.map(({ pack, openTick, closeTick, sold, rev, statusEvents }) => {
+  const _rowHtml = ({ pack, openTick, closeTick, sold, rev, statusEvents, stationLine }) => {
     const game    = pack.lottery_games || {};
     const name    = game.game_name || (pack.game_number ? `Game #${pack.game_number}` : '?');
     const packNum = pack.pack_number || '?';
     const price   = parseFloat(game.price || 0);
     const dotBg   = _priceColor(price).bg;
     const abbr    = String(pack.game_number || '').slice(-2).padStart(2, '0');
-
+    const lineTag = stationLine != null ? `<span class="audit-line-badge" style="font-size:9px;padding:1px 5px;margin-right:4px">L${stationLine}</span>` : '';
     const tickRange = (openTick != null && closeTick != null)
       ? `<span class="spt-range">#${openTick}<span class="spt-arrow">→</span>#${closeTick}</span>`
       : openTick != null ? `<span class="spt-range">from #${openTick}</span>`
       : closeTick != null ? `<span class="spt-range">to #${closeTick}</span>` : '';
-
-    const _BADGE_LABEL = { removed: 'Removed', returned_to_lottery: 'Returned', soldout: 'Sold Out', restored: 'Restored' };
     const badges = statusEvents.map(ev => {
       const tick  = ev.ticket_after ?? ev.ticket_before;
       const label = _BADGE_LABEL[ev.action] || ev.action;
       return `<span class="spt-badge spt-${ev.action.replace(/_/g,'-')}">${label}${tick != null ? ` #${tick}` : ''}</span>`;
     }).join('');
-
     return `<div class="shift-pack-tick-row">
       <div class="spt-dot" style="background:${dotBg}">${abbr}</div>
       <div class="spt-info">
-        <div class="spt-top">
-          <span class="spt-name">${name}</span>
-          <span class="spt-packnum">#${packNum}</span>
-          ${badges}
-        </div>
-        <div class="spt-bottom">
-          ${tickRange}
-          ${sold > 0 ? `<span class="spt-sold">${sold} sold</span>` : ''}
-          ${rev  > 0 ? `<span class="spt-rev">$${rev.toFixed(2)}</span>` : ''}
-        </div>
+        <div class="spt-top">${lineTag}<span class="spt-name">${name}</span><span class="spt-packnum">#${packNum}</span>${badges}</div>
+        ${tickRange ? `<div class="spt-bottom">${tickRange}</div>` : ''}
+      </div>
+      <div class="spt-stat">
+        ${sold > 0 ? `<span class="spt-stat-sold">${sold} sold</span>` : '<span class="spt-stat-sold" style="color:var(--text-hint)">0</span>'}
+        ${rev  > 0 ? `<span class="spt-stat-rev">$${rev.toFixed(2)}</span>` : ''}
       </div>
     </div>`;
+  };
+
+  // Group by station location, sort stations in configured order
+  const groups = {};
+  for (const row of byPack.values()) {
+    const loc = row.loc || 'Unknown';
+    if (!groups[loc]) groups[loc] = [];
+    groups[loc].push(row);
+  }
+  const stationOrder = _getStations();
+  const locKeys = Object.keys(groups).sort((a, b) => {
+    const ai = stationOrder.indexOf(a), bi = stationOrder.indexOf(b);
+    if (ai === -1 && bi === -1) return a.localeCompare(b);
+    if (ai === -1) return 1; if (bi === -1) return -1;
+    return ai - bi;
+  });
+
+  return locKeys.map(loc => {
+    const rows = groups[loc].sort((a, b) => {
+      if (a.stationLine == null && b.stationLine == null) return 0;
+      if (a.stationLine == null) return 1; if (b.stationLine == null) return -1;
+      return a.stationLine - b.stationLine;
+    });
+    const multiStation = locKeys.length > 1;
+    const header = multiStation
+      ? `<div class="shift-station-hdr" style="margin-bottom:5px">${loc}</div>`
+      : '';
+    return `<div class="shift-station-group">${header}<div class="shift-station-entries">${rows.map(_rowHtml).join('')}</div></div>`;
   }).join('');
 }
 
@@ -4084,6 +4160,37 @@ function _sortShiftEntries(entries) {
     if (b.station_line == null) return -1;
     return a.station_line - b.station_line;
   });
+}
+
+function _renderShiftEntriesGrouped(entries) {
+  if (!entries.length) return '';
+
+  // Group by location
+  const groups = {};
+  for (const en of entries) {
+    const loc = en.lottery_packs?.location || 'Unknown';
+    if (!groups[loc]) groups[loc] = [];
+    groups[loc].push(en);
+  }
+
+  // Sort stations in configured order, unknowns last
+  const stationOrder = _getStations();
+  const locKeys = Object.keys(groups).sort((a, b) => {
+    const ai = stationOrder.indexOf(a), bi = stationOrder.indexOf(b);
+    if (ai === -1 && bi === -1) return a.localeCompare(b);
+    if (ai === -1) return 1;
+    if (bi === -1) return -1;
+    return ai - bi;
+  });
+
+  return locKeys.map(loc => {
+    const sorted = _sortShiftEntries(groups[loc]);
+    const cards  = sorted.map(_renderShiftEntryCard).join('');
+    return `<div class="shift-station-group">
+      <div class="shift-station-hdr">${loc}</div>
+      <div class="shift-station-entries">${cards}</div>
+    </div>`;
+  }).join('');
 }
 
 function _renderShiftEntryCard(en) {
@@ -4214,7 +4321,7 @@ async function _loadDayDetail(dayId, groupId) {
     const shiftSel =
       `id,day_id,opened_at,closed_at,status,shift_type,total_tickets_sold,total_revenue,notes,` +
       `lottery_shift_entries(pack_id,tickets_sold,revenue,ticket_at_open,ticket_at_close,station_line,` +
-        `lottery_packs(pack_number,game_number,lottery_games(game_name,price)))` +
+        `lottery_packs(pack_number,game_number,location,lottery_games(game_name,price)))` +
       evSel;
     const r = await sbFetch(
       `${CONFIG.supabaseUrl}/rest/v1/lottery_shifts?day_id=eq.${dayId}&select=${shiftSel}&order=opened_at.asc&limit=100`
@@ -4630,8 +4737,7 @@ function renderShiftHistory(shifts) {
     if (s) {
       const dateStr = new Date(s.closed_at).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
       const timeStr = new Date(s.closed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const entries = _sortShiftEntries(s.lottery_shift_entries || []);
-      const entriesHtml = entries.map(_renderShiftEntryCard).join('');
+      const entriesHtml = _renderShiftEntriesGrouped(s.lottery_shift_entries || []);
       html += `
         <div class="last-close-card">
           <div class="last-close-label">${label}</div>
@@ -4665,7 +4771,7 @@ function renderShiftHistory(shifts) {
       const typeCss     = s.shift_type === 'day' ? 'shift-type-day' : 'shift-type-shift';
       const typeLabel   = s.shift_type === 'day' ? 'Day Close' : 'Shift';
       const timeStr     = new Date(s.closed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const entriesHtml = _sortShiftEntries(s.lottery_shift_entries || []).map(_renderShiftEntryCard).join('');
+      const entriesHtml = _renderShiftEntriesGrouped(s.lottery_shift_entries || []);
       shiftsHtml += `
         <div class="shift-history-item">
           <div class="shift-history-hdr">

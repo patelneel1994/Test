@@ -934,6 +934,26 @@
           <span class="shift-total-rev" id="inv-total-revenue">$0.00</span>
         </div>
 
+        <!-- Admin recovery: fill from scan log -->
+        <div id="inv-fill-from-log-wrap" style="display:none;margin-top:10px">
+          <div style="display:flex;gap:6px;align-items:center">
+            <select id="inv-fill-log-window" style="flex:1;padding:8px 10px;border-radius:7px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.07);color:var(--cream);font-size:12px">
+              <option value="15">Last 15 min</option>
+              <option value="30">Last 30 min</option>
+              <option value="60">Last 1 hour</option>
+              <option value="180">Last 3 hours</option>
+              <option value="480">Last 8 hours</option>
+              <option value="1440">Today</option>
+            </select>
+            <button class="modal-close" style="flex:1;padding:9px;font-size:12px;background:rgba(255,255,255,.07);color:var(--cream);border-color:rgba(255,255,255,.2)"
+              onmousedown="requireAdmin(()=>fillAuditFromLog());event.preventDefault()"
+              ontouchstart="requireAdmin(()=>fillAuditFromLog());event.preventDefault()">
+              ↺ Fill from log
+            </button>
+          </div>
+          <div id="inv-fill-log-status" style="font-size:11px;color:rgba(246,244,239,.5);margin-top:5px;text-align:center"></div>
+        </div>
+
         <!-- Notes -->
         <textarea class="modal-input" id="inv-notes-input" rows="2"
           placeholder="Notes (optional) — discrepancy explained, manager on duty…"
@@ -942,7 +962,9 @@
         <!-- Buttons -->
         <div style="display:flex;gap:8px;margin-top:12px">
           <button class="modal-close" style="flex:1;margin:0;padding:11px;background:rgba(255,255,255,.08);color:var(--cream);border-color:rgba(255,255,255,.15)" onclick="closeInventoryModal()">Cancel</button>
-          <button class="modal-close" id="inv-skip-btn" style="flex:1;margin:0;padding:11px;display:none;background:rgba(255,255,255,.08);color:var(--cream);border-color:rgba(255,255,255,.15)" onclick="skipInventory()">Skip</button>
+          <button class="modal-close" id="inv-skip-btn" style="flex:1;margin:0;padding:11px;display:none;background:rgba(255,255,255,.08);color:var(--cream);border-color:rgba(255,255,255,.15)"
+            onmousedown="requireAdmin(()=>skipInventory());event.preventDefault()"
+            ontouchstart="requireAdmin(()=>skipInventory());event.preventDefault()">Skip</button>
           <button class="modal-add-btn" id="inv-confirm-btn" style="flex:2;margin:0"
             onmousedown="confirmInventory(event)" ontouchstart="confirmInventory(event)">Confirm</button>
         </div>
@@ -1058,12 +1080,17 @@
   <div class="modal">
     <div class="modal-handle"></div>
     <div class="modal-title">Change Shift</div>
-    <p style="font-size:13px;color:var(--text-muted);margin:0 0 18px">Audit inventory before changing shift?</p>
+    <p style="font-size:13px;color:var(--text-muted);margin:0 0 14px">Audit inventory before changing shift?</p>
     <div style="display:flex;flex-direction:column;gap:8px">
       <button class="modal-add-btn" style="margin:0"
         onmousedown="doAuditShiftChange(event)" ontouchstart="doAuditShiftChange(event)">Audit Inventory</button>
-      <button class="modal-add-btn" style="margin:0;background:var(--surface);color:var(--text-main);border-color:var(--border)"
-        onmousedown="doSkipShiftChange(event)" ontouchstart="doSkipShiftChange(event)">Skip &amp; Change Shift</button>
+      <div style="background:var(--amber-bg);border:1px solid var(--amber-border);border-radius:8px;padding:9px 12px;font-size:12px;line-height:1.55;color:var(--ink)">
+        <strong>⚠ Skipping closes the current shift without scanning.</strong><br>
+        Ticket counts will not be recorded for this shift. This creates a gap in the audit trail and cannot be undone. Admin required.
+      </div>
+      <button class="modal-add-btn" style="margin:0;background:var(--surface);color:var(--text-muted);border-color:var(--border);font-size:12px"
+        onmousedown="requireAdmin(()=>doSkipShiftChange(event));event.preventDefault()"
+        ontouchstart="requireAdmin(()=>doSkipShiftChange(event));event.preventDefault()">Skip &amp; Change Shift (Admin)</button>
     </div>
     <button class="modal-close" style="margin-top:10px" onclick="closeShiftAuditModal()">Cancel</button>
   </div>

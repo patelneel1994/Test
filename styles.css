@@ -821,7 +821,7 @@ body {
 .shift-pack-tick-list { display: flex; flex-direction: column; gap: 4px; }
 .day-tick-summary     { background: var(--ink-5); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }
 .day-tick-label       { margin-bottom: 4px !important; }
-.shift-pack-tick-row  { display: grid; grid-template-columns: 26px 1fr; gap: 8px; align-items: flex-start; padding: 3px 2px; }
+.shift-pack-tick-row  { display: grid; grid-template-columns: 26px 1fr auto; gap: 8px; align-items: center; padding: 5px 2px; }
 .spt-dot  { width: 26px; height: 26px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-family: 'Space Grotesk', sans-serif; font-weight: 800; font-size: 11px; color: #fff; flex-shrink: 0; }
 .spt-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .spt-top  { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
@@ -832,6 +832,9 @@ body {
 .spt-arrow  { margin: 0 2px; color: var(--text-hint); }
 .spt-sold   { font-size: 11px; font-weight: 700; color: var(--ink); }
 .spt-rev    { font-size: 11px; font-weight: 700; color: var(--green-text); }
+.spt-stat      { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; flex-shrink: 0; padding-left: 8px; }
+.spt-stat-sold { font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: var(--ink); white-space: nowrap; }
+.spt-stat-rev  { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; color: var(--green-text); white-space: nowrap; }
 .spt-badge  { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 1px 5px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
 .spt-removed           { background: #fef2f2; color: #dc2626; border-color: #fca5a5; }
 .spt-returned-to-lottery { background: var(--amber-bg); color: var(--amber-text); border-color: var(--amber-border); }
@@ -1048,6 +1051,10 @@ body {
 .shift-empty-badge  { font-family: 'Space Grotesk', sans-serif; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; background: var(--ink-10); color: var(--text-hint); border-radius: 999px; padding: 1px 6px; }
 /* ── Audit Entry Cards ──────────────────────────────────────────────────── */
 .shift-history-entries { display: flex; flex-direction: column; gap: 6px; }
+.shift-station-group { margin-top: 8px; }
+.shift-station-hdr { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-hint); padding: 4px 0 5px; border-bottom: 1px solid var(--border); margin-bottom: 6px; }
+.shift-station-entries { display: grid; grid-template-columns: 1fr; gap: 6px; }
+@media (min-width: 600px) { .shift-station-entries { grid-template-columns: repeat(2, 1fr); } }
 /* legacy selectors kept for backward compat */
 .shift-history-entry { display: none; }
 .shift-history-entry-game   { display: none; }
