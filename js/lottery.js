@@ -73,7 +73,7 @@ function _isStation(loc) { return _getStations().includes(loc); }
 let _lotterySession      = [];
 let _currentLotteryParse = null;
 let _lotteryEventsReady  = false;
-let _stockViewMode       = 'game';
+let _stockViewMode       = 'location';
 let _cachedStockRows     = null;
 let _shiftCloseEntries   = [];
 let _pendingActivation   = null;
