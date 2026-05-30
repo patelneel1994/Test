@@ -3655,8 +3655,8 @@ function renderLotteryStockByLocation(rows) {
         <div class="stk-packs">
           ${packs.filter(p => p.status !== 'soldout').sort((a, b) => {
             if (a.station_line == null && b.station_line == null) return 0;
-            if (a.station_line == null) return 1;
-            if (b.station_line == null) return -1;
+            if (a.station_line == null) return -1;
+            if (b.station_line == null) return 1;
             return a.station_line - b.station_line;
           }).map(p => renderPackRowByLoc(p)).join('')}
           ${soldOut ? `<div class="lottery-soldout-note">${soldOut} sold out</div>` : ''}
