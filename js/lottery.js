@@ -628,6 +628,8 @@ function _renderInvList() {
         const finalTicket = _invSoldOut[p.id];
         const sold = _soldTickets(finalTicket, baseline, dir) + 1;
         const pct  = 100;
+        const price = parseFloat(game.price || 0);
+        const rev   = sold * price;
         html += `
           <div class="audit-book-card audit-book-soldout" id="inv-row-${p.id}">
             <div class="audit-book-dot" style="background:${dotColor}">${String(p.game_number).slice(-2)}</div>
@@ -638,7 +640,7 @@ function _renderInvList() {
                 ${_dirPill(dir)}
                 <span class="audit-badge audit-badge-soldout">Sold Out</span>
               </div>
-              <div class="audit-book-meta">Last #${baseline} → Final #${finalTicket} · <strong>${sold}</strong> tickets sold</div>
+              <div class="audit-book-meta">Last #${baseline} → Final #${finalTicket} · <strong>${sold}</strong> sold${price > 0 ? ` · <strong>$${rev.toFixed(2)}</strong>` : ''}</div>
               <div class="audit-book-bar-wrap"><div class="audit-book-bar" style="width:${pct}%;background:${dotColor}"></div></div>
             </div>
             <div class="audit-book-actions">
@@ -2306,7 +2308,8 @@ async function confirmSoldOut(e) {
   const btn = document.getElementById('soldout-confirm-btn');
   if (btn) btn.disabled = true;
   try {
-    const prevTicket = (_packInfoCache[_pendingSoldOutId] || {}).startTicket;
+    const _soc = _packInfoCache[_pendingSoldOutId] || {};
+    const prevTicket = _soc.lastShiftTicket ?? _soc.startTicket ?? null;
     await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(_pendingSoldOutId)}`,
       { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
         body: JSON.stringify({ status: 'soldout', start_ticket: finalTicket, station_line: null }) });
