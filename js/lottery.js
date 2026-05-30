@@ -595,11 +595,11 @@ function _renderInvList() {
   for (const loc of locOrder) {
     const packs = byLoc[loc];
     if (!packs || !packs.length) continue;
-    // Sort by station_line ascending — nulls (unassigned) appear after numbered slots
+    // Sort by station_line ascending — nulls (unassigned) appear before numbered slots
     packs.sort((a, b) => {
       if (a.station_line == null && b.station_line == null) return 0;
-      if (a.station_line == null) return 1;
-      if (b.station_line == null) return -1;
+      if (a.station_line == null) return -1;
+      if (b.station_line == null) return 1;
       return a.station_line - b.station_line;
     });
     html += `<div class="audit-loc-group"><div class="audit-loc-label">${loc}</div>`;
@@ -2309,8 +2309,9 @@ async function confirmSoldOut(e) {
     const prevTicket = (_packInfoCache[_pendingSoldOutId] || {}).startTicket;
     await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(_pendingSoldOutId)}`,
       { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ status: 'soldout', start_ticket: finalTicket }) });
+        body: JSON.stringify({ status: 'soldout', start_ticket: finalTicket, station_line: null }) });
     _logPackEvent(_pendingSoldOutId, 'soldout', { ticket_before: prevTicket ?? null, ticket_after: finalTicket });
+    delete _packInfoCache[_pendingSoldOutId];
     closeSoldOutModal();
     await loadLotteryStock(); loadLotteryDbStats();
     await _refreshInvAfterLoad(); loadReceiveQueue();
@@ -2837,6 +2838,7 @@ function _packActionHtml(p) {
     </div>`;
   }
   if (p.status === 'activated') {
+    if (_dbCaps.hasFullDayTracking && !_currentDay && !_currentShift) return '';
     return `<button class="pack-act-btn act-soldout"
       onmousedown="openSoldOutModal('${p.id}',${p.start_ticket},event)"
       ontouchstart="openSoldOutModal('${p.id}',${p.start_ticket},event)">Sold Out</button>`;
