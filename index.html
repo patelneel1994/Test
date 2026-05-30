@@ -1173,14 +1173,14 @@
 <!-- ADMIN AUTH MODAL -->
 <div class="modal-overlay modal-overlay-center" id="slot-picker-modal">
   <div class="modal" style="max-width:340px">
-    <div class="modal-handle"></div>
     <div class="modal-title" id="slot-picker-title">Assign slot</div>
+    <div class="slot-picker-book" id="slot-picker-book"></div>
     <div id="slot-picker-grid"></div>
     <div style="display:flex;gap:8px;margin-top:14px">
       <button class="modal-close" style="flex:1;margin:0;padding:11px"
         onclick="closeSlotPicker()">Cancel</button>
-      <button class="modal-close" id="slot-picker-clear"
-        style="flex:1;margin:0;padding:11px;color:var(--red-text)"
+      <button class="modal-close slot-picker-clear-btn" id="slot-picker-clear"
+        style="flex:1;margin:0;padding:11px"
         onclick="clearPackSlot(_pendingSlotPackId)">Clear slot</button>
     </div>
   </div>

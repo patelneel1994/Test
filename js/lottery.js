@@ -1173,6 +1173,11 @@ function skipInventory() {
 }
 
 async function _invCommitOpenDay() {
+  // Snapshot globals immediately — closeInventoryModal() can clear them during async awaits.
+  const _packs     = [..._invPacks];
+  const _scanData  = { ..._invData };
+  const _soldOuts  = { ..._invSoldOut };
+  const _packCache = { ..._packInfoCache };
   const openNotes = (document.getElementById('inv-notes-input')?.value || '').trim() || null;
   // Create day
   const dayRes = await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_days`,
@@ -1183,20 +1188,20 @@ async function _invCommitOpenDay() {
   _currentShift = null;
 
   // Log discrepancies (scanned ticket ≠ last close baseline) before updating baselines
-  for (const p of _invPacks) {
-    if (!(p.id in _invData) || (p.id in _invSoldOut)) continue;
+  for (const p of _packs) {
+    if (!(p.id in _scanData) || (p.id in _soldOuts)) continue;
     const baseline = p.last_shift_ticket != null ? p.last_shift_ticket : p.start_ticket;
-    if (baseline != null && _invData[p.id] !== baseline) {
+    if (baseline != null && _scanData[p.id] !== baseline) {
       _logPackEvent(p.id, 'discrepancy', {
         ticket_before: baseline,
-        ticket_after:  _invData[p.id],
-        notes: `open-day mismatch: expected #${baseline}, scanned #${_invData[p.id]}`,
+        ticket_after:  _scanData[p.id],
+        notes: `open-day mismatch: expected #${baseline}, scanned #${_scanData[p.id]}`,
       });
     }
   }
 
   // Update baselines from inventory scan (skip staged sold-outs — handled separately below)
-  const nonSoldOutEntries = Object.entries(_invData).filter(([id]) => !(id in _invSoldOut));
+  const nonSoldOutEntries = Object.entries(_scanData).filter(([id]) => !(id in _soldOuts));
   if (nonSoldOutEntries.length) {
     await Promise.all(nonSoldOutEntries.map(([id, ticket]) =>
       sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(id)}`,
@@ -1205,10 +1210,10 @@ async function _invCommitOpenDay() {
   }
 
   // Commit staged sold-outs
-  if (Object.keys(_invSoldOut).length) {
-    await Promise.all(Object.entries(_invSoldOut).map(([id, finalTicket]) => {
+  if (Object.keys(_soldOuts).length) {
+    await Promise.all(Object.entries(_soldOuts).map(([id, finalTicket]) => {
       _logPackEvent(id, 'soldout', {
-        ticket_before: (_packInfoCache[id] || {}).lastShiftTicket ?? (_packInfoCache[id] || {}).startTicket ?? null,
+        ticket_before: (_packCache[id] || {}).lastShiftTicket ?? (_packCache[id] || {}).startTicket ?? null,
         ticket_after: finalTicket, context: 'open-day',
       });
       return sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(id)}`,
@@ -1241,27 +1246,34 @@ async function _invCommitClose(type) {
     return;
   }
   _shiftOpInProgress = true;
+  // Snapshot globals immediately — closeInventoryModal() can clear them during async awaits,
+  // which would cause the pack-position PATCHes to silently iterate over an empty array.
+  const _packs      = [..._invPacks];
+  const _scanData   = { ..._invData };
+  const _soldOuts   = { ..._invSoldOut };
+  const _packCache  = { ..._packInfoCache };
+  const _ctx        = _invContext;
   try {
   const entries = [];
   let totalSold = 0, totalRev = 0;
-  for (const p of _invPacks) {
-    const currentTick = _invData[p.id] != null ? _invData[p.id] : p.start_ticket;
+  for (const p of _packs) {
+    const currentTick = _scanData[p.id] != null ? _scanData[p.id] : p.start_ticket;
     const lastTicket  = p.last_shift_ticket != null ? p.last_shift_ticket : p.start_ticket;
     const price       = parseFloat(p.lottery_games?.price || 0);
     const dir         = (p.loading_direction || 'asc').toLowerCase();
     // Sold-out via button: finalTicket is the last real ticket (#tpp-1 or #0),
     // so add 1 to include that final ticket in the sold count.
     const baseSold    = _soldTickets(currentTick, lastTicket, dir);
-    const sold        = (p.id in _invSoldOut) ? baseSold + 1 : baseSold;
+    const sold        = (p.id in _soldOuts) ? baseSold + 1 : baseSold;
     const revenue     = sold * price;
     totalSold += sold; totalRev += revenue;
-    const stationLine = (_packInfoCache[p.id] || {}).stationLine ?? null;
+    const stationLine = (_packCache[p.id] || {}).stationLine ?? null;
     entries.push({ pack_id: p.id, tickets_sold: sold, revenue, ticket_at_open: lastTicket, ticket_at_close: currentTick, station_line: stationLine });
   }
 
   // Add any tickets sold on packs that were removed mid-shift (logged at removal time)
   if (_dbCaps.hasFullDayTracking && _currentShift) {
-    const activeIds  = new Set(_invPacks.map(p => p.id));
+    const activeIds  = new Set(_packs.map(p => p.id));
     const existRes   = await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_shift_entries?shift_id=eq.${_currentShift.id}&select=pack_id,tickets_sold,revenue`);
     const existEntries = await existRes.json();
     for (const en of (Array.isArray(existEntries) ? existEntries : [])) {
@@ -1304,15 +1316,15 @@ async function _invCommitClose(type) {
   }
 
   // Log and commit sold-out packs, update ticket position for all others
-  for (const [id, finalTicket] of Object.entries(_invSoldOut)) {
+  for (const [id, finalTicket] of Object.entries(_soldOuts)) {
     _logPackEvent(id, 'soldout', {
-      ticket_before: (_packInfoCache[id] || {}).lastShiftTicket ?? (_packInfoCache[id] || {}).startTicket ?? null,
-      ticket_after: finalTicket, context: _invContext,
+      ticket_before: (_packCache[id] || {}).lastShiftTicket ?? (_packCache[id] || {}).startTicket ?? null,
+      ticket_after: finalTicket, context: _ctx,
     });
   }
-  await Promise.all(_invPacks.map(p => {
-    const tick      = _invData[p.id] != null ? _invData[p.id] : p.start_ticket;
-    const isSoldOut = p.id in _invSoldOut;
+  await Promise.all(_packs.map(p => {
+    const tick      = _scanData[p.id] != null ? _scanData[p.id] : p.start_ticket;
+    const isSoldOut = p.id in _soldOuts;
     const extra     = isSoldOut ? { status: 'soldout' } : {};
     return sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(p.id)}`,
       { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
@@ -2909,24 +2921,26 @@ function renderPackRowByLoc(p) {
         ? Math.round(((tpp - 1 - p.start_ticket) / (tpp - 1 || 1)) * 100)
         : Math.round((p.start_ticket / tpp) * 100))
     : 0;
-  // Slot badge — only for activated packs at a station
-  const slotBadge = (isActive && _isStation(p.location))
+  // Slot button — prominent left column for activated station books
+  const slotBtn = (isActive && _isStation(p.location))
     ? (p.station_line != null
-        ? `<button class="pack-line-badge" onclick="openSlotPicker('${p.id}','${p.location}')" title="Change slot">L${p.station_line}</button>`
-        : `<button class="pack-line-add" onclick="openSlotPicker('${p.id}','${p.location}')" title="Assign slot">+ slot</button>`)
+        ? `<button class="pack-line-btn" onclick="openSlotPicker('${p.id}','${p.location}')" title="Line ${p.station_line} — tap to change">${p.station_line}</button>`
+        : `<button class="pack-line-btn pack-line-unset" onclick="openSlotPicker('${p.id}','${p.location}')" title="Assign line slot">+</button>`)
     : '';
   return `
     <div class="lottery-stock-book">
-      <div class="lottery-book-info">
-        <span class="lottery-book-label">#${p.pack_number}</span>
-        <span class="item-badge lottery-price-badge" style="font-size:10px">$${price.toFixed(2)}</span>
-        <span class="pack-status-pill ${st.css}">${st.label}</span>
-        ${dir ? _dirPill(dir) : ''}
-        ${p.status !== 'received' ? _ticketAt(p.start_ticket, p.status) : ''}
-        <span style="font-size:11px;color:var(--text-muted)">${gName}</span>
-        ${slotBadge}
+      ${slotBtn}
+      <div class="lottery-book-body">
+        <div class="lottery-book-info">
+          <span class="lottery-book-label">#${p.pack_number}</span>
+          <span class="item-badge lottery-price-badge" style="font-size:10px">$${price.toFixed(2)}</span>
+          <span class="pack-status-pill ${st.css}">${st.label}</span>
+          ${dir ? _dirPill(dir) : ''}
+          ${p.status !== 'received' ? _ticketAt(p.start_ticket, p.status) : ''}
+          <span style="font-size:11px;color:var(--text-muted)">${gName}</span>
+        </div>
+        ${isActive && tpp > 0 ? `<div class="lottery-book-bar-wrap"><div class="lottery-book-bar" style="width:${pct}%"></div></div>` : ''}
       </div>
-      ${isActive && tpp > 0 ? `<div class="lottery-book-bar-wrap"><div class="lottery-book-bar" style="width:${pct}%"></div></div>` : ''}
       <div class="lottery-book-actions">${_packActionHtml(p)}${_packEditBtn(p)}${_packRemoveBtn(p)}</div>
     </div>`;
 }
@@ -2952,7 +2966,9 @@ function openSlotPicker(packId, location) {
     }
   }
 
-  document.getElementById('slot-picker-title').textContent = `Assign slot — ${location}`;
+  document.getElementById('slot-picker-title').textContent = `${location} — assign line`;
+  const bookEl = document.getElementById('slot-picker-book');
+  if (bookEl) bookEl.textContent = info.gameName ? `${info.gameName} · #${info.packNumber}` : '';
 
   const gridEl = document.getElementById('slot-picker-grid');
   if (slotCount) {
@@ -2966,7 +2982,10 @@ function openSlotPicker(packId, location) {
       const title = takenBy
         ? `Taken by ${takenBy.gameName} #${takenBy.packNumber}`
         : isCurrent ? 'Currently assigned' : `Assign to Line ${i}`;
-      html += `<button class="${cls}" title="${title}" onclick="confirmSlotAssignment(${i})">${i}</button>`;
+      const takenLbl = takenBy
+        ? `<span class="slot-btn-taken-lbl">#${String(takenBy.packNumber).slice(-3)}</span>`
+        : '';
+      html += `<button class="${cls}" title="${title}" onclick="confirmSlotAssignment(${i})"><span>${i}</span>${takenLbl}</button>`;
     }
     html += '</div>';
     gridEl.innerHTML = html;
@@ -3632,7 +3651,12 @@ function renderLotteryStockByLocation(rows) {
         </div>
         <div class="cat-stock">${_pills(activated, received, soldOut) || '<span class="cat-stock-empty">Empty</span>'}</div>
         <div class="stk-packs">
-          ${packs.filter(p => p.status !== 'soldout').map(p => renderPackRowByLoc(p)).join('')}
+          ${packs.filter(p => p.status !== 'soldout').sort((a, b) => {
+            if (a.station_line == null && b.station_line == null) return 0;
+            if (a.station_line == null) return 1;
+            if (b.station_line == null) return -1;
+            return a.station_line - b.station_line;
+          }).map(p => renderPackRowByLoc(p)).join('')}
           ${soldOut ? `<div class="lottery-soldout-note">${soldOut} sold out</div>` : ''}
         </div>
       </div>`;
@@ -4057,6 +4081,29 @@ function _packEventDetail(ev) {
 // Returns inner HTML rows for a .shift-pack-tick-list, or '' if nothing to show.
 const _PACK_STATUS_ACTIONS = new Set(['removed', 'returned_to_lottery', 'soldout', 'restored']);
 
+function _priceBreakdownHtml(rows, parentLevel = false, label = '') {
+  const tiers = {};
+  for (const row of rows) {
+    const price = parseFloat(row.pack?.lottery_games?.price || 0);
+    if (!tiers[price]) tiers[price] = { sold: 0, rev: 0 };
+    tiers[price].sold += row.sold;
+    tiers[price].rev  += row.rev;
+  }
+  const sorted = Object.keys(tiers).map(Number).sort((a, b) => a - b).filter(p => tiers[p].sold > 0);
+  if (!sorted.length) return '';
+  const totalSold = sorted.reduce((s, p) => s + tiers[p].sold, 0);
+  const totalRev  = sorted.reduce((s, p) => s + tiers[p].rev,  0);
+  const chips = sorted.map(price => {
+    const { bg } = _priceColor(price);
+    const t = tiers[price];
+    return `<span class="pb-chip" style="background:${bg}">$${price} · ${t.sold} · $${t.rev.toFixed(2)}</span>`;
+  }).join('');
+  const labelHtml = label ? `<span class="pb-label">${label}</span>` : '';
+  const total = `<span class="pb-chip-total">${totalSold} · $${totalRev.toFixed(2)}</span>`;
+  const cls = parentLevel ? 'price-breakdown-bar-parent' : 'price-breakdown-bar';
+  return `<div class="${cls}">${labelHtml}${chips}${total}</div>`;
+}
+
 function _buildPackTicketRows(entries, events) {
   const byPack = new Map(); // pack_id → { pack, openTick, closeTick, sold, rev, statusEvents[] }
 
@@ -4093,18 +4140,20 @@ function _buildPackTicketRows(entries, events) {
 
   const _BADGE_LABEL = { removed: 'Removed', returned_to_lottery: 'Returned', soldout: 'Sold Out', restored: 'Restored' };
 
-  const _rowHtml = ({ pack, openTick, closeTick, sold, rev, statusEvents, stationLine }) => {
+  const _rowHtml = ({ pack, openTick, closeTick, sold, rev, statusEvents, stationLine, loc }) => {
     const game    = pack.lottery_games || {};
     const name    = game.game_name || (pack.game_number ? `Game #${pack.game_number}` : '?');
     const packNum = pack.pack_number || '?';
     const price   = parseFloat(game.price || 0);
     const dotBg   = _priceColor(price).bg;
     const abbr    = String(pack.game_number || '').slice(-2).padStart(2, '0');
-    const lineTag = stationLine != null ? `<span class="audit-line-badge" style="font-size:9px;padding:1px 5px;margin-right:4px">L${stationLine}</span>` : '';
+    const lineTag = _isStation(loc)
+      ? (stationLine != null ? `<span class="line-num-badge">${stationLine}</span>` : `<span class="line-num-empty"></span>`)
+      : '';
     const tickRange = (openTick != null && closeTick != null)
-      ? `<span class="spt-range">#${openTick}<span class="spt-arrow">→</span>#${closeTick}</span>`
-      : openTick != null ? `<span class="spt-range">from #${openTick}</span>`
-      : closeTick != null ? `<span class="spt-range">to #${closeTick}</span>` : '';
+      ? `<span class="spt-range"><span class="spt-tick">#${openTick}</span><span class="spt-arrow">→</span><span class="spt-tick">#${closeTick}</span></span>`
+      : openTick != null ? `<span class="spt-range"><span class="spt-tick">#${openTick}</span></span>`
+      : closeTick != null ? `<span class="spt-range"><span class="spt-tick">#${closeTick}</span></span>` : '';
     const badges = statusEvents.map(ev => {
       const tick  = ev.ticket_after ?? ev.ticket_before;
       const label = _BADGE_LABEL[ev.action] || ev.action;
@@ -4117,8 +4166,8 @@ function _buildPackTicketRows(entries, events) {
         ${tickRange ? `<div class="spt-bottom">${tickRange}</div>` : ''}
       </div>
       <div class="spt-stat">
-        ${sold > 0 ? `<span class="spt-stat-sold">${sold} sold</span>` : '<span class="spt-stat-sold" style="color:var(--text-hint)">0</span>'}
-        ${rev  > 0 ? `<span class="spt-stat-rev">$${rev.toFixed(2)}</span>` : ''}
+        <span class="spt-stat-rev" ${rev === 0 ? 'style="color:var(--text-hint)"' : ''}>$${rev.toFixed(2)}</span>
+        <span class="spt-stat-sold">${sold} sold</span>
       </div>
     </div>`;
   };
@@ -4138,18 +4187,27 @@ function _buildPackTicketRows(entries, events) {
     return ai - bi;
   });
 
-  return locKeys.map(loc => {
+  const allRows = [];
+  const stationHtml = locKeys.map(loc => {
     const rows = groups[loc].sort((a, b) => {
       if (a.stationLine == null && b.stationLine == null) return 0;
       if (a.stationLine == null) return 1; if (b.stationLine == null) return -1;
       return a.stationLine - b.stationLine;
     });
+    // Skip "Unknown" groups that have no sold tickets — they're locationless noise
+    if (loc === 'Unknown' && rows.every(r => r.sold === 0)) return '';
+    allRows.push(...rows);
     const multiStation = locKeys.length > 1;
     const header = multiStation
       ? `<div class="shift-station-hdr" style="margin-bottom:5px">${loc}</div>`
       : '';
-    return `<div class="shift-station-group">${header}<div class="shift-station-entries">${rows.map(_rowHtml).join('')}</div></div>`;
+    const stationBreakdown = _priceBreakdownHtml(rows, false);
+    return `<div class="shift-station-group">${header}<div class="shift-station-entries">${rows.map(_rowHtml).join('')}</div>${stationBreakdown}</div>`;
   }).join('');
+
+  const parentLabel = locKeys.filter(l => !(l === 'Unknown' && groups[l].every(r => r.sold === 0))).length > 1 ? 'All Stations' : '';
+  const parentBreakdown = _priceBreakdownHtml(allRows, true, parentLabel);
+  return stationHtml + parentBreakdown;
 }
 
 // ── Audit entry card renderer (shared across all shift/history views) ──────
@@ -4204,8 +4262,9 @@ function _renderShiftEntryCard(en) {
   const isSuspect = sold === 0 && en.ticket_at_open != null;
   const tickRange = (en.ticket_at_open != null && en.ticket_at_close != null)
     ? `<span class="aec-range">#${en.ticket_at_open}<span class="aec-arrow">→</span>#${en.ticket_at_close}</span>` : '';
-  const lineBadge = en.station_line != null
-    ? `<span class="audit-line-badge" style="font-size:9px;padding:1px 5px">L${en.station_line}</span> `
+  const loc = en.lottery_packs?.location || '';
+  const lineBadge = _isStation(loc)
+    ? (en.station_line != null ? `<span class="line-num-badge">${en.station_line}</span>` : `<span class="line-num-empty"></span>`)
     : '';
   return `<div class="audit-entry-card${isSuspect ? ' aec-flag' : ''}">
     <div class="aec-dot" style="background:${dotBg}">${abbr}</div>
