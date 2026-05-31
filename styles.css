@@ -403,11 +403,11 @@ body {
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0); z-index: 200; display: flex; align-items: flex-end; justify-content: center; visibility: hidden; pointer-events: none; transition: background .22s var(--ease-out-quart), visibility 0s .28s; }
 #admin-auth-modal { z-index: 600; }
 .modal-overlay.open { background: rgba(0,0,0,.45); visibility: visible; pointer-events: auto; transition: background .22s var(--ease-out-quart); }
-.modal { background: var(--surface); border-radius: var(--radius) var(--radius) 0 0; padding: 16px 20px 36px; width: 100%; max-width: 520px; max-height: 80vh; overflow-y: auto; }
+.modal { background: var(--surface); border-radius: var(--radius) var(--radius) 0 0; padding: 16px 20px 36px; width: 100%; max-width: 520px; max-height: 80dvh; overflow-y: auto; }
 
 /* Inventory audit modal — centered dialog, not bottom sheet */
 #inventory-modal { align-items: center; justify-content: center; padding: 16px; }
-#inventory-modal .modal { border-radius: var(--radius); width: 100%; max-width: 600px; max-height: 88vh; padding-bottom: 20px; }
+#inventory-modal .modal { border-radius: var(--radius); width: 100%; max-width: 600px; max-height: 88dvh; padding-bottom: 20px; }
 #inventory-modal .modal-handle { display: none; }
 .modal-handle { width: 40px; height: 4px; background: var(--border); border-radius: 2px; margin: 0 auto 14px; }
 .modal-title { font-family: 'Space Grotesk', sans-serif; font-size: 16px; font-weight: 800; margin-bottom: 14px; }
@@ -674,7 +674,7 @@ body {
 .modal-overlay-center { align-items: center !important; }
 .modal-overlay-center .modal { border-radius: var(--radius) !important; }
 .modal-overlay-center .modal-handle { display: none; }
-.modal-overlay-center .modal-card { border-radius: var(--radius) !important; max-width: 460px; width: calc(100% - 32px); padding: 0; display: flex; flex-direction: column; max-height: 88vh; }
+.modal-overlay-center .modal-card { border-radius: var(--radius) !important; max-width: 460px; width: calc(100% - 32px); padding: 0; display: flex; flex-direction: column; max-height: 88dvh; }
 .modal-card-hdr { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 14px; border-bottom: 1px solid var(--ink-10); flex-shrink: 0; }
 .modal-card-title { font-family: 'Space Grotesk', sans-serif; font-size: 17px; font-weight: 800; color: var(--ink); }
 .modal-card-x { width: 32px; height: 32px; border-radius: 8px; border: 1.5px solid var(--ink-15); background: var(--card); color: var(--ink-50); display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; transition: background .12s; }
@@ -702,7 +702,7 @@ body {
 .pack-remove-btn:hover { color: var(--red-text); }
 
 /* Return to Lottery modal */
-.rlt-modal            { display: flex; flex-direction: column; max-height: 82vh; overflow: hidden; }
+.rlt-modal            { display: flex; flex-direction: column; max-height: 82dvh; overflow: hidden; }
 .rlt-header           { flex-shrink: 0; }
 .rlt-title-row        { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
 .scan-count-badge     { font-size: 11px; font-weight: 700; background: var(--amber-bg); color: var(--amber-text); border: 1px solid var(--amber-border); border-radius: 999px; padding: 2px 9px; }
@@ -1217,7 +1217,7 @@ body {
   .scan-col-right {
     position: sticky;
     top: 160px; /* below header + tab bar + loc bar */
-    max-height: calc(100vh - 180px);
+    max-height: calc(100dvh - 180px);
     overflow-y: auto;
   }
 
@@ -1327,7 +1327,7 @@ body {
 
 /* ── AUDIT SCREEN (full-screen two-column) ────────────────────────────────── */
 #inventory-modal.modal-overlay { align-items: stretch; padding: 0; overflow: hidden; }
-.audit-shell { display: grid; grid-template-columns: 340px 1fr; width: 100%; height: 100vh; max-height: 100vh; overflow: hidden; }
+.audit-shell { display: grid; grid-template-columns: 340px 1fr; width: 100%; height: 100dvh; max-height: 100dvh; overflow: hidden; }
 @media (max-width: 700px) { .audit-shell { grid-template-columns: 1fr; grid-template-rows: auto 1fr; } }
 
 /* Left panel — dark */
@@ -1644,3 +1644,45 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .float-jump-nav.fjn-visible { opacity: 1; pointer-events: auto; }
 .fjn-btn { width: 32px; height: 32px; border-radius: 50%; border: 1.5px solid var(--border); background: var(--surface); color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 6px rgba(0,0,0,.12); transition: background .12s, color .12s; }
 .fjn-btn:hover { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+
+/* ════════════════════════════════════════════════════════════════
+   RESPONSIVE LAYER — mobile & tablet adaptation
+   Content-driven breakpoints. Touch-native first (PRODUCT.md §4).
+   ════════════════════════════════════════════════════════════════ */
+
+/* ── PAGE TITLE: 38px is unreadable-large on small phones ─────── */
+@media (max-width: 767px) {
+  .page-title { font-size: 28px; letter-spacing: -.015em; }
+  .page-hdr   { align-items: flex-start; gap: 10px; margin-bottom: 14px; }
+}
+@media (max-width: 499px) {
+  .page-title { font-size: 22px; }
+}
+
+/* ── REPORTS TWO-COL: no tablet breakpoint existed ────────────── */
+@media (max-width: 860px) {
+  .rpt-two-col { grid-template-columns: 1fr; }
+}
+
+/* ── REPORTS KPI GRID: 4-col is too dense on phones ──────────── */
+@media (max-width: 499px) {
+  .rpt-kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+}
+
+/* ── CATALOG GRID: 340px min overflows a 375px phone ─────────── */
+@media (max-width: 499px) {
+  .catalog-grid { grid-template-columns: 1fr; }
+}
+
+/* ── TOUCH TARGETS: raise pack/log action buttons to 44px ─────── */
+@media (max-width: 767px) {
+  .pack-act-btn    { min-height: 44px; padding: 8px 14px; }
+  .log-act-btn     { min-height: 44px; padding: 8px 14px; }
+  .stock-filter-btn { min-height: 40px; padding: 6px 14px; }
+  .itab-open-btn   { min-height: 40px; padding: 8px 16px; }
+}
+
+/* ── AUDIT MODAL STACKING: cap left panel so book list reachable ─ */
+@media (max-width: 700px) {
+  .audit-left { max-height: 42dvh; flex-shrink: 0; }
+}
