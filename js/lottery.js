@@ -5316,6 +5316,65 @@ async function loadDashboard() {
 let _dashAnalyticsPreset = 'month';
 let _dashAnalyticsInited = false;
 let _dashAnalyticsLoaded = false;
+let _daWeekDays = {};
+
+const _MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const _WDAYS_SHORT  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+function _daFmtDate(str) {
+  const d = new Date(str);
+  return `${_WDAYS_SHORT[d.getDay()]}, ${_MONTHS_SHORT[d.getMonth()]} ${d.getDate()}`;
+}
+function _daFmtMoney(n) {
+  return `$${parseFloat(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+function _renderDaWeekDayRows(wDays, shiftsByDayId) {
+  let html = '';
+  for (const d of wDays) {
+    const closed  = d.status === 'closed';
+    const dRev    = parseFloat(d.total_revenue || 0);
+    const dTix    = d.total_tickets_sold || 0;
+    const dShifts = (d.lottery_shifts || []).filter(sh => sh.status === 'closed');
+    const openT   = d.opened_at ? new Date(d.opened_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '?';
+    const closeT  = d.closed_at ? new Date(d.closed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null;
+    let gameRows = '';
+    if (shiftsByDayId) {
+      const gameTotals = {};
+      for (const sh of (shiftsByDayId[d.id] || [])) {
+        for (const en of (sh.lottery_shift_entries || [])) {
+          const gn    = en.lottery_packs?.game_number || '?';
+          const gName = en.lottery_packs?.lottery_games?.game_name || `Game #${gn}`;
+          const price = parseFloat(en.lottery_packs?.lottery_games?.price || 0);
+          if (!gameTotals[gn]) gameTotals[gn] = { name: gName, price, tickets: 0, revenue: 0 };
+          gameTotals[gn].tickets += en.tickets_sold || 0;
+          gameTotals[gn].revenue += parseFloat(en.revenue || 0);
+        }
+      }
+      gameRows = Object.values(gameTotals)
+        .sort((a, b) => b.revenue - a.revenue)
+        .map(g => `<div class="da-game-row">
+          <span class="da-game-name">${g.name}</span>
+          <span class="da-game-meta">${g.tickets} tickets</span>
+          <span class="da-game-rev">${_daFmtMoney(g.revenue)}</span>
+        </div>`).join('');
+    }
+    html += `
+      <div class="da-day-row${closed ? '' : ' da-day-open'}">
+        <div class="da-day-main">
+          <div class="da-day-info">
+            <span class="da-day-date">${_daFmtDate(d.opened_at)}</span>
+            ${closed ? '' : '<span class="da-open-pill">Open</span>'}
+            <span class="da-day-time">${openT}${closeT ? ` – ${closeT}` : ''}</span>
+          </div>
+          <div class="da-day-stats">
+            <span class="da-day-tix">${dTix} tickets · ${dShifts.length} shift${dShifts.length !== 1 ? 's' : ''}</span>
+            <span class="da-day-rev">${closed ? _daFmtMoney(dRev) : '—'}</span>
+          </div>
+        </div>
+        ${gameRows ? `<div class="da-game-list">${gameRows}</div>` : ''}
+      </div>`;
+  }
+  return html;
+}
 
 function _toggleDashAnalytics() {
   const card = document.getElementById('dash-analytics-card');
@@ -5402,8 +5461,7 @@ async function loadDashAnalytics() {
     const res = await sbFetch(
       `${CONFIG.supabaseUrl}/rest/v1/lottery_days` +
       `?select=id,opened_at,closed_at,status,total_revenue,total_tickets_sold,` +
-      `lottery_shifts(id,opened_at,closed_at,status,total_revenue,total_tickets_sold,` +
-      `lottery_shift_entries(pack_id,tickets_sold,revenue,lottery_packs(game_number,lottery_games(game_name,price))))` +
+      `lottery_shifts(id,status)` +
       `&opened_at=gte.${from}T00:00:00&opened_at=lte.${to}T23:59:59&order=opened_at.desc`
     );
     const days = await res.json();
@@ -5474,101 +5532,72 @@ function _renderDashAnalytics(days, summaryEl, container) {
   }
   const weekKeys = Object.keys(weeks).sort((a, b) => b.localeCompare(a)); // newest first
 
-  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const WDAYS  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-
-  function fmtDate(str) {
-    const d = new Date(str);
-    return `${WDAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}`;
-  }
-  function fmtMoney(n) {
-    return `$${parseFloat(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  }
-
+  _daWeekDays = {};
   let html = '';
   weekKeys.forEach((wk, wi) => {
-    const wDays      = weeks[wk];
-    const wClosed    = wDays.filter(d => d.status === 'closed');
-    const wRev       = wClosed.reduce((s, d) => s + parseFloat(d.total_revenue || 0), 0);
-    const wTix       = wClosed.reduce((s, d) => s + (d.total_tickets_sold || 0), 0);
-    const wShifts    = wClosed.reduce((s, d) => s + (d.lottery_shifts || []).filter(sh => sh.status === 'closed').length, 0);
-    const groupId    = `da-week-${wi}`;
-    const collapsed  = wi >= 2 ? ' da-collapsed' : '';
+    const wDays   = weeks[wk];
+    const wClosed = wDays.filter(d => d.status === 'closed');
+    const wRev    = wClosed.reduce((s, d) => s + parseFloat(d.total_revenue || 0), 0);
+    const wTix    = wClosed.reduce((s, d) => s + (d.total_tickets_sold || 0), 0);
+    const wShifts = wClosed.reduce((s, d) => s + (d.lottery_shifts || []).filter(sh => sh.status === 'closed').length, 0);
+    const groupId = `da-week-${wi}`;
 
-    // Week label: "May 19 – May 25"
     const monDate = new Date(wk);
     const sunDate = new Date(wk); sunDate.setDate(monDate.getDate() + 6);
-    const wLabel  = `${MONTHS[monDate.getMonth()]} ${monDate.getDate()} – ${MONTHS[sunDate.getMonth()]} ${sunDate.getDate()}`;
+    const wLabel  = `${_MONTHS_SHORT[monDate.getMonth()]} ${monDate.getDate()} – ${_MONTHS_SHORT[sunDate.getMonth()]} ${sunDate.getDate()}`;
 
-    // Per-day rows
-    let dayRows = '';
-    for (const d of wDays) {
-      const closed  = d.status === 'closed';
-      const dRev    = parseFloat(d.total_revenue || 0);
-      const dTix    = d.total_tickets_sold || 0;
-      const dShifts = (d.lottery_shifts || []).filter(sh => sh.status === 'closed');
-      const openT   = d.opened_at  ? new Date(d.opened_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '?';
-      const closeT  = d.closed_at  ? new Date(d.closed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null;
-
-      // Per-game breakdown from shift entries
-      const gameTotals = {};
-      for (const sh of dShifts) {
-        for (const en of (sh.lottery_shift_entries || [])) {
-          const gn    = en.lottery_packs?.game_number || '?';
-          const gName = en.lottery_packs?.lottery_games?.game_name || `Game #${gn}`;
-          const price = parseFloat(en.lottery_packs?.lottery_games?.price || 0);
-          if (!gameTotals[gn]) gameTotals[gn] = { name: gName, price, tickets: 0, revenue: 0 };
-          gameTotals[gn].tickets += en.tickets_sold || 0;
-          gameTotals[gn].revenue += parseFloat(en.revenue || 0);
-        }
-      }
-      const gameRows = Object.values(gameTotals)
-        .sort((a, b) => b.revenue - a.revenue)
-        .map(g => `<div class="da-game-row">
-          <span class="da-game-name">${g.name}</span>
-          <span class="da-game-meta">${g.tickets} tickets</span>
-          <span class="da-game-rev">${fmtMoney(g.revenue)}</span>
-        </div>`).join('');
-
-      dayRows += `
-        <div class="da-day-row${closed ? '' : ' da-day-open'}">
-          <div class="da-day-main">
-            <div class="da-day-info">
-              <span class="da-day-date">${fmtDate(d.opened_at)}</span>
-              ${closed ? '' : '<span class="da-open-pill">Open</span>'}
-              <span class="da-day-time">${openT}${closeT ? ` – ${closeT}` : ''}</span>
-            </div>
-            <div class="da-day-stats">
-              <span class="da-day-tix">${dTix} tickets · ${dShifts.length} shift${dShifts.length !== 1 ? 's' : ''}</span>
-              <span class="da-day-rev">${closed ? fmtMoney(dRev) : '—'}</span>
-            </div>
-          </div>
-          ${gameRows ? `<div class="da-game-list">${gameRows}</div>` : ''}
-        </div>`;
-    }
+    _daWeekDays[groupId] = wDays;
+    const dayIds = wDays.map(d => d.id).join(',');
 
     html += `
-      <div class="da-week-group${collapsed}" id="${groupId}">
+      <div class="da-week-group da-collapsed" id="${groupId}" data-day-ids="${dayIds}" data-loaded="0">
         <div class="da-week-header" onclick="_toggleDaWeek('${groupId}')">
           <div class="da-week-left">
             <span class="da-week-label">Week of ${wLabel}</span>
             <span class="da-week-meta">${wClosed.length} day${wClosed.length !== 1 ? 's' : ''} · ${wShifts} shift${wShifts !== 1 ? 's' : ''} · ${wTix.toLocaleString()} tickets</span>
           </div>
           <div class="da-week-right">
-            <span class="da-week-rev">${fmtMoney(wRev)}</span>
+            <span class="da-week-rev">${_daFmtMoney(wRev)}</span>
             ${_chevronSvg}
           </div>
         </div>
-        <div class="da-week-body">${dayRows}</div>
+        <div class="da-week-body"></div>
       </div>`;
   });
 
   container.innerHTML = html;
 }
 
-function _toggleDaWeek(id) {
+async function _toggleDaWeek(id) {
   const el = document.getElementById(id);
-  if (el) el.classList.toggle('da-collapsed');
+  if (!el) return;
+  const wasCollapsed = el.classList.contains('da-collapsed');
+  el.classList.toggle('da-collapsed');
+  if (wasCollapsed && el.dataset.loaded !== '1') {
+    const body   = el.querySelector('.da-week-body');
+    const dayIds = el.dataset.dayIds;
+    if (!dayIds || !body) { el.dataset.loaded = '1'; return; }
+    body.innerHTML = '<div class="summary-loading" style="padding:8px 0;font-size:12px">Loading…</div>';
+    try {
+      const r = await sbFetch(
+        `${CONFIG.supabaseUrl}/rest/v1/lottery_shifts` +
+        `?day_id=in.(${dayIds})&select=day_id,status,lottery_shift_entries(pack_id,tickets_sold,revenue,lottery_packs(game_number,lottery_games(game_name,price)))` +
+        `&order=opened_at.asc`
+      );
+      const shifts = await r.json();
+      const shiftsByDayId = {};
+      if (Array.isArray(shifts)) {
+        for (const sh of shifts) {
+          if (!shiftsByDayId[sh.day_id]) shiftsByDayId[sh.day_id] = [];
+          shiftsByDayId[sh.day_id].push(sh);
+        }
+      }
+      el.dataset.loaded = '1';
+      body.innerHTML = _renderDaWeekDayRows(_daWeekDays[id] || [], shiftsByDayId);
+    } catch (_) {
+      body.innerHTML = '<div class="item-nf-sub" style="padding:8px 0;font-size:12px">Load failed</div>';
+    }
+  }
 }
 
 function _renderDashStations(byLoc, el) {
@@ -5610,7 +5639,8 @@ function _renderDashStations(byLoc, el) {
       <div class="station-card-chips">${chips}${extra}</div>
     </div>`;
   }).join('');
-  const cols = Math.min(locations.length, 4);
+  const maxCols = window.innerWidth < 600 ? 2 : 4;
+  const cols = Math.min(locations.length, maxCols);
   el.innerHTML = `<div class="dash-stations-grid" style="grid-template-columns:repeat(${cols},1fr)">${cards}</div>`;
 }
 
@@ -5757,16 +5787,15 @@ function _renderDashActivity(events, el, append = false, hasMore = false) {
 
 function _fmtAttentionDate(isoStr) {
   if (!isoStr) return '';
-  const d   = new Date(isoStr);
-  const now = new Date();
-  const diffMs  = now - d;
-  const diffMin = Math.floor(diffMs / 60000);
-  const diffH   = Math.floor(diffMs / 3600000);
+  const d       = new Date(isoStr);
+  const now     = new Date();
+  const diffMin = Math.floor((now - d) / 60000);
   const timeStr = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
   if (diffMin < 1)  return 'just now';
   if (diffMin < 60) return `${diffMin}m ago`;
-  if (diffH   < 24) return `Today ${timeStr}`;
-  if (diffH   < 48) return `Yesterday ${timeStr}`;
+  const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
+  if (d.toDateString() === now.toDateString())       return `Today ${timeStr}`;
+  if (d.toDateString() === yesterday.toDateString()) return `Yesterday ${timeStr}`;
   return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${timeStr}`;
 }
 

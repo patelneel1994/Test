@@ -1278,6 +1278,7 @@ body {
 @media (max-width: 499px) { .dash-stats-grid { gap: 8px; } }
 .dash-stations-strip { margin-bottom: 20px; }
 .dash-two-col { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; }
+.dash-two-col > * { min-width: 0; }
 @media (max-width: 860px) { .dash-two-col { grid-template-columns: 1fr; } }
 
 /* Station cards */
@@ -1698,6 +1699,47 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 /* ── AUDIT MODAL STACKING: cap left panel so book list reachable ─ */
 @media (max-width: 700px) {
   .audit-left { max-height: 42dvh; flex-shrink: 0; }
+}
+
+/* ── STAT-RICH CARDS: 36px value overflows 2-col mobile cards ────
+   On a 375px phone each card is ~126px inner width.
+   "$1,234.56" at 36px Space Grotesk 800 exceeds that easily.   */
+@media (max-width: 767px) {
+  .stat-rich { padding: 14px; }
+  .stat-rich-val { font-size: 28px; }
+}
+@media (max-width: 499px) {
+  .stat-rich-val { font-size: 22px; }
+}
+
+/* ── REPORTS KPI GRID: match dash-stats-grid 900px collapse ─────── */
+@media (max-width: 900px) {
+  .rpt-kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+}
+
+/* ── TOUCH TARGETS: secondary interactive elements ──────────────── */
+@media (max-width: 767px) {
+  .view-toggle-btn { padding: 9px 12px; }
+  .hpreset-btn     { min-height: 40px; padding: 8px 4px; }
+  .stock-sort-btn  { min-height: 40px; padding: 8px 10px; }
+  .inv-tab-pill    { min-height: 40px; padding: 6px 14px; display: inline-flex; align-items: center; }
+}
+
+/* ── MOBILE POLISH: spacing + hover fixes ───────────────────────── */
+@media (max-width: 767px) {
+  /* Context bar takes too much vertical space on small phones */
+  .lotto-ctx-bar { margin-bottom: 12px; }
+
+  /* Analytics week-header hover uses negative margin that can cause
+     layout recalculation on touch — disable on mobile */
+  .da-week-header:hover { background: none; margin: 0; padding-left: 0; padding-right: 0; }
+
+  /* Ensure no text below 13px on mobile (WCAG readability) */
+  .att-loc, .att-when-val, .act-sub, .act-notes { font-size: 12px; }
+
+  /* da-week-label and meta: tighten so week rows scan faster */
+  .da-week-label { font-size: 12px; }
+  .da-week-rev   { font-size: 14px; }
 }
 
 /* ── SAFARI MOBILE: dashboard panels not painting correctly ───────
