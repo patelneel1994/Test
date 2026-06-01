@@ -2196,6 +2196,7 @@ async function confirmReturnToLottery(e) {
 let _pendingSoldOutId         = null;
 let _pendingSoldOutFinalTicket = null;
 let _pendingSoldOutStage       = false; // true when called from inside an audit (stages; no immediate DB write)
+let _soldOutTimerId            = null;
 
 function _calcSoldOutFinalTicket(info) {
   const dir = info.loadingDirection || 'asc';
@@ -2216,6 +2217,36 @@ function _packNoSalesYet(info) {
     return maxTick !== null && current >= maxTick;
   }
   return current === 0;
+}
+
+function _startSoldOutTimer() {
+  const btn = document.getElementById('soldout-confirm-btn');
+  if (!btn) return;
+  if (_soldOutTimerId) { clearTimeout(_soldOutTimerId); _soldOutTimerId = null; }
+  const DURATION = 3000;
+  const TICK     = 50;
+  const start    = Date.now();
+  btn.disabled   = true;
+
+  function tick() {
+    const elapsed   = Date.now() - start;
+    const pct       = Math.min(elapsed / DURATION * 100, 100);
+    const remaining = Math.ceil((DURATION - elapsed) / 1000);
+
+    if (elapsed >= DURATION) {
+      btn.style.background = '';
+      btn.textContent      = 'Mark Sold Out';
+      btn.disabled         = false;
+      _soldOutTimerId      = null;
+      return;
+    }
+
+    btn.style.background = `linear-gradient(to right, #1A1612 ${pct}%, rgba(26,22,18,.3) ${pct}%)`;
+    btn.textContent      = `Mark Sold Out · ${remaining}`;
+    _soldOutTimerId      = setTimeout(tick, TICK);
+  }
+
+  tick();
 }
 
 function openSoldOutModal(id, _unused, e) {
@@ -2239,7 +2270,16 @@ function openSoldOutModal(id, _unused, e) {
     : info.packNumber ? `Book #${info.packNumber}` : id;
 
   const infoEl = document.getElementById('soldout-book-info');
-  if (infoEl) infoEl.textContent = info.gameName ? `${info.gameName} · Book #${info.packNumber}` : `Book ID: ${id}`;
+  if (infoEl) {
+    const chips = [];
+    if (info.packNumber != null)  chips.push(`<span style="background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:2px 8px;font-size:11.5px;color:var(--text-muted)">Book #${info.packNumber}</span>`);
+    if (info.location)            chips.push(`<span style="background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:2px 8px;font-size:11.5px;color:var(--text-muted)">${info.location}</span>`);
+    if (info.stationLine != null) chips.push(`<span style="background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:2px 8px;font-size:11.5px;color:var(--text-muted)">Line ${info.stationLine}</span>`);
+    infoEl.innerHTML = `<div style="background:var(--ink-10);border:1px solid var(--border);border-radius:9px;padding:10px 12px;margin-bottom:2px">
+      <div style="font-size:15px;font-weight:700;color:var(--ink);line-height:1.3;margin-bottom:6px">${info.gameName || id}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px">${chips.join('')}</div>
+    </div>`;
+  }
 
   const detailEl = document.getElementById('soldout-detail');
   if (detailEl) {
@@ -2279,12 +2319,16 @@ function openSoldOutModal(id, _unused, e) {
   }
 
   document.getElementById('soldout-modal').classList.add('open');
+  _startSoldOutTimer();
 }
 
 function closeSoldOutModal() {
   document.getElementById('soldout-modal').classList.remove('open');
   _pendingSoldOutId = null;
   _pendingSoldOutFinalTicket = null;
+  if (_soldOutTimerId) { clearTimeout(_soldOutTimerId); _soldOutTimerId = null; }
+  const btn = document.getElementById('soldout-confirm-btn');
+  if (btn) { btn.disabled = false; btn.style.background = ''; btn.textContent = 'Mark Sold Out'; }
 }
 
 async function confirmSoldOut(e) {
