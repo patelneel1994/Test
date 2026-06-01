@@ -4207,12 +4207,12 @@ function _buildPackTicketRows(entries, events) {
       ? `<div class="shift-station-hdr" style="margin-bottom:5px">${loc}</div>`
       : '';
     const stationBreakdown = _priceBreakdownHtml(rows, false);
-    return `<div class="shift-station-group">${header}<div class="shift-station-entries">${rows.map(_rowHtml).join('')}</div>${stationBreakdown}</div>`;
+    return `<div class="shift-station-group">${header}${stationBreakdown}<div class="shift-station-entries">${rows.map(_rowHtml).join('')}</div>${stationBreakdown}</div>`;
   }).join('');
 
   const parentLabel = locKeys.filter(l => !(l === 'Unknown' && groups[l].every(r => r.sold === 0))).length > 1 ? 'All Stations' : '';
   const parentBreakdown = _priceBreakdownHtml(allRows, true, parentLabel);
-  return stationHtml + parentBreakdown;
+  return parentBreakdown + stationHtml + parentBreakdown;
 }
 
 // ── Audit entry card renderer (shared across all shift/history views) ──────
