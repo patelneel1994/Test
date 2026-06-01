@@ -5198,6 +5198,8 @@ async function loadDashboard() {
   const attentionEl = document.getElementById('dashboard-attention');
   const activityEl  = document.getElementById('dashboard-activity');
   if (!stationsEl) return;
+  _dashAnalyticsLoaded = false;
+  document.getElementById('dash-analytics-card')?.classList.add('da-collapsed');
 
   // Update context bar date immediately (count updated after fetch)
   _updateContextBar(null);
@@ -5300,8 +5302,7 @@ async function loadDashboard() {
     // Activity feed (non-blocking — loads independently with pagination)
     loadDashActivity();
 
-    // Analytics (non-blocking — loads independently)
-    loadDashAnalytics();
+    // Analytics: deferred — loaded when user expands the card
 
   } catch (err) {
     if (stationsEl) stationsEl.innerHTML = `<div class="item-nf-sub">Load error: ${err.message}</div>`;
@@ -5314,6 +5315,17 @@ async function loadDashboard() {
 
 let _dashAnalyticsPreset = 'month';
 let _dashAnalyticsInited = false;
+let _dashAnalyticsLoaded = false;
+
+function _toggleDashAnalytics() {
+  const card = document.getElementById('dash-analytics-card');
+  if (!card) return;
+  const wasCollapsed = card.classList.toggle('da-collapsed');
+  if (!wasCollapsed && !_dashAnalyticsLoaded) {
+    _initDashAnalyticsDates();
+    loadDashAnalytics();
+  }
+}
 
 function _initDashAnalyticsDates() {
   if (_dashAnalyticsInited) return;
@@ -5363,7 +5375,7 @@ function setDashAnalyticsPreset(preset) {
   const tEl = document.getElementById('da-date-to');
   if (fEl) fEl.value = from;
   if (tEl) tEl.value = to;
-  loadDashAnalytics();
+  if (!document.getElementById('dash-analytics-card')?.classList.contains('da-collapsed')) loadDashAnalytics();
 }
 
 function _onDashAnalyticsDateChange() {
@@ -5372,13 +5384,14 @@ function _onDashAnalyticsDateChange() {
     const btn = document.getElementById(`dapreset-${p}`);
     if (btn) btn.classList.remove('active');
   });
-  loadDashAnalytics();
+  if (!document.getElementById('dash-analytics-card')?.classList.contains('da-collapsed')) loadDashAnalytics();
 }
 
 async function loadDashAnalytics() {
   const container = document.getElementById('dash-analytics-container');
   const summaryEl = document.getElementById('dash-analytics-summary');
   if (!container) return;
+  _dashAnalyticsLoaded = true;
   container.innerHTML = '<div class="summary-loading">Loading…</div>';
   if (summaryEl) summaryEl.innerHTML = '';
 

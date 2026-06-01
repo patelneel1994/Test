@@ -1475,6 +1475,9 @@ body {
 .audit-badge-soldout { background: var(--ink-15); color: var(--text-muted); }
 
 /* ── DASHBOARD ANALYTICS ──────────────────────────────────────────────────── */
+.da-collapsed .da-body { display: none; }
+.da-chevron { flex-shrink: 0; color: var(--ink-60); transition: transform .2s; }
+#dash-analytics-card:not(.da-collapsed) .da-chevron { transform: rotate(180deg); }
 .da-summary-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; padding: 12px 0 4px; }
 @media (max-width: 600px) { .da-summary-row { grid-template-columns: repeat(2, 1fr); } }
 .da-summary-stat { text-align: center; }
