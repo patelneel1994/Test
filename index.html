@@ -325,7 +325,7 @@
 
     <!-- Stats row: Revenue · Active · In Office · Flagged -->
     <div class="dash-stats-grid">
-      <div class="stat-rich">
+      <div class="stat-rich admin-stat" style="display:none">
         <div class="stat-rich-hdr">
           <div class="stat-rich-label">Today's revenue</div>
           <div class="stat-rich-icon stat-icon-green">
@@ -346,7 +346,7 @@
         <div class="stat-rich-val" id="dash-stat-active">—</div>
         <div class="stat-rich-sub" id="dash-stat-active-sub">across stations</div>
       </div>
-      <div class="stat-rich">
+      <div class="stat-rich admin-stat" style="display:none">
         <div class="stat-rich-hdr">
           <div class="stat-rich-label">In office</div>
           <div class="stat-rich-icon stat-icon-amber">
@@ -356,7 +356,7 @@
         <div class="stat-rich-val" id="dash-stat-office">—</div>
         <div class="stat-rich-sub">awaiting deployment</div>
       </div>
-      <div class="stat-rich">
+      <div class="stat-rich admin-stat" style="display:none">
         <div class="stat-rich-hdr">
           <div class="stat-rich-label">Needs attention</div>
           <div class="stat-rich-icon stat-icon-ink" id="dash-flag-icon">
@@ -450,7 +450,7 @@
         <div class="stat-rich-val" id="lottery-stat-db-packs">—</div>
         <div class="stat-rich-sub" id="lottery-stat-active-sub">at stations</div>
       </div>
-      <div class="stat-rich">
+      <div class="stat-rich admin-stat" style="display:none">
         <div class="stat-rich-hdr">
           <div class="stat-rich-label">Received</div>
           <div class="stat-rich-icon stat-icon-amber">
@@ -460,7 +460,7 @@
         <div class="stat-rich-val" id="lottery-stat-games">—</div>
         <div class="stat-rich-sub">in office / ready</div>
       </div>
-      <div class="stat-rich">
+      <div class="stat-rich admin-stat" style="display:none">
         <div class="stat-rich-hdr">
           <div class="stat-rich-label">Sold out</div>
           <div class="stat-rich-icon stat-icon-green">
@@ -470,7 +470,7 @@
         <div class="stat-rich-val" id="lottery-stat-soldout">—</div>
         <div class="stat-rich-sub">completed books</div>
       </div>
-      <div class="stat-rich">
+      <div class="stat-rich admin-stat" style="display:none">
         <div class="stat-rich-hdr">
           <div class="stat-rich-label">Total books</div>
           <div class="stat-rich-icon stat-icon-ink">
@@ -1295,7 +1295,7 @@
       <div id="move-books-admin-note" style="display:none;font-size:12px;color:var(--amber-text,#92400e);background:var(--amber-bg);border:1px solid var(--amber-border);border-radius:7px;padding:7px 10px;margin-bottom:6px">
         ⚠ Moving active books requires admin — you'll be prompted on confirm.
       </div>
-      <div class="move-dest-label">Move to location</div>
+      <div class="move-dest-label" id="move-dest-label">Select destination</div>
       <div id="move-books-dest-btns" class="move-dest-grid"></div>
     </div>
   </div>

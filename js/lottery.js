@@ -125,6 +125,11 @@ let _invScanCleanup   = null;
 
 // ---- Move books modal ----
 let _moveBooksQueue = []; // { id, packNumber, gameName, location }
+let _movePendingDest = null;
+let _movePendingHasActive = false;
+let _moveUndoBooksRef = null;
+let _moveUndoDestRef  = null;
+let _moveUndoTimer    = null;
 
 // ---- DB-state load guard ----
 let _lotteryDbStateReady = false;
@@ -140,6 +145,13 @@ let _adminExpireAt       = null;   // absolute timestamp when session expires
 let _adminCountdownInterval = null; // 1-second tick to update the pill
 
 function isAdmin() { return _adminUnlocked; }
+
+function _syncAdminStats() {
+  const show = _adminUnlocked;
+  document.querySelectorAll('.admin-stat').forEach(el => {
+    el.style.display = show ? '' : 'none';
+  });
+}
 
 function _syncAdminPill() {
   const btn = document.getElementById('admin-lock-pill');
@@ -166,6 +178,7 @@ function _lockAdmin() {
   if (_adminExpireTimer)      { clearTimeout(_adminExpireTimer);         _adminExpireTimer      = null; }
   if (_adminCountdownInterval){ clearInterval(_adminCountdownInterval);  _adminCountdownInterval = null; }
   _syncAdminPill();
+  _syncAdminStats();
   if (_cachedStockRows) renderLotteryStock(_cachedStockRows);
   _renderLocationView();
 }
@@ -208,6 +221,7 @@ function confirmAdminAuth(e) {
   closeAdminAuthModal();
   if (_adminCallback) { const cb = _adminCallback; _adminCallback = null; cb(); }
   _syncAdminPill();
+  _syncAdminStats();
   if (_cachedStockRows) renderLotteryStock(_cachedStockRows);
   _renderLocationView();
 }
@@ -1938,29 +1952,33 @@ async function loadLotteryDbStats() {
   try {
     const cnt = url => sbFetch(`${CONFIG.supabaseUrl}/rest/v1/${url}&limit=1`, { headers: { 'Prefer': 'count=exact' } })
       .then(r => (r.headers.get('content-range') || '').split('/')[1] || '0');
-    const [active, received, soldout, total, recPacks] = await Promise.all([
-      cnt('lottery_packs?select=id&status=eq.activated'),
-      cnt('lottery_packs?select=id&status=eq.received'),
-      cnt('lottery_packs?select=id&status=eq.soldout'),
-      cnt('lottery_packs?select=id'),
-      sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=id,location&status=eq.received&order=location.asc`)
-        .then(r => r.json()).catch(() => []),
-    ]);
+    const adminOk = isAdmin();
+    const fetches = [cnt('lottery_packs?select=id&status=eq.activated')];
+    if (adminOk) {
+      fetches.push(
+        cnt('lottery_packs?select=id&status=eq.received'),
+        cnt('lottery_packs?select=id&status=eq.soldout'),
+        cnt('lottery_packs?select=id'),
+        sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=id,location&status=eq.received&order=location.asc`)
+          .then(r => r.json()).catch(() => []),
+      );
+    }
+    const [active, received, soldout, total, recPacks] = await Promise.all(fetches);
     document.getElementById('lottery-stat-db-packs').textContent = active;
-    document.getElementById('lottery-stat-games').textContent    = received;
-    const soEl = document.getElementById('lottery-stat-soldout');
-    const totEl = document.getElementById('lottery-stat-total');
-    if (soEl)  soEl.textContent  = soldout;
-    if (totEl) totEl.textContent = total;
-    // Update filter badge counts
     const sfA = document.getElementById('sf-active');
-    const sfR = document.getElementById('sf-received');
-    const sfS = document.getElementById('sf-soldout');
     if (sfA) sfA.textContent = active;
-    if (sfR) sfR.textContent = received;
-    if (sfS) sfS.textContent = soldout;
-    // Received stock by location
-    _renderReceivedStockBar(Array.isArray(recPacks) ? recPacks : []);
+    if (adminOk) {
+      document.getElementById('lottery-stat-games').textContent = received;
+      const soEl = document.getElementById('lottery-stat-soldout');
+      const totEl = document.getElementById('lottery-stat-total');
+      if (soEl)  soEl.textContent = soldout;
+      if (totEl) totEl.textContent = total;
+      const sfR = document.getElementById('sf-received');
+      const sfS = document.getElementById('sf-soldout');
+      if (sfR) sfR.textContent = received;
+      if (sfS) sfS.textContent = soldout;
+      _renderReceivedStockBar(Array.isArray(recPacks) ? recPacks : []);
+    }
   } catch (_) {}
 }
 
@@ -2622,20 +2640,101 @@ function confirmMoveBooks(newLocation, e) {
   if (e) e.preventDefault();
   if (!_moveBooksQueue.length) { _setMoveStatus('Scan at least one book first', 'error'); return; }
   const hasActive = _moveBooksQueue.some(q => q.status === 'activated');
-  if (hasActive) {
-    if (!_isStation(newLocation)) { _setMoveStatus('Active books can only move to a station', 'error'); return; }
-    requireAdmin(() => _doMoveBooks(newLocation));
-  } else {
-    _doMoveBooks(newLocation);
+  if (hasActive && !_isStation(newLocation)) {
+    _setMoveStatus('Active books can only move to a station', 'error'); return;
   }
+  _showMoveConfirmPanel(newLocation, hasActive);
+}
+
+function _showMoveConfirmPanel(newLocation, hasActive) {
+  _movePendingDest = newLocation;
+  _movePendingHasActive = hasActive;
+  const n = _moveBooksQueue.length;
+  const labelEl = document.getElementById('move-dest-label');
+  const destEl  = document.getElementById('move-books-dest-btns');
+  if (labelEl) labelEl.style.display = 'none';
+  if (!destEl) return;
+  destEl.innerHTML = `
+    <div class="move-confirm-panel">
+      <div class="move-confirm-summary">Moving <strong>${n} book${n !== 1 ? 's' : ''}</strong> to <strong>${newLocation}</strong></div>
+      <div class="move-confirm-actions">
+        <button class="move-confirm-back"
+          onmousedown="_cancelMoveConfirm(event)"
+          ontouchstart="_cancelMoveConfirm(event)">← Change</button>
+        <button class="move-confirm-btn"
+          onmousedown="_executeConfirmedMove(event)"
+          ontouchstart="_executeConfirmedMove(event)">Confirm move</button>
+      </div>
+    </div>`;
+}
+
+function _cancelMoveConfirm(e) {
+  if (e) e.preventDefault();
+  _movePendingDest = null;
+  _movePendingHasActive = false;
+  const labelEl = document.getElementById('move-dest-label');
+  if (labelEl) labelEl.style.display = '';
+  _updateMoveDestButtons();
+}
+
+function _executeConfirmedMove(e) {
+  if (e) e.preventDefault();
+  if (!_movePendingDest) return;
+  const dest = _movePendingDest;
+  const hasActive = _movePendingHasActive;
+  _movePendingDest = null;
+  _movePendingHasActive = false;
+  if (hasActive) requireAdmin(() => _doMoveBooks(dest));
+  else _doMoveBooks(dest);
 }
 
 async function _doMoveBooks(newLocation) {
   try {
+    const snapshot = [..._moveBooksQueue];
     await Promise.all(_moveBooksQueue.map(q => _commitMovePack(q.id, newLocation, q.location)));
     closeMoveBooksModal();
     await Promise.all([loadLotteryStock(), loadLocationView()]);
+    _showMoveUndoToast(snapshot, newLocation);
   } catch (err) { showError('Move failed', err.message); }
+}
+
+function _showMoveUndoToast(movedBooks, newLocation) {
+  const prev = document.getElementById('move-undo-toast');
+  if (prev) prev.remove();
+  if (_moveUndoTimer) { clearTimeout(_moveUndoTimer); _moveUndoTimer = null; }
+
+  const n = movedBooks.length;
+  const toast = document.createElement('div');
+  toast.id = 'move-undo-toast';
+  toast.className = 'move-undo-toast';
+  toast.innerHTML = `<span>Moved ${n} book${n !== 1 ? 's' : ''} to ${newLocation}</span>
+    <button class="move-undo-btn" onmousedown="_undoMoveBooks(event)" ontouchstart="_undoMoveBooks(event)">Undo</button>`;
+  document.body.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('move-undo-toast--visible'));
+
+  _moveUndoBooksRef = movedBooks;
+  _moveUndoDestRef  = newLocation;
+  _moveUndoTimer = setTimeout(_dismissMoveUndoToast, 6000);
+}
+
+function _dismissMoveUndoToast() {
+  const t = document.getElementById('move-undo-toast');
+  if (t) { t.classList.remove('move-undo-toast--visible'); setTimeout(() => t.remove(), 220); }
+  if (_moveUndoTimer) { clearTimeout(_moveUndoTimer); _moveUndoTimer = null; }
+}
+
+async function _undoMoveBooks(e) {
+  if (e) e.preventDefault();
+  _dismissMoveUndoToast();
+  if (!_moveUndoBooksRef) return;
+  const books = _moveUndoBooksRef;
+  const fromDest = _moveUndoDestRef;
+  _moveUndoBooksRef = null;
+  _moveUndoDestRef  = null;
+  try {
+    await Promise.all(books.map(q => _commitMovePack(q.id, q.location, fromDest)));
+    await Promise.all([loadLotteryStock(), loadLocationView()]);
+  } catch (err) { showError('Undo failed', err.message); }
 }
 
 async function moveReceivedPack(packId, newLocation, e) {
@@ -4058,6 +4157,7 @@ function setHistoryPreset(preset) {
 }
 
 async function loadShiftHistory() {
+  if (!isAdmin()) return;
   const el = document.getElementById('shift-history-container');
   if (!el) return;
   el.innerHTML = '<div class="summary-loading">Loading…</div>';
@@ -5337,75 +5437,86 @@ async function loadDashboard() {
     const snapHasShifts = _dbCaps.hasFullDayTracking;
     const snapHasEvents = _dbCaps.hasPackEvents;
 
-    const sel = _dbCaps.hasLoadingDirection
-      ? 'id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,loading_direction,location,lottery_games(game_name,price,tickets_per_pack)'
-      : 'id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,location,lottery_games(game_name,price,tickets_per_pack)';
+    const adminOk = isAdmin();
+    const sel = adminOk
+      ? (_dbCaps.hasLoadingDirection
+          ? 'id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,loading_direction,location,lottery_games(game_name,price,tickets_per_pack)'
+          : 'id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,location,lottery_games(game_name,price,tickets_per_pack)')
+      : 'id,game_number,pack_number,location,lottery_games(game_name)';
 
     const fetches = [
       sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=${sel}&status=eq.activated&order=location.asc`),
-      sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=id&status=eq.received&limit=1`, { headers: { 'Prefer': 'count=exact' } }),
     ];
-    if (snapDay && snapHasShifts) {
-      fetches.push(sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_shifts?day_id=eq.${snapDay.id}&select=total_revenue,total_tickets_sold&order=opened_at.asc`));
-    }
-    if (snapHasEvents) {
-      // Discrepancy-only fetch — used for attention panel + flag count
-      // Activity feed loaded separately via loadDashActivity()
-      fetches.push(sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_pack_events?select=id,action,pack_id,created_at,notes,lottery_packs(pack_number,game_number,location,lottery_games(game_name))&action=eq.discrepancy&order=created_at.desc`));
+    if (adminOk) {
+      fetches.push(sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=id&status=eq.received&limit=1`, { headers: { 'Prefer': 'count=exact' } }));
+      if (snapDay && snapHasShifts) {
+        fetches.push(sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_shifts?day_id=eq.${snapDay.id}&select=total_revenue,total_tickets_sold&order=opened_at.asc`));
+      }
+      if (snapHasEvents) {
+        // Discrepancy-only fetch — used for attention panel + flag count
+        // Activity feed loaded separately via loadDashActivity()
+        fetches.push(sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_pack_events?select=id,action,pack_id,created_at,notes,lottery_packs(pack_number,game_number,location,lottery_games(game_name))&action=eq.discrepancy&order=created_at.desc`));
+      }
     }
 
     const results = await Promise.all(fetches);
     const packs   = await results[0].json();
-    const officeCount = parseInt((results[1].headers.get('content-range') || '').split('/')[1], 10) || 0;
-    let shifts = [], events = [];
-    let ri = 2;
-    if (snapDay && snapHasShifts) { shifts = await results[ri++].json(); }
-    if (snapHasEvents) { events = await results[ri].json(); }
+    let officeCount = 0, shifts = [], events = [];
+    if (adminOk) {
+      officeCount = parseInt((results[1].headers.get('content-range') || '').split('/')[1], 10) || 0;
+      let ri = 2;
+      if (snapDay && snapHasShifts) { shifts = await results[ri++].json(); }
+      if (snapHasEvents) { events = await results[ri].json(); }
+    }
 
     const activePacks = Array.isArray(packs) ? packs : [];
     const shiftArr    = Array.isArray(shifts) ? shifts : [];
     const eventArr    = Array.isArray(events) ? events : [];
 
-    // Revenue
-    const todayRev     = shiftArr.reduce((s, sh) => s + (parseFloat(sh.total_revenue) || 0), 0);
-    const todayTickets = shiftArr.reduce((s, sh) => s + (parseInt(sh.total_tickets_sold) || 0), 0);
-    const revEl  = document.getElementById('dash-stat-revenue');
-    const revSub = document.getElementById('dash-stat-rev-sub');
     const actEl2 = document.getElementById('dash-stat-active');
-    const offEl  = document.getElementById('dash-stat-office');
-    if (revEl)  revEl.textContent  = snapDay ? `$${todayRev.toFixed(2)}` : '$—';
-    if (revSub) revSub.textContent = snapDay ? `${todayTickets} tickets sold today` : 'open a day first';
     if (actEl2) actEl2.textContent = activePacks.length;
-    if (offEl)  offEl.textContent  = officeCount;
     // Update live context bar with real active count
     _updateContextBar(activePacks.length);
 
-    // Group active packs by location
+    // Group active packs by location (needed for station cards)
     const byLoc = {};
     for (const p of activePacks) {
       if (!byLoc[p.location]) byLoc[p.location] = [];
       byLoc[p.location].push(p);
     }
 
-    // Flagged = discrepancy events
-    const discEvents = eventArr.filter(e => e.action === 'discrepancy');
-    const discPackIds = new Set(discEvents.map(e => e.pack_id));
-    const flagCount = discPackIds.size;
-    const flagEl   = document.getElementById('dash-stat-flagged');
-    const flagSub  = document.getElementById('dash-stat-flagged-sub');
-    const flagIcon = document.getElementById('dash-flag-icon');
-    const flagPill = document.getElementById('dash-flag-pill');
-    if (flagEl)  flagEl.textContent  = flagCount;
-    if (flagSub) flagSub.textContent = flagCount ? `${flagCount} book${flagCount > 1 ? 's' : ''} flagged` : 'nothing to review';
-    if (flagIcon) {
-      flagIcon.style.background = flagCount ? 'rgba(185,28,28,.12)' : 'rgba(26,22,18,.07)';
-      const svg = document.getElementById('dash-flag-svg');
-      if (svg) svg.setAttribute('stroke', flagCount ? '#B91C1C' : '#1A1612');
+    if (adminOk) {
+      // Revenue
+      const todayRev     = shiftArr.reduce((s, sh) => s + (parseFloat(sh.total_revenue) || 0), 0);
+      const todayTickets = shiftArr.reduce((s, sh) => s + (parseInt(sh.total_tickets_sold) || 0), 0);
+      const revEl  = document.getElementById('dash-stat-revenue');
+      const revSub = document.getElementById('dash-stat-rev-sub');
+      const offEl  = document.getElementById('dash-stat-office');
+      if (revEl)  revEl.textContent  = snapDay ? `$${todayRev.toFixed(2)}` : '$—';
+      if (revSub) revSub.textContent = snapDay ? `${todayTickets} tickets sold today` : 'open a day first';
+      if (offEl)  offEl.textContent  = officeCount;
+
+      // Flagged = discrepancy events
+      const discEvents = eventArr.filter(e => e.action === 'discrepancy');
+      const discPackIds = new Set(discEvents.map(e => e.pack_id));
+      const flagCount = discPackIds.size;
+      const flagEl   = document.getElementById('dash-stat-flagged');
+      const flagSub  = document.getElementById('dash-stat-flagged-sub');
+      const flagIcon = document.getElementById('dash-flag-icon');
+      const flagPill = document.getElementById('dash-flag-pill');
+      if (flagEl)  flagEl.textContent  = flagCount;
+      if (flagSub) flagSub.textContent = flagCount ? `${flagCount} book${flagCount > 1 ? 's' : ''} flagged` : 'nothing to review';
+      if (flagIcon) {
+        flagIcon.style.background = flagCount ? 'rgba(185,28,28,.12)' : 'rgba(26,22,18,.07)';
+        const svg = document.getElementById('dash-flag-svg');
+        if (svg) svg.setAttribute('stroke', flagCount ? '#B91C1C' : '#1A1612');
+      }
+      if (flagPill) {
+        flagPill.style.display = flagCount ? '' : 'none';
+        flagPill.textContent   = `${flagCount} flagged`;
+      }
     }
-    if (flagPill) {
-      flagPill.style.display = flagCount ? '' : 'none';
-      flagPill.textContent   = `${flagCount} flagged`;
-    }
+
     const actSubEl = document.getElementById('dash-stat-active-sub');
     if (actSubEl) {
       const stationNames = [...new Set(activePacks.map(p => p.location))].filter(Boolean);
@@ -5415,8 +5526,12 @@ async function loadDashboard() {
     // Station cards
     _renderDashStations(byLoc, stationsEl);
 
-    // Attention panel
-    _renderDashAttention(discEvents, activePacks, attentionEl);
+    // Attention panel (admin only)
+    if (adminOk) {
+      _renderDashAttention(discEvents, activePacks, attentionEl);
+    } else if (attentionEl) {
+      attentionEl.innerHTML = '';
+    }
 
     // Activity feed (non-blocking — loads independently with pagination)
     loadDashActivity();
@@ -5566,6 +5681,7 @@ function _onDashAnalyticsDateChange() {
 }
 
 async function loadDashAnalytics() {
+  if (!isAdmin()) return;
   const container = document.getElementById('dash-analytics-container');
   const summaryEl = document.getElementById('dash-analytics-summary');
   if (!container) return;
@@ -5731,6 +5847,7 @@ function _renderDashStations(byLoc, el) {
     return;
   }
   const locIcon = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--brand-red)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s-7-7.5-7-13a7 7 0 1 1 14 0c0 5.5-7 13-7 13Z"/><circle cx="12" cy="9" r="2.5"/></svg>`;
+  const adminOk = isAdmin();
   const cards = locations.map(loc => {
     const packs = byLoc[loc];
     let stationRev = 0;
@@ -5738,18 +5855,21 @@ function _renderDashStations(byLoc, el) {
       const gName = p.lottery_games?.game_name || '';
       const color = _gameColor(p.game_number);
       const emoji = _gameEmoji(p.game_number);
-      const price = parseFloat(p.lottery_games?.price || 0);
-      const tpp   = parseInt(p.lottery_games?.tickets_per_pack || 0, 10);
-      const dir   = p.loading_direction || 'asc';
-      const start = p.start_ticket ?? 0;
-      if (price && tpp) {
-        const sold = dir === 'asc' ? start : Math.max(0, tpp - 1 - start);
-        stationRev += sold * price;
+      if (adminOk) {
+        const price = parseFloat(p.lottery_games?.price || 0);
+        const tpp   = parseInt(p.lottery_games?.tickets_per_pack || 0, 10);
+        const dir   = p.loading_direction || 'asc';
+        const start = p.start_ticket ?? 0;
+        if (price && tpp) {
+          const sold = dir === 'asc' ? start : Math.max(0, tpp - 1 - start);
+          stationRev += sold * price;
+        }
+        return `<div class="station-book-chip" style="background:${color}" title="${gName} · Book #${p.pack_number} · $${price}">${emoji}</div>`;
       }
-      return `<div class="station-book-chip" style="background:${color}" title="${gName} · Book #${p.pack_number}${price ? ` · $${price}` : ''}">${emoji}</div>`;
+      return `<div class="station-book-chip" style="background:${color}" title="${gName} · Book #${p.pack_number}">${emoji}</div>`;
     }).join('');
     const extra = packs.length > 6 ? `<div class="station-chip-more">+${packs.length - 6}</div>` : '';
-    const revStr = stationRev > 0 ? `$${stationRev.toFixed(0)} today` : '—';
+    const revStr = adminOk && stationRev > 0 ? `$${stationRev.toFixed(0)} today` : '—';
     return `<div class="station-card" onclick="switchLotterySection('tracking')">
       <div class="station-card-accent"></div>
       <div class="station-card-hdr">${locIcon}<span class="station-card-name">${loc}</span></div>
@@ -6314,6 +6434,7 @@ function setReportRange(range) {
 }
 
 async function loadLotteryReports() {
+  if (!isAdmin()) return;
   const byGameEl    = document.getElementById('rpt-by-game');
   const byStationEl = document.getElementById('rpt-by-station');
   if (byGameEl)    byGameEl.innerHTML    = '<div class="summary-loading">Loading…</div>';
@@ -6573,6 +6694,7 @@ function _renderItabRow(p) {
 async function initLotteryTab() {
   await _ensureLotteryDbState();
   _initHistoryFilter();
+  _syncAdminStats();
   loadDashboard();
   // Wire receive input events eagerly so they work without clicking sub-tab first
   if (!_lotteryEventsReady) {

@@ -682,7 +682,7 @@ body {
 .modal-card-body { padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
 .modal-card-scan-row .scan-input { width: 100%; }
 .move-books-status { font-size: 12.5px; font-weight: 600; min-height: 18px; }
-.move-books-list { display: flex; flex-direction: column; max-height: 220px; overflow-y: auto; }
+.move-books-list { display: flex; flex-direction: column; max-height: 280px; overflow-y: auto; }
 .move-books-empty { font-size: 13px; color: var(--ink-50); font-style: italic; padding: 6px 0; }
 .move-dest-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-50); }
 .move-dest-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
@@ -697,7 +697,21 @@ body {
 .move-queue-dot  { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0; }
 .move-queue-info { flex: 1; min-width: 0; }
 .move-queue-name { display: block; font-size: 13px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.move-queue-sub  { font-size: 11px; color: var(--ink-50); }
+.move-queue-sub  { font-size: 12px; color: var(--ink-50); }
+/* Move Books confirmation panel */
+.move-confirm-panel { display: flex; flex-direction: column; gap: 10px; }
+.move-confirm-summary { font-size: 14px; color: var(--ink); background: var(--green-bg); border: 1.5px solid var(--green-border); border-radius: var(--radius-sm); padding: 11px 14px; line-height: 1.4; }
+.move-confirm-summary strong { color: var(--design-green); }
+.move-confirm-actions { display: flex; gap: 8px; }
+.move-confirm-back { flex: 1; padding: 10px 14px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--card); font-family: 'Space Grotesk', sans-serif; font-size: 13px; font-weight: 600; color: var(--ink-60); cursor: pointer; transition: background .12s; }
+.move-confirm-back:hover { background: var(--cream-dk); }
+.move-confirm-btn { flex: 2; padding: 10px 14px; border-radius: 10px; border: none; background: var(--ink); font-family: 'Space Grotesk', sans-serif; font-size: 13px; font-weight: 700; color: var(--cream); cursor: pointer; transition: background .12s; }
+.move-confirm-btn:hover { background: #2d2820; }
+/* Move Books undo toast */
+.move-undo-toast { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%) translateY(12px); background: var(--ink); color: var(--cream); border-radius: 999px; padding: 10px 14px 10px 20px; display: flex; align-items: center; gap: 12px; font-size: 13px; font-weight: 500; z-index: 9000; opacity: 0; transition: opacity .18s var(--ease-out-quart), transform .18s var(--ease-out-quart); pointer-events: none; white-space: nowrap; box-shadow: 0 4px 20px rgba(26,22,18,.25); }
+.move-undo-toast.move-undo-toast--visible { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
+.move-undo-btn { background: rgba(250,247,240,.15); border: 1px solid rgba(250,247,240,.25); color: var(--cream); border-radius: 999px; padding: 4px 12px; font-family: 'Space Grotesk', sans-serif; font-size: 12px; font-weight: 700; cursor: pointer; transition: background .12s; white-space: nowrap; }
+.move-undo-btn:hover { background: rgba(250,247,240,.25); }
 .pack-remove-btn { font-size: 15px; background: none; border: none; cursor: pointer; color: var(--text-hint); padding: 4px 5px; touch-action: manipulation; line-height: 1; }
 .pack-remove-btn:hover { color: var(--red-text); }
 
