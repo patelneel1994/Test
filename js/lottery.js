@@ -4368,6 +4368,11 @@ function _toggleLastCloseCard(id) {
   if (el) el.classList.toggle('lsc-open');
 }
 
+function _toggleTodayBanner() {
+  const el = document.getElementById('shift-today-banner');
+  if (el) el.classList.toggle('today-collapsed');
+}
+
 // Fetch full shift detail for one day, update the cached entry, re-render body in place.
 async function _loadDayDetail(dayId, groupId) {
   const el = document.getElementById(groupId);
@@ -4640,17 +4645,21 @@ function renderDayHistory(days, activePacks = []) {
         <div class="cp-events">${evRows || '<div class="cp-empty">No activity logged yet this shift</div>'}</div>`;
     }
 
+    const todayChevron = `<svg class="today-banner-chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
     html += `
-      <div class="shift-today-banner">
-        <div class="today-banner-hdr">
+      <div class="shift-today-banner today-collapsed" id="shift-today-banner">
+        <div class="today-banner-hdr" onclick="_toggleTodayBanner()">
           <div>
             <div class="today-banner-title">Today · Day Open since ${dayOpenTime}</div>
             <div class="today-banner-sub">${closedShifts.length} shift${closedShifts.length !== 1 ? 's' : ''} closed · ${liveTix} tickets · $${liveRev.toFixed(2)}</div>
           </div>
+          ${todayChevron}
         </div>
-        <div class="today-live-grid">
-          <div class="today-live-col">${activePacksHtml}</div>
-          ${openShift ? `<div class="today-live-col">${shiftActivityHtml}</div>` : ''}
+        <div class="today-live-content">
+          <div class="today-live-grid">
+            <div class="today-live-col">${activePacksHtml}</div>
+            ${openShift ? `<div class="today-live-col">${shiftActivityHtml}</div>` : ''}
+          </div>
         </div>
       </div>`;
   }
@@ -4723,11 +4732,12 @@ function renderDayHistory(days, activePacks = []) {
   html += `</div>`;
 
   // ── Collapsible day groups ────────────────────────────────────────────────
-  // First 2 days start expanded (they have full detail preloaded).
-  // Older days start collapsed with summary-only data; full detail fetched on expand.
+  // Only the last closed day starts expanded (full detail preloaded).
+  // Today (open day) and all older days start collapsed; full detail fetched on expand.
   displayDays.forEach((day, idx) => {
     const groupId      = `day-group-${day.id}`;
-    const collapsed    = idx < 2 ? '' : ' collapsed';
+    const isLastClosed = !day.status || day.status === 'closed' ? day === lastDay : false;
+    const collapsed    = isLastClosed ? '' : ' collapsed';
     const dateStr      = new Date(day.opened_at).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
     const allDayShifts = day.lottery_shifts || [];
     const closedShifts = allDayShifts.filter(s => s.status === 'closed');
@@ -5618,12 +5628,14 @@ function _renderDashAttention(discEvents, _activePacks, el) {
       const note = e.notes ? `<div class="att-note">⚠ ${e.notes}</div>` : `<div class="att-note">⚠ Scan discrepancy recorded</div>`;
       const color = _gameColor(p.game_number);
       const emoji = _gameEmoji(p.game_number);
+      const whenStr = _fmtAttentionDate(e.created_at);
       return `<div class="att-item">
         <div class="att-dot" style="background:${color};font-size:15px">${emoji}</div>
         <div class="att-info">
           <div class="att-name">${name} <span class="att-bc">${bc}</span></div>
           ${note}
           <div class="att-loc">${p.location || '—'}</div>
+          ${whenStr ? `<div class="att-when"><span class="att-when-label">Logged</span><span class="att-when-val">${whenStr}</span></div>` : ''}
         </div>
       </div>`;
     }).join('');
@@ -5728,6 +5740,21 @@ function _renderDashActivity(events, el, append = false, hasMore = false) {
       <button class="act-load-more" onclick="loadDashActivity(true)">Load more</button>
     </div>`);
   }
+}
+
+function _fmtAttentionDate(isoStr) {
+  if (!isoStr) return '';
+  const d   = new Date(isoStr);
+  const now = new Date();
+  const diffMs  = now - d;
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffH   = Math.floor(diffMs / 3600000);
+  const timeStr = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  if (diffMin < 1)  return 'just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffH   < 24) return `Today ${timeStr}`;
+  if (diffH   < 48) return `Yesterday ${timeStr}`;
+  return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${timeStr}`;
 }
 
 function _fmtActivityTime(isoStr) {

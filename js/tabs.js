@@ -38,7 +38,7 @@ function switchLotterySection(section, { pushHash = true } = {}) {
   if (locBar) locBar.style.display = 'none';
 
   // Show the correct sub-section
-  ['dashboard', 'tracking', 'catalog', 'receive', 'reports', 'settings', 'inventory'].forEach(s => {
+  ['dashboard', 'tracking', 'audit', 'catalog', 'receive', 'reports', 'settings', 'inventory'].forEach(s => {
     const sec = document.getElementById('lsection-' + s);
     if (!sec) return;
     sec.style.display = s === section ? '' : 'none';
@@ -47,10 +47,10 @@ function switchLotterySection(section, { pushHash = true } = {}) {
 
   _setNavActive('nav-lottery-' + section);
 
-  // Show floating jump nav only in the tracking section; hide when at top
+  // Show floating jump nav only in the audit section
   const fjn = document.getElementById('float-jump-nav');
   if (fjn) {
-    if (section === 'tracking') {
+    if (section === 'audit') {
       fjn.style.display = '';
       _initFjnScrollWatch();
     } else {
@@ -64,7 +64,8 @@ function switchLotterySection(section, { pushHash = true } = {}) {
   if (typeof _updateContextBar === 'function') _updateContextBar(null);
 
   if (section === 'dashboard') { loadDashboard(); _initDashAnalyticsDates(); }
-  if (section === 'tracking')  { loadLotteryStock(); loadShiftHistory(); loadLotteryDbStats(); }
+  if (section === 'tracking')  { loadLotteryStock(); loadLotteryDbStats(); }
+  if (section === 'audit')     { loadShiftHistory(); }
   if (section === 'receive')   { initReceiveTab(); loadLocationView(); }
   if (section === 'catalog')   loadLotteryCatalog();
   if (section === 'reports')   loadLotteryReports();

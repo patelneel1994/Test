@@ -60,6 +60,10 @@
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v1a2 2 0 0 0 0 4v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1a2 2 0 0 0 0-4V9z"/><path d="M8 12h8"/><path d="m12 9 3 3-3 3"/></svg>
         <span class="nav-label">Floor</span>
       </button>
+      <button class="nav-item" id="nav-lottery-audit" onclick="switchLotterySection('audit')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span class="nav-label">Audit</span>
+      </button>
       <button class="nav-item" id="nav-lottery-receive" onclick="switchLotterySection('receive')">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><rect x="3" y="17" width="18" height="4" rx="1.5"/></svg>
         <span class="nav-label">Stock</span>
@@ -423,7 +427,7 @@
       <div class="page-hdr-left">
         <div class="page-eyebrow">Inventory</div>
         <h2 class="page-title">Live floor</h2>
-        <div class="page-subtitle">All active books by game or location, and full shift history.</div>
+        <div class="page-subtitle">All active books by game or location.</div>
       </div>
       <div class="page-hdr-actions">
         <div class="day-shift-btns" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"></div>
@@ -510,18 +514,26 @@
       <div id="lottery-stock-container"><div class="summary-loading">Loading…</div></div>
     </div>
 
-    <!-- Shift History Card -->
-    <div class="scan-card">
-      <div class="card-section-hdr">
-        <div>
-          <div class="page-eyebrow" style="margin-bottom:2px">Audit trail</div>
-          <div class="card-section-title">Shift history</div>
-        </div>
+  </div><!-- /lsection-tracking -->
+
+  <!-- ── AUDIT SECTION ─────────────────────────────────────────────── -->
+  <div id="lsection-audit" style="display:none">
+
+    <div class="page-hdr">
+      <div class="page-hdr-left">
+        <div class="page-eyebrow">Lottery</div>
+        <h2 class="page-title">Audit trail</h2>
+        <div class="page-subtitle">Shift history and daily close records.</div>
+      </div>
+      <div class="page-hdr-actions">
         <button class="log-act-btn" onclick="loadShiftHistory()">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg>
           Refresh
         </button>
       </div>
+    </div>
+
+    <div class="scan-card">
       <div class="history-filter-bar">
         <div class="history-filter-presets">
           <button class="hpreset-btn" id="hpreset-month"     onclick="setHistoryPreset('month')">This Month</button>
@@ -537,15 +549,12 @@
       <div id="shift-history-container"><div class="summary-loading">Loading…</div></div>
     </div>
 
-  </div><!-- /lsection-tracking -->
+  </div><!-- /lsection-audit -->
 
-  <!-- Floating jump nav — visible when lottery tracking section is active -->
+  <!-- Floating jump nav — visible in the audit section -->
   <div class="float-jump-nav" id="float-jump-nav" style="display:none">
     <button class="fjn-btn" onclick="jumpTo('top')" title="Go to top">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
-    </button>
-    <button class="fjn-btn" onclick="jumpTo('shift-history')" title="Shift history">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
     </button>
     <button class="fjn-btn" onclick="jumpTo('last-day')" title="Last closed day">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
