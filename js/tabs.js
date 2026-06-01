@@ -64,6 +64,7 @@ function switchLotterySection(section, { pushHash = true } = {}) {
   if (typeof _updateContextBar === 'function') _updateContextBar(null);
 
   if (section === 'dashboard') { loadDashboard(); _initDashAnalyticsDates(); }
+  if (section === 'tracking')  { loadLotteryStock(); loadShiftHistory(); loadLotteryDbStats(); }
   if (section === 'receive')   { initReceiveTab(); loadLocationView(); }
   if (section === 'catalog')   loadLotteryCatalog();
   if (section === 'reports')   loadLotteryReports();

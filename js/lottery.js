@@ -237,7 +237,7 @@ async function openInventory(context, skipPrompt = false) {
     const sel = _dbCaps.hasLoadingDirection
       ? `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,loading_direction,location,station_line,lottery_games(game_name,price,tickets_per_pack)`
       : `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,location,station_line,lottery_games(game_name,price,tickets_per_pack)`;
-    const base = `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=${sel}&order=location.asc,pack_number.asc&limit=200`;
+    const base = `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=${sel}&order=location.asc,pack_number.asc`;
     const isOpenDay = context === 'open-day';
     const isClose   = !isOpenDay && context.startsWith('close');
     const fetches = [sbFetch(`${base}&status=eq.activated`)];
@@ -398,7 +398,7 @@ async function _refreshInvAfterLoad() {
   const sel     = _dbCaps.hasLoadingDirection
     ? `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,loading_direction,location,lottery_games(game_name,price,tickets_per_pack)`
     : `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,location,lottery_games(game_name,price,tickets_per_pack)`;
-  const base    = `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=${sel}&order=location.asc,pack_number.asc&limit=200`;
+  const base    = `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=${sel}&order=location.asc,pack_number.asc`;
   const isOpenDay = _invContext === 'open-day';
   const fetches = [sbFetch(`${base}&status=eq.activated`)];
   if (isOpenDay) fetches.push(sbFetch(`${base}&status=eq.received`));
@@ -525,7 +525,7 @@ async function confirmReset(mode, e) {
     }
 
     // Step 2 — fetch all shift IDs (needed to cascade-delete entries)
-    const allShiftsRes = await sbFetch(`${base}lottery_shifts?select=id&limit=1000`);
+    const allShiftsRes = await sbFetch(`${base}lottery_shifts?select=id`);
     const allShifts    = await allShiftsRes.json();
     const allShiftIds  = Array.isArray(allShifts) ? allShifts.map(s => s.id).filter(Boolean) : [];
 
@@ -880,7 +880,7 @@ async function fillAuditFromLog() {
       `?select=pack_id,ticket_after,created_at` +
       `&action=eq.audit_scan&pack_id=in.(${packIds})` +
       `&created_at=gte.${encodeURIComponent(since)}` +
-      `&order=created_at.desc&limit=500`
+      `&order=created_at.desc`
     );
     const rows = await res.json();
     if (!Array.isArray(rows) || !rows.length) {
@@ -1447,7 +1447,7 @@ async function showOpenDayModal() {
     const res = await sbFetch(
       `${CONFIG.supabaseUrl}/rest/v1/lottery_packs` +
       `?select=id,pack_number,start_ticket,last_shift_ticket,location,lottery_games(game_name,price)` +
-      `&status=eq.activated&order=location.asc&limit=200`
+      `&status=eq.activated&order=location.asc`
     );
     const packs = await res.json();
     _dayOpenPacks = Array.isArray(packs) ? packs : [];
@@ -1885,7 +1885,7 @@ async function loadLotteryDbStats() {
       cnt('lottery_packs?select=id&status=eq.received'),
       cnt('lottery_packs?select=id&status=eq.soldout'),
       cnt('lottery_packs?select=id'),
-      sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=id,location&status=eq.received&order=location.asc&limit=200`)
+      sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=id,location&status=eq.received&order=location.asc`)
         .then(r => r.json()).catch(() => []),
     ]);
     document.getElementById('lottery-stat-db-packs').textContent = active;
@@ -2048,7 +2048,7 @@ async function openReturnToLotteryModal(e) {
     const sel = _dbCaps.hasLoadingDirection
       ? 'id,game_number,pack_number,start_ticket,last_shift_ticket,loading_direction,status,lottery_games(game_name,price,tickets_per_pack)'
       : 'id,game_number,pack_number,start_ticket,last_shift_ticket,status,lottery_games(game_name,price,tickets_per_pack)';
-    const res  = await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?status=in.(activated,received)&select=${sel}&order=game_number.asc,pack_number.asc&limit=200`);
+    const res  = await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?status=in.(activated,received)&select=${sel}&order=game_number.asc,pack_number.asc`);
     const data = await res.json();
     _rltPacks  = Array.isArray(data) ? data : [];
   } catch { _rltPacks = []; }
@@ -3189,10 +3189,10 @@ async function loadLotteryCatalog() {
   const activeFilter = _showInactiveGames ? '' : '&or=(active.eq.true,active.is.null)';
   try {
     const [gRes, pRes, eRes] = await Promise.all([
-      sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_games?select=game_number,game_name,price,tickets_per_pack,active&order=game_number.asc${activeFilter}&limit=1000`),
-      sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=game_number,pack_number,status,raw_barcode&order=game_number.asc,id.asc&limit=1000`),
+      sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_games?select=game_number,game_name,price,tickets_per_pack,active&order=game_number.asc${activeFilter}`),
+      sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=game_number,pack_number,status,raw_barcode&order=game_number.asc,id.asc`),
       _dbCaps.hasPackEvents
-        ? sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_pack_events?select=action,created_at,ticket_before,ticket_after,location_to,shift_id,lottery_shifts(opened_at),lottery_packs(game_number,pack_number)&order=created_at.asc&limit=5000`)
+        ? sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_pack_events?select=action,created_at,ticket_before,ticket_after,location_to,shift_id,lottery_shifts(opened_at),lottery_packs(game_number,pack_number)&order=created_at.asc`)
         : Promise.resolve(null),
     ]);
     const games  = await gRes.json();
@@ -3534,7 +3534,7 @@ async function loadLotteryStock() {
       }[_stockStatusFilter] || 'status=in.(received,activated,soldout)');
   try {
     const res = await sbFetch(
-      `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=${select}&${statusQ}&order=game_number.asc,status.asc,pack_number.asc&limit=500`
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=${select}&${statusQ}&order=game_number.asc,status.asc,pack_number.asc`
     );
     const rows = await res.json();
     if (!res.ok) throw new Error(rows?.message || `[${res.status}]`);
@@ -3708,7 +3708,7 @@ async function openShiftClose(type) {
     : `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,location,lottery_games(game_name,price,tickets_per_pack)`;
   try {
     const res = await sbFetch(
-      `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=${select}&status=eq.activated&order=location.asc,pack_number.asc&limit=200`
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=${select}&status=eq.activated&order=location.asc,pack_number.asc`
     );
     const rows = await res.json();
     _shiftCloseEntries = rows;
@@ -3963,7 +3963,7 @@ async function loadShiftHistory() {
       const res = await sbFetch(
         `${CONFIG.supabaseUrl}/rest/v1/lottery_days` +
         `?select=id,opened_at,closed_at,status,total_tickets_sold,total_revenue,notes` +
-        `&order=opened_at.desc&limit=60${dateFilter}`
+        `&order=opened_at.desc${dateFilter}`
       );
       const days = await res.json();
       const daysArr = Array.isArray(days) ? days : [];
@@ -3987,7 +3987,7 @@ async function loadShiftHistory() {
           const recentIds = daysArr.slice(0, recentN).map(d => d.id).join(',');
           const r1 = await sbFetch(
             `${CONFIG.supabaseUrl}/rest/v1/lottery_shifts` +
-            `?day_id=in.(${recentIds})&select=${fullSel}&order=opened_at.asc&limit=200`
+            `?day_id=in.(${recentIds})&select=${fullSel}&order=opened_at.asc`
           );
           const recent = await r1.json();
           if (Array.isArray(recent)) {
@@ -4003,7 +4003,7 @@ async function loadShiftHistory() {
             const olderIds = daysArr.slice(2).map(d => d.id).join(',');
             const r2 = await sbFetch(
               `${CONFIG.supabaseUrl}/rest/v1/lottery_shifts` +
-              `?day_id=in.(${olderIds})&select=${sumSel}&order=opened_at.asc&limit=500`
+              `?day_id=in.(${olderIds})&select=${sumSel}&order=opened_at.asc`
             );
             const older = await r2.json();
             if (Array.isArray(older)) {
@@ -4024,7 +4024,7 @@ async function loadShiftHistory() {
             ? 'game_number,pack_number,location,start_ticket,last_shift_ticket,loading_direction,lottery_games(game_name,price,tickets_per_pack)'
             : 'game_number,pack_number,location,start_ticket,last_shift_ticket,lottery_games(game_name,price,tickets_per_pack)';
           const apRes = await sbFetch(
-            `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?status=eq.activated&select=${packSel}&order=location.asc,pack_number.asc&limit=100`
+            `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?status=eq.activated&select=${packSel}&order=location.asc,pack_number.asc`
           );
           const ap = await apRes.json();
           if (Array.isArray(ap)) activePacks = ap;
@@ -4036,7 +4036,7 @@ async function loadShiftHistory() {
       const res = await sbFetch(
         `${CONFIG.supabaseUrl}/rest/v1/lottery_shifts` +
         `?select=id,shift_type,closed_at,total_tickets_sold,total_revenue,notes,lottery_shift_entries(pack_id,tickets_sold,revenue,ticket_at_open,ticket_at_close,station_line,lottery_packs(pack_number,game_number,location,lottery_games(game_name,price)))` +
-        `&order=closed_at.desc&limit=60${dateFilter.replace(/opened_at/g, 'closed_at')}`
+        `&order=closed_at.desc${dateFilter.replace(/opened_at/g, 'closed_at')}`
       );
       const shifts = await res.json();
       renderShiftHistory(Array.isArray(shifts) ? shifts : []);
@@ -4388,7 +4388,7 @@ async function _loadDayDetail(dayId, groupId) {
         `lottery_packs(pack_number,game_number,location,lottery_games(game_name,price)))` +
       evSel;
     const r = await sbFetch(
-      `${CONFIG.supabaseUrl}/rest/v1/lottery_shifts?day_id=eq.${dayId}&select=${shiftSel}&order=opened_at.asc&limit=100`
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_shifts?day_id=eq.${dayId}&select=${shiftSel}&order=opened_at.asc`
     );
     const shifts = await r.json();
     const day = _dayHistoryData.find(d => d.id === dayId);
@@ -4904,7 +4904,7 @@ async function loadLocationView() {
     const res = await sbFetch(
       `${CONFIG.supabaseUrl}/rest/v1/lottery_packs` +
       `?select=id,game_number,pack_number,status,location,raw_barcode,lottery_games(game_name,price,tickets_per_pack)` +
-      `&status=in.(received,activated)&order=location.asc,pack_number.asc&limit=500`
+      `&status=in.(received,activated)&order=location.asc,pack_number.asc`
     );
     const rows = await res.json();
     if (!res.ok) throw new Error(rows?.message || `[${res.status}]`);
@@ -5025,7 +5025,7 @@ async function loadReceiveQueue() {
     const res = await sbFetch(
       `${CONFIG.supabaseUrl}/rest/v1/lottery_packs` +
       `?select=id,game_number,pack_number,raw_barcode,start_ticket,end_ticket,last_shift_ticket,loading_direction,location,lottery_games(game_name,price,tickets_per_pack)` +
-      `&status=eq.received&order=location.asc,pack_number.asc&limit=200`
+      `&status=eq.received&order=location.asc,pack_number.asc`
     );
     const packs = await res.json();
     if (!Array.isArray(packs) || !packs.length) {
@@ -5211,7 +5211,7 @@ async function loadDashboard() {
       : 'id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,location,lottery_games(game_name,price,tickets_per_pack)';
 
     const fetches = [
-      sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=${sel}&status=eq.activated&order=location.asc&limit=300`),
+      sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=${sel}&status=eq.activated&order=location.asc`),
       sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=id&status=eq.received&limit=1`, { headers: { 'Prefer': 'count=exact' } }),
     ];
     if (snapDay && snapHasShifts) {
@@ -5220,7 +5220,7 @@ async function loadDashboard() {
     if (snapHasEvents) {
       // Discrepancy-only fetch — used for attention panel + flag count
       // Activity feed loaded separately via loadDashActivity()
-      fetches.push(sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_pack_events?select=id,action,pack_id,created_at,notes,lottery_packs(pack_number,game_number,location,lottery_games(game_name))&action=eq.discrepancy&order=created_at.desc&limit=50`));
+      fetches.push(sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_pack_events?select=id,action,pack_id,created_at,notes,lottery_packs(pack_number,game_number,location,lottery_games(game_name))&action=eq.discrepancy&order=created_at.desc`));
     }
 
     const results = await Promise.all(fetches);
@@ -5381,7 +5381,7 @@ async function loadDashAnalytics() {
       `?select=id,opened_at,closed_at,status,total_revenue,total_tickets_sold,` +
       `lottery_shifts(id,opened_at,closed_at,status,total_revenue,total_tickets_sold,` +
       `lottery_shift_entries(pack_id,tickets_sold,revenue,lottery_packs(game_number,lottery_games(game_name,price))))` +
-      `&opened_at=gte.${from}T00:00:00&opened_at=lte.${to}T23:59:59&order=opened_at.desc&limit=120`
+      `&opened_at=gte.${from}T00:00:00&opened_at=lte.${to}T23:59:59&order=opened_at.desc`
     );
     const days = await res.json();
     if (!res.ok) throw new Error(days?.message || `[${res.status}]`);
@@ -5792,7 +5792,7 @@ async function loadSettingsSection() {
   try {
     // Fetch all packs (all statuses) so we can show active badges AND guard deletes
     const res = await sbFetch(
-      `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=location,status&limit=5000`
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=location,status`
     );
     const packs = await res.json();
     if (Array.isArray(packs)) {
@@ -6147,8 +6147,8 @@ async function loadLotteryReports() {
     const base = CONFIG.supabaseUrl + '/rest/v1/';
 
     const [shiftsRes, packsRes, activeRes] = await Promise.all([
-      sbFetch(`${base}lottery_shifts?select=total_revenue,total_tickets_sold${shiftFilter}&limit=1000`),
-      sbFetch(`${base}lottery_packs?select=${packSel}&status=in.(activated,soldout,removed)&limit=1000`),
+      sbFetch(`${base}lottery_shifts?select=total_revenue,total_tickets_sold${shiftFilter}`),
+      sbFetch(`${base}lottery_packs?select=${packSel}&status=in.(activated,soldout,removed)`),
       sbFetch(`${base}lottery_packs?select=id&status=eq.activated&limit=1`, { headers: { 'Prefer': 'count=exact' } }),
     ]);
 
@@ -6268,7 +6268,7 @@ async function loadInventorySection() {
 
   try {
     const res = await sbFetch(
-      `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=id,game_number,pack_number,status,location,start_ticket,end_ticket,loading_direction,created_at,lottery_games(game_name,price,tickets_per_pack)&order=created_at.desc&limit=500`
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=id,game_number,pack_number,status,location,start_ticket,end_ticket,loading_direction,created_at,lottery_games(game_name,price,tickets_per_pack)&order=created_at.desc`
     );
     const json = await res.json();
     _invTabAllPacks = Array.isArray(json) ? json : [];
@@ -6384,10 +6384,7 @@ function _renderItabRow(p) {
 // Lottery tab — inventory management + day/shift
 async function initLotteryTab() {
   await _ensureLotteryDbState();
-  loadLotteryDbStats();
-  loadLotteryStock();
   _initHistoryFilter();
-  loadShiftHistory();
   loadDashboard();
   // Wire receive input events eagerly so they work without clicking sub-tab first
   if (!_lotteryEventsReady) {

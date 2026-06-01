@@ -1589,7 +1589,10 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: none; }
 }
-.section-anim { animation: sectionFadeIn .18s var(--ease-out-quart) both; }
+/* forwards (not both): element stays at its natural opacity:1 before animation starts,
+   preventing the Safari bug where animation-fill-mode:both keeps opacity:0 stuck
+   when a parent transitions from display:none to display:block. */
+.section-anim { animation: sectionFadeIn .18s var(--ease-out-quart) forwards; }
 
 /* ── SCAN ERROR SHAKE ──────────────────────────────────────────── */
 @keyframes scanShake {
@@ -1685,4 +1688,23 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 /* ── AUDIT MODAL STACKING: cap left panel so book list reachable ─ */
 @media (max-width: 700px) {
   .audit-left { max-height: 42dvh; flex-shrink: 0; }
+}
+
+/* ── SAFARI MOBILE: dashboard panels not painting correctly ───────
+   Safari sometimes fails to repaint dynamically-injected content
+   inside grid cells when the grid is inside an overflow-y:auto
+   flex column. Fixes:
+   1. Enable momentum scroll (triggers compositor path, forces paints)
+   2. Allow act-line/att-name to wrap — prevents invisible-text bug
+      where Safari computes 0-width for nowrap text in grid flex cells
+      that haven't fully laid out yet after a fetch-driven innerHTML set
+   ──────────────────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  .app-content { -webkit-overflow-scrolling: touch; }
+  .act-line { white-space: normal; }
+  .att-name { white-space: normal; }
+  /* The two dashboard panels: force a composited layer to reliably
+     trigger repaints after dynamic content injection */
+  #dashboard-attention,
+  #dashboard-activity { -webkit-transform: translateZ(0); transform: translateZ(0); }
 }
