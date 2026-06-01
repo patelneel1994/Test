@@ -66,6 +66,27 @@ function _getLocOrderAll() {
 // Fixed staging locations (hardcoded, always present)
 const _FIXED_STAGING = ['Extra', 'Office'];
 
+// Builds a display-ordered location list from a byLoc map.
+// Stations (known + unknown Station-N names) come first in numerical order,
+// then Extra/Office fixed staging — so a station missing from _locationsCache
+// never gets pushed past Office.
+function _sortedAllLocs(byLoc) {
+  const locOrder = _getLocOrderAll();
+  const fixedSet = new Set(_FIXED_STAGING);
+  const unknown  = Object.keys(byLoc).filter(l => !locOrder.includes(l));
+  unknown.sort((a, b) => {
+    const na = a.match(/^station\s*(\d+)$/i), nb = b.match(/^station\s*(\d+)$/i);
+    if (na && nb) return +na[1] - +nb[1];
+    return a.localeCompare(b);
+  });
+  return [
+    ...locOrder.filter(l => !fixedSet.has(l)),   // known stations / extra locs
+    ...unknown.filter(l => !fixedSet.has(l)),    // unknown station-like locs, sorted numerically
+    ...locOrder.filter(l => fixedSet.has(l)),    // Extra, Office
+    ...unknown.filter(l => fixedSet.has(l)),     // edge-case: unknown fixed names
+  ];
+}
+
 // Is this location a "station" (audit-eligible)?
 function _isStation(loc) { return _getStations().includes(loc); }
 
@@ -112,20 +133,50 @@ let _lotteryDbStateReady = false;
 // Session-level admin unlock. Expires after ADMIN_SESSION_MS of inactivity.
 // Replace _adminUnlocked with a real auth lookup when a user/role system is added.
 const ADMIN_SESSION_MS = 2 * 60 * 1000;  // 2 minutes
-let _adminUnlocked  = false;
-let _adminCallback  = null;   // pending action waiting for admin auth
-let _adminExpireTimer = null; // auto-lock timer
+let _adminUnlocked       = false;
+let _adminCallback       = null;   // pending action waiting for admin auth
+let _adminExpireTimer    = null;   // auto-lock timeout
+let _adminExpireAt       = null;   // absolute timestamp when session expires
+let _adminCountdownInterval = null; // 1-second tick to update the pill
 
 function isAdmin() { return _adminUnlocked; }
 
+function _syncAdminPill() {
+  const btn = document.getElementById('admin-lock-pill');
+  if (!btn) return;
+  if (_adminUnlocked && _adminExpireAt) {
+    const remaining = Math.max(0, Math.ceil((_adminExpireAt - Date.now()) / 1000));
+    const mins = Math.floor(remaining / 60);
+    const secs = String(remaining % 60).padStart(2, '0');
+    btn.textContent       = `🔓 Admin · ${mins}:${secs}`;
+    btn.style.background  = 'var(--amber-bg)';
+    btn.style.color       = 'var(--accent-dk)';
+    btn.style.borderColor = 'var(--amber-border)';
+  } else {
+    btn.textContent       = '🔒 Admin';
+    btn.style.background  = '';
+    btn.style.color       = '';
+    btn.style.borderColor = '';
+  }
+}
+
 function _lockAdmin() {
   _adminUnlocked = false;
-  if (_adminExpireTimer) { clearTimeout(_adminExpireTimer); _adminExpireTimer = null; }
+  _adminExpireAt = null;
+  if (_adminExpireTimer)      { clearTimeout(_adminExpireTimer);         _adminExpireTimer      = null; }
+  if (_adminCountdownInterval){ clearInterval(_adminCountdownInterval);  _adminCountdownInterval = null; }
+  _syncAdminPill();
+  if (_cachedStockRows) renderLotteryStock(_cachedStockRows);
+  _renderLocationView();
 }
 
 function _resetAdminTimer() {
+  _adminExpireAt = Date.now() + ADMIN_SESSION_MS;
   if (_adminExpireTimer) clearTimeout(_adminExpireTimer);
   _adminExpireTimer = setTimeout(_lockAdmin, ADMIN_SESSION_MS);
+  // Start (or restart) the 1-second countdown tick
+  if (_adminCountdownInterval) clearInterval(_adminCountdownInterval);
+  _adminCountdownInterval = setInterval(_syncAdminPill, 1000);
 }
 
 // Gate any action behind admin auth.
@@ -156,6 +207,13 @@ function confirmAdminAuth(e) {
   _resetAdminTimer();
   closeAdminAuthModal();
   if (_adminCallback) { const cb = _adminCallback; _adminCallback = null; cb(); }
+  _syncAdminPill();
+  if (_cachedStockRows) renderLotteryStock(_cachedStockRows);
+  _renderLocationView();
+}
+
+function toggleAdminLock() {
+  if (_adminUnlocked) { _lockAdmin(); } else { requireAdmin(() => {}); }
 }
 
 function closeAdminAuthModal() {
@@ -3665,7 +3723,6 @@ function renderLotteryStockByLocation(rows) {
   if (!Array.isArray(rows) || !rows.length) {
     el.innerHTML = '<div class="log-empty" style="padding:12px 0;border:none">No packs in stock</div>'; return;
   }
-  const locOrder = _getLocOrderAll();
   const byLoc = {};
   for (const row of rows) {
     const loc = row.location || 'Office';
@@ -3678,16 +3735,26 @@ function renderLotteryStockByLocation(rows) {
     sold ? `<span class="cat-cnt-pill cp-soldout"><span class="cat-cnt-dot"></span>${sold} sold out</span>`  : '',
   ].filter(Boolean).join('');
 
-  const allLocs = [...locOrder, ...Object.keys(byLoc).filter(l => !locOrder.includes(l))];
+  const allLocs = _sortedAllLocs(byLoc);
 
   el.innerHTML = '<div class="catalog-grid">' + allLocs.map(loc => {
     const packs = byLoc[loc];
     if (!packs || !packs.length) return '';
-    const activated = packs.filter(p => p.status === 'activated').length;
-    const received  = packs.filter(p => p.status === 'received').length;
-    const soldOut   = packs.filter(p => p.status === 'soldout').length;
-    const isStn     = _isStation(loc);
-    const barColor  = activated ? 'var(--design-green)' : received ? '#d4a000' : 'var(--ink-30)';
+    const activated  = packs.filter(p => p.status === 'activated').length;
+    const received   = packs.filter(p => p.status === 'received').length;
+    const soldOut    = packs.filter(p => p.status === 'soldout').length;
+    const isStn      = _isStation(loc);
+    const isOffice   = loc === 'Office';
+    const adminLocked = isOffice && !isAdmin();
+    const barColor   = activated ? 'var(--design-green)' : received ? '#d4a000' : 'var(--ink-30)';
+    const recvPill   = adminLocked
+      ? `<span class="cat-cnt-pill cp-received" style="filter:blur(4px);user-select:none" aria-hidden="true"><span class="cat-cnt-dot"></span>${received} received</span>`
+      : (received ? `<span class="cat-cnt-pill cp-received"><span class="cat-cnt-dot"></span>${received} received</span>` : '');
+    const stockHtml  = [
+      activated ? `<span class="cat-cnt-pill cp-active"><span class="cat-cnt-dot"></span>${activated} active</span>` : '',
+      recvPill,
+      soldOut   ? `<span class="cat-cnt-pill cp-soldout"><span class="cat-cnt-dot"></span>${soldOut} sold out</span>` : '',
+    ].filter(Boolean).join('') || '<span class="cat-stock-empty">Empty</span>';
     return `
       <div class="cat-card">
         <div class="cat-card-bar" style="background:${barColor}"></div>
@@ -3698,7 +3765,7 @@ function renderLotteryStockByLocation(rows) {
             <div class="cat-game-num"><span class="stk-type-tag">${isStn ? 'Station' : 'Staging'}</span></div>
           </div>
         </div>
-        <div class="cat-stock">${_pills(activated, received, soldOut) || '<span class="cat-stock-empty">Empty</span>'}</div>
+        <div class="cat-stock">${stockHtml}</div>
         <div class="stk-packs">
           ${packs.filter(p => p.status !== 'soldout').sort((a, b) => {
             if (a.station_line == null && b.station_line == null) return 0;
@@ -3770,11 +3837,10 @@ function renderShiftCloseModal(rows) {
   if (!rows.length) {
     bodyEl.innerHTML = '<div class="log-empty" style="padding:12px 0;border:none">No active books to close</div>'; return;
   }
-  const locOrder = _getLocOrderAll();
   const byLoc = {};
   for (const r of rows) { const loc = r.location || 'Office'; if (!byLoc[loc]) byLoc[loc] = []; byLoc[loc].push(r); }
   let html = '';
-  for (const loc of locOrder) {
+  for (const loc of _sortedAllLocs(byLoc)) {
     const packs = byLoc[loc];
     if (!packs || !packs.length) continue;
     html += `<div class="shift-loc-section"><div class="shift-loc-header">${loc}</div>`;
@@ -4996,7 +5062,6 @@ function _renderLocationView() {
   }
 
   // Group by location
-  const locOrder = _getLocOrderAll();
   const byLoc = {};
   for (const r of filtered) {
     const loc = r.location || 'Office';
@@ -5020,22 +5085,30 @@ function _renderLocationView() {
     if (price > 0) locPriceCounts[price] = (locPriceCounts[price] || 0) + 1;
   }
 
-  const allLocs = [...locOrder, ...Object.keys(byLoc).filter(l => !locOrder.includes(l))];
+  const allLocs = _sortedAllLocs(byLoc);
   let html = _priceSummaryHtml(locPriceCounts);
   for (const loc of allLocs) {
     const packs = byLoc[loc];
     if (!packs?.length) continue;
-    const locCss   = PACK_LOC_CSS[loc] || 'loc-office';
-    const totalVal = packs.reduce((sum, p) => {
+    const isOffice    = loc === 'Office';
+    const adminLocked = isOffice && !isAdmin();
+    const locCss      = PACK_LOC_CSS[loc] || 'loc-office';
+    const totalVal    = packs.reduce((sum, p) => {
       const price = parseFloat(p.lottery_games?.price || 0);
       const tpp   = parseInt(p.lottery_games?.tickets_per_pack || 0, 10);
       return sum + price * tpp;
     }, 0);
+    const receivedCount = packs.filter(p => p.status === 'received').length;
+    const countHtml  = adminLocked && receivedCount
+      ? `<span class="loc-view-count" style="filter:blur(4px);user-select:none" aria-hidden="true">${packs.length} book${packs.length !== 1 ? 's' : ''}</span>`
+      : `<span class="loc-view-count">${packs.length} book${packs.length !== 1 ? 's' : ''}</span>`;
+    const totalHtml  = adminLocked
+      ? `<span class="loc-view-total" style="filter:blur(4px);user-select:none" aria-hidden="true">$${totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`
+      : `<span class="loc-view-total">$${totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`;
     html += `<div class="loc-view-section">
       <div class="loc-view-header">
         <span class="pack-loc-pill ${locCss}">${loc}</span>
-        <span class="loc-view-count">${packs.length} book${packs.length !== 1 ? 's' : ''}</span>
-        <span class="loc-view-total">$${totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+        ${countHtml}${totalHtml}
       </div>
       <div class="loc-view-books">
         ${packs.map(p => {
@@ -5044,14 +5117,16 @@ function _renderLocationView() {
           const price = parseFloat(p.lottery_games?.price || 0);
           const tpp   = parseInt(p.lottery_games?.tickets_per_pack || 0, 10);
           const val   = price && tpp ? `$${(price * tpp).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '';
+          const showVal = val && !adminLocked;
+          const priceSub = price && !adminLocked ? ` · $${price.toFixed(2)}/ticket` : '';
           return `<div class="loc-view-row" style="flex-direction:column;align-items:stretch">
             <div style="display:flex;align-items:center;gap:8px">
               <div class="loc-view-info">
                 <span class="loc-view-name">${name}</span>
-                <span class="loc-view-sub">#${p.pack_number}${price ? ` · $${price.toFixed(2)}/ticket` : ''}</span>
+                <span class="loc-view-sub">#${p.pack_number}${priceSub}</span>
               </div>
               <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
-                ${val ? `<span class="loc-view-val">${val}</span>` : ''}
+                ${showVal ? `<span class="loc-view-val">${val}</span>` : ''}
                 <span class="pack-status-pill ${st.css}">${st.label}</span>
               </div>
             </div>
