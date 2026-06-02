@@ -293,7 +293,7 @@ const _INV_TITLES   = {
 };
 
 async function openInventory(context, skipPrompt = false) {
-  if (_invBusy) return;
+  if (_invBusy) { showError('Busy', 'An audit is already in progress.'); return; }
   if (_dbCaps.hasFullDayTracking) {
     if (context === 'open-day' && _currentDay) {
       showError('Day already open', 'A day is already open. Close it before opening a new one.'); return;
@@ -1035,9 +1035,6 @@ function _renderExtraBookCard(p) {
   const newBadge   = isNewBook ? `<span class="audit-badge" style="background:rgba(14,93,216,.1);color:#1d4ed8;border:1px solid rgba(14,93,216,.25);font-size:9.5px">New</span>` : '';
 
   const inputHtml = showInput ? `
-    <input type="number" class="audit-ticket-input shift-ticket-input" id="extra-inp-${id}"
-      value="${state.ticket != null ? state.ticket : ''}" placeholder="#"
-      min="0" oninput="_handleExtraManual('${id}')" />
     <button class="extra-bypass-btn"
       onmousedown="openExtraBypassModal('${id}')" ontouchstart="openExtraBypassModal('${id}')">Bypass</button>` : '';
 
@@ -1589,7 +1586,8 @@ function _updateInvProgress() {
     }
   }
 
-  // Extra books must all be verified (scanned+confirmed) or bypassed before confirming
+  // Extra books must all be verified (scanned+confirmed) or bypassed before confirming,
+  // for all three contexts: open-day, close-shift, and close-day.
   const extraTotal    = _invExtraPacks.length;
   const extraVerified = _invExtraPacks.filter(p => {
     const s = _invExtraState[p.id];
@@ -1804,8 +1802,7 @@ async function _invCommitOpenShift() {
 
 async function _invCommitClose(type) {
   if (_shiftOpInProgress) {
-    console.warn('_invCommitClose: operation already in progress, ignoring duplicate call');
-    return;
+    throw new Error('Another close operation is already in progress. Please wait and try again.');
   }
   _shiftOpInProgress = true;
   // Snapshot globals immediately — closeInventoryModal() can clear them during async awaits,
@@ -4506,7 +4503,7 @@ function recalcShiftTotals() {
 
 async function confirmShiftClose(e) {
   if (e) e.preventDefault();
-  if (_shiftOpInProgress) return;
+  if (_shiftOpInProgress) { showError('Busy', 'A shift operation is already in progress. Please wait and try again.'); return; }
   _shiftOpInProgress = true;
   const confirmBtn = document.getElementById('shift-confirm-btn');
   if (confirmBtn) confirmBtn.disabled = true;
