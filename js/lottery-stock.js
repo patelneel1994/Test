@@ -133,32 +133,41 @@ function renderLotteryStockByLocation(rows) {
     if (!byLoc[loc]) byLoc[loc] = [];
     byLoc[loc].push(row);
   }
-  const _pills = (act, recv, sold) => [
-    act  ? `<span class="cat-cnt-pill cp-active"><span class="cat-cnt-dot"></span>${act} active</span>`     : '',
-    recv ? `<span class="cat-cnt-pill cp-received"><span class="cat-cnt-dot"></span>${recv} received</span>` : '',
-    sold ? `<span class="cat-cnt-pill cp-soldout"><span class="cat-cnt-dot"></span>${sold} sold out</span>`  : '',
-  ].filter(Boolean).join('');
 
   const allLocs = _sortedAllLocs(byLoc);
 
   el.innerHTML = '<div class="catalog-grid">' + allLocs.map(loc => {
     const packs = byLoc[loc];
     if (!packs || !packs.length) return '';
-    const activated  = packs.filter(p => p.status === 'activated').length;
-    const received   = packs.filter(p => p.status === 'received').length;
-    const soldOut    = packs.filter(p => p.status === 'soldout').length;
-    const isStn      = _isStation(loc);
-    const isOffice   = loc === 'Office';
+    const activatedCt = packs.filter(p => p.status === 'activated').length;
+    const receivedCt  = packs.filter(p => p.status === 'received').length;
+    const soldOutCt   = packs.filter(p => p.status === 'soldout').length;
+    const isStn       = _isStation(loc);
+    const isOffice    = loc === 'Office';
     const adminLocked = isOffice && !isAdmin();
-    const barColor   = activated ? 'var(--design-green)' : received ? '#d4a000' : 'var(--ink-30)';
-    const recvPill   = adminLocked
-      ? `<span class="cat-cnt-pill cp-received" style="filter:blur(4px);user-select:none" aria-hidden="true"><span class="cat-cnt-dot"></span>${received} received</span>`
-      : (received ? `<span class="cat-cnt-pill cp-received"><span class="cat-cnt-dot"></span>${received} received</span>` : '');
-    const stockHtml  = [
-      activated ? `<span class="cat-cnt-pill cp-active"><span class="cat-cnt-dot"></span>${activated} active</span>` : '',
+    const barColor    = activatedCt ? 'var(--design-green)' : receivedCt ? '#d4a000' : 'var(--ink-30)';
+    const recvPill    = adminLocked
+      ? `<span class="cat-cnt-pill cp-received" style="filter:blur(4px);user-select:none" aria-hidden="true"><span class="cat-cnt-dot"></span>${receivedCt} received</span>`
+      : (receivedCt ? `<span class="cat-cnt-pill cp-received"><span class="cat-cnt-dot"></span>${receivedCt} received</span>` : '');
+    const slotCount   = isStn ? _getStationSlotCount(loc) : null;
+    const slotPill    = slotCount ? `<span class="cat-cnt-pill" style="background:rgba(99,102,241,.08);color:#4338ca;border:1px solid rgba(99,102,241,.18)"><span class="cat-cnt-dot" style="background:#6366f1"></span>${slotCount} lines</span>` : '';
+    const stockHtml   = [
+      activatedCt ? `<span class="cat-cnt-pill cp-active"><span class="cat-cnt-dot"></span>${activatedCt} active</span>` : '',
       recvPill,
-      soldOut   ? `<span class="cat-cnt-pill cp-soldout"><span class="cat-cnt-dot"></span>${soldOut} sold out</span>` : '',
+      soldOutCt   ? `<span class="cat-cnt-pill cp-soldout"><span class="cat-cnt-dot"></span>${soldOutCt} sold out</span>` : '',
+      slotPill,
     ].filter(Boolean).join('') || '<span class="cat-stock-empty">Empty</span>';
+
+    const packsHtml = slotCount
+      ? _renderStationSlots(loc, packs, slotCount)
+      : packs.filter(p => p.status !== 'soldout').sort((a, b) => {
+          if (a.station_line == null && b.station_line == null) return 0;
+          if (a.station_line == null) return -1;
+          if (b.station_line == null) return 1;
+          return a.station_line - b.station_line;
+        }).map(p => renderPackRowByLoc(p)).join('') +
+        (soldOutCt ? `<div class="lottery-soldout-note">${soldOutCt} sold out</div>` : '');
+
     return `
       <div class="cat-card">
         <div class="cat-card-bar" style="background:${barColor}"></div>
@@ -170,17 +179,50 @@ function renderLotteryStockByLocation(rows) {
           </div>
         </div>
         <div class="cat-stock">${stockHtml}</div>
-        <div class="stk-packs">
-          ${packs.filter(p => p.status !== 'soldout').sort((a, b) => {
-            if (a.station_line == null && b.station_line == null) return 0;
-            if (a.station_line == null) return -1;
-            if (b.station_line == null) return 1;
-            return a.station_line - b.station_line;
-          }).map(p => renderPackRowByLoc(p)).join('')}
-          ${soldOut ? `<div class="lottery-soldout-note">${soldOut} sold out</div>` : ''}
-        </div>
+        <div class="stk-packs">${packsHtml}</div>
       </div>`;
   }).join('') + '</div>';
+}
+
+function _renderStationSlots(loc, packs, slotCount) {
+  const activated = packs.filter(p => p.status === 'activated');
+  const received  = packs.filter(p => p.status === 'received');
+
+  // Map assigned lines → pack; collect unslotted activated books separately
+  const packByLine = {};
+  const unslotted  = [];
+  for (const p of activated) {
+    if (p.station_line != null) packByLine[p.station_line] = p;
+    else unslotted.push(p);
+  }
+
+  let html = '';
+  for (let i = 1; i <= slotCount; i++) {
+    const p = packByLine[i];
+    if (p) {
+      html += renderPackRowByLoc(p);
+    } else {
+      html += `
+        <div class="lottery-stock-book slot-empty-row">
+          <div class="pack-line-btn pack-line-slot-empty">${i}</div>
+          <div class="lottery-book-body" style="flex:1">
+            <div class="lottery-book-info"><span class="slot-empty-text">— Unassigned</span></div>
+          </div>
+        </div>`;
+    }
+  }
+
+  if (unslotted.length) {
+    html += `<div class="slot-section-header">No line assigned</div>`;
+    for (const p of unslotted) html += renderPackRowByLoc(p);
+  }
+
+  if (received.length) {
+    html += `<div class="slot-section-header">In stock</div>`;
+    for (const p of received) html += renderPackRowByLoc(p);
+  }
+
+  return html;
 }
 
 // ===== SHIFT CLOSE MODAL =====
@@ -403,7 +445,9 @@ async function confirmShiftClose(e) {
     updateDayShiftButtons();
     await Promise.all([loadLotteryStock(), loadShiftHistory()]);
     loadLotteryDbStats();
-  } catch (err) { showError('Close failed', err.message); }
-  finally { if (confirmBtn) confirmBtn.disabled = false; _shiftOpInProgress = false; }
+  } catch (err) {
+    showError('Close failed', err.message);
+    _logSystemEvent('error', { notes: `Shift close failed: ${err.message}` });
+  } finally { if (confirmBtn) confirmBtn.disabled = false; _shiftOpInProgress = false; }
 }
 

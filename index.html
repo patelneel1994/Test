@@ -615,6 +615,12 @@
           <button class="view-toggle-btn" id="report-range-week" onclick="setReportRange('week')">Week</button>
           <button class="view-toggle-btn" id="report-range-all" onclick="setReportRange('all')">All time</button>
         </div>
+        <div class="view-toggle" id="report-status-toggle">
+          <button class="view-toggle-btn active" id="report-status-all"       onclick="setReportStatus('all')">All</button>
+          <button class="view-toggle-btn"        id="report-status-activated" onclick="setReportStatus('activated')">Active</button>
+          <button class="view-toggle-btn"        id="report-status-soldout"   onclick="setReportStatus('soldout')">Sold Out</button>
+          <button class="view-toggle-btn"        id="report-status-removed"   onclick="setReportStatus('removed')">Removed</button>
+        </div>
         <button class="log-act-btn" onclick="loadLotteryReports()">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg>
           Refresh
@@ -658,20 +664,49 @@
       </div>
     </div>
 
-    <!-- Two-col: by game + by station -->
-    <div class="rpt-two-col">
-      <div class="scan-card">
-        <div class="card-section-hdr">
-          <div class="card-section-title">By game</div>
+    <!-- 1. Book Activations by Date — admin only, FIRST -->
+    <div class="scan-card admin-stat rpt-collapse-card" id="rpt-card-activations" style="display:none">
+      <div class="rpt-collapse-hdr" onclick="toggleRptSection('activations')">
+        <div class="card-section-title" style="margin:0">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+          <span id="rpt-activations-title">Book Activity by Date</span>
         </div>
-        <div id="rpt-by-game"><div class="summary-loading">Loading…</div></div>
+        <svg id="rpt-chev-activations" class="rpt-section-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
       </div>
-      <div class="scan-card">
-        <div class="card-section-hdr">
-          <div class="card-section-title">By station</div>
+      <div class="rpt-collapse-body" id="rpt-body-activations" style="display:none"></div>
+    </div>
+
+    <!-- 2. By game — collapsible -->
+    <div class="scan-card rpt-collapse-card">
+      <div class="rpt-collapse-hdr" onclick="toggleRptSection('bygame')">
+        <div class="card-section-title" style="margin:0">By game</div>
+        <svg id="rpt-chev-bygame" class="rpt-section-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
+      <div class="rpt-collapse-body" id="rpt-body-bygame" style="display:none"></div>
+    </div>
+
+    <!-- 3. By station — collapsible -->
+    <div class="scan-card rpt-collapse-card">
+      <div class="rpt-collapse-hdr" onclick="toggleRptSection('bystation')">
+        <div class="card-section-title" style="margin:0">By station</div>
+        <svg id="rpt-chev-bystation" class="rpt-section-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
+      <div class="rpt-collapse-body" id="rpt-body-bystation" style="display:none"></div>
+    </div>
+
+    <!-- 4. Active Books Inventory — admin only -->
+    <div class="scan-card admin-stat rpt-collapse-card" id="rpt-card-activebooks" style="display:none">
+      <div class="rpt-collapse-hdr" onclick="toggleRptSection('activebooks')">
+        <div class="card-section-title" style="margin:0">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+          Book Inventory
         </div>
-        <div id="rpt-by-station"><div class="summary-loading">Loading…</div></div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span id="rpt-hdr-activebooks-count" style="font-size:12px;color:var(--text-muted);font-weight:600"></span>
+          <svg id="rpt-chev-activebooks" class="rpt-section-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
       </div>
+      <div class="rpt-collapse-body" id="rpt-body-activebooks" style="display:none"></div>
     </div>
 
   </div><!-- /lsection-reports -->

@@ -2,8 +2,50 @@
 
 const _GAME_COLORS  = ['#E13B3B','#1E5DD8','#0E8F5A','#8B5CF6','#F97316','#0F8C8C','#B8002E','#D44A8B'];
 const _GAME_EMOJIS  = ['🍀','💎','💵','👑','🎰','🧩','♛','🎯'];
-const _ACT_COLORS   = { received:'#8A6A00', activated:'#0E8F5A', moved:'#8B5CF6', soldout:'#E13B3B', discrepancy:'#B91C1C', adjusted:'#6B7280', removed:'#B91C1C', restored:'#0E8F5A', returned_to_lottery:'#D97706', line_cleared:'#6B7280', audit_scan:'#0F8C8C' };
-const _ACT_LABELS   = { received:'Received', activated:'Activated', moved:'Moved', soldout:'Sold out', discrepancy:'Discrepancy', adjusted:'Adjusted', removed:'Removed', restored:'Restored', returned_to_lottery:'Returned to Lottery', line_cleared:'Line cleared', audit_scan:'Audit scan' };
+const _ACT_COLORS = {
+  received:            '#8A6A00',
+  activated:           '#0E8F5A',
+  moved:               '#8B5CF6',
+  soldout:             '#E13B3B',
+  discrepancy:         '#B91C1C',
+  adjusted:            '#6B7280',
+  removed:             '#B91C1C',
+  restored:            '#0E8F5A',
+  returned_to_lottery: '#D97706',
+  line_cleared:        '#6B7280',
+  audit_scan:          '#0F8C8C',
+  // Extra book events — indigo
+  extra_scan:          '#6366F1',
+  extra_bypassed:      '#7C3AED',
+  extra_to_station:    '#4F46E5',
+  // System events
+  day_opened:          '#059669',
+  day_closed:          '#1D4ED8',
+  shift_closed:        '#2563EB',
+  shift_opened:        '#10B981',
+  error:               '#DC2626',
+};
+const _ACT_LABELS = {
+  received:            'Received',
+  activated:           'Activated',
+  moved:               'Moved',
+  soldout:             'Sold out',
+  discrepancy:         'Discrepancy',
+  adjusted:            'Adjusted',
+  removed:             'Removed',
+  restored:            'Restored',
+  returned_to_lottery: 'Returned to Lottery',
+  line_cleared:        'Line cleared',
+  audit_scan:          'Audit scan',
+  extra_scan:          'Extra book scan',
+  extra_bypassed:      'Extra bypassed',
+  extra_to_station:    'Extra → station',
+  day_opened:          'Day opened',
+  day_closed:          'Day closed',
+  shift_closed:        'Shift closed',
+  shift_opened:        'Shift opened',
+  error:               'Error',
+};
 
 let _activityOffset  = 0;
 let _activityHasMore = false;
@@ -609,35 +651,61 @@ function _renderDashActivity(events, el, append = false, hasMore = false) {
     return;
   }
 
+  const _SYS_EVENTS = new Set(['day_opened','day_closed','shift_closed','shift_opened','error']);
+
   const rows = events.map(e => {
+    const action  = _ACT_LABELS[e.action] || e.action;
+    const color   = _ACT_COLORS[e.action] || 'var(--ink-60)';
+    const timeStr = e.created_at ? _fmtActivityTime(e.created_at) : '';
+
+    // ── System event (no pack_id): day/shift open/close, errors ──
+    if (!e.pack_id || _SYS_EVENTS.has(e.action)) {
+      const sysIcon = e.action === 'error' ? '!' : e.action.includes('closed') ? '✓' : '▶';
+      return `<div class="act-item act-item-sys">
+        <div class="act-icon act-icon-sys" style="background:${color}18;color:${color};font-size:13px;font-weight:800">${sysIcon}</div>
+        <div class="act-body">
+          <div class="act-line"><strong style="color:${color}">${action}</strong></div>
+          ${e.notes ? `<div class="act-notes">${e.notes}</div>` : ''}
+        </div>
+        <div class="act-time">${timeStr}</div>
+      </div>`;
+    }
+
     const p       = e.lottery_packs || {};
     const g       = p.lottery_games || {};
     const name    = g.game_name || `Game ${p.game_number || '?'}`;
     const packNum = p.pack_number ? ` #${p.pack_number}` : '';
-    const action  = _ACT_LABELS[e.action] || e.action;
-    const color   = _ACT_COLORS[e.action] || 'var(--ink-60)';
-    const timeStr = e.created_at ? _fmtActivityTime(e.created_at) : '';
     const initial = (name[0] || '?').toUpperCase();
 
-    // Ticket / location detail
+    // ── Ticket / location detail ──
     let detail = '';
+    let stationPill = '';
+
     if (e.action === 'moved' && (e.location_from || e.location_to)) {
       detail = `<span class="act-move">${e.location_from || '?'} → ${e.location_to || '?'}</span>`;
+    } else if (e.action === 'audit_scan' || e.action === 'extra_scan') {
+      // Show station prominently for scan events
+      const station = e.location_to || p.location || '';
+      if (station) stationPill = `<span class="act-station-pill">${station}</span>`;
+      if (e.ticket_before != null && e.ticket_after != null) {
+        detail = `<span class="act-tickets">#${e.ticket_before} → #${e.ticket_after}</span>`;
+      } else if (e.ticket_after != null) {
+        detail = `<span class="act-tickets">ticket #${e.ticket_after}</span>`;
+      }
     } else if (e.ticket_before != null && e.ticket_after != null) {
       detail = `<span class="act-tickets">#${e.ticket_before} → #${e.ticket_after}</span>`;
     } else if (e.ticket_after != null) {
       detail = `<span class="act-tickets">ticket #${e.ticket_after}</span>`;
     }
 
-    // Location pill (destination or current location)
-    const locStr  = (e.action !== 'moved' ? (e.location_to || p.location || '') : '');
+    // Location pill for non-scan, non-move events
+    const locStr  = (!stationPill && e.action !== 'moved') ? (e.location_to || p.location || '') : '';
     const locPill = locStr ? `<span class="act-loc-pill">${locStr}</span>` : '';
 
-    // Notes (truncated, only if not already shown as detail)
     const notesText = e.notes && e.action !== 'moved' ? e.notes.slice(0, 60) : '';
     const notesHtml = notesText ? `<div class="act-notes">${notesText}</div>` : '';
 
-    const subParts = [detail, locPill].filter(Boolean).join(' · ');
+    const subParts = [stationPill, detail, locPill].filter(Boolean).join(' · ');
 
     return `<div class="act-item">
       <div class="act-icon" style="background:${color}22;color:${color}">${initial}</div>

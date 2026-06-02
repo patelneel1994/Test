@@ -1336,7 +1336,11 @@ body {
 .act-tickets { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--text-muted); }
 .act-move { font-size: 11px; color: var(--text-muted); }
 .act-loc-pill { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 4px; background: var(--surface-2, rgba(0,0,0,.06)); color: var(--text-hint); vertical-align: middle; }
+.act-station-pill { display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 4px; background: rgba(15,140,140,.1); color: #0a7070; border: 1px solid rgba(15,140,140,.2); vertical-align: middle; }
 .act-notes { font-size: 11px; color: var(--text-hint); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-style: italic; }
+.act-sub { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.act-item-sys { opacity: .85; }
+.act-icon-sys { font-family: 'JetBrains Mono', monospace; }
 .act-load-more-wrap { padding: 10px 0 2px; text-align: center; border-top: 1px solid var(--border); margin-top: 2px; }
 .act-load-more { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 5px 18px; font-size: 12px; color: var(--text-muted); cursor: pointer; transition: background 0.15s; }
 .act-load-more:hover:not(:disabled) { background: var(--surface-2, rgba(0,0,0,.05)); }
@@ -1481,6 +1485,10 @@ body {
 .pack-line-btn:hover { opacity:.82; }
 .pack-line-unset { background:transparent; border:2px dashed var(--ink-15,rgba(26,22,18,.14)); color:var(--text-hint); font-size:20px; font-weight:300; box-shadow:none; }
 .pack-line-unset:hover { border-color:var(--primary); color:var(--primary); }
+.pack-line-slot-empty { background:var(--ink-05,rgba(26,22,18,.05)); border:1.5px dashed var(--ink-15,rgba(26,22,18,.14)); color:var(--ink-20,rgba(26,22,18,.2)); box-shadow:none; cursor:default; font-size:15px; }
+.slot-empty-row { opacity:.45; }
+.slot-empty-text { font-size:12px; color:var(--text-hint); font-style:italic; }
+.slot-section-header { font-size:10px; font-weight:700; color:var(--text-hint); letter-spacing:.06em; text-transform:uppercase; padding:8px 0 2px; border-top:1px solid var(--border); margin-top:2px; }
 .slot-picker-grid { display:flex; flex-wrap:wrap; gap:10px; padding:14px 0 6px; }
 .slot-btn { width:48px; height:48px; border-radius:10px; border:1.5px dashed var(--ink-15,rgba(26,22,18,.14)); background:transparent; font-size:16px; font-weight:700; color:var(--text-hint); cursor:pointer; transition:background .12s,border-color .12s,color .12s; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; }
 .slot-btn:hover:not(.slot-btn-current):not(.slot-btn-taken) { background:var(--ink-10,rgba(26,22,18,.09)); border-color:var(--primary); border-style:solid; color:var(--primary); }
@@ -1512,6 +1520,60 @@ body {
 .rpt-station-name { display: flex; align-items: center; gap: 7px; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 14px; color: var(--ink); margin-bottom: 5px; }
 .rpt-station-rev { font-family: 'Space Grotesk', sans-serif; font-weight: 800; font-size: 20px; color: var(--ink); margin-bottom: 4px; }
 .rpt-station-meta { font-size: 12px; color: var(--text-muted); }
+
+/* Report sort bar */
+.rpt-sort-bar { display:flex; align-items:center; gap:5px; padding-bottom:10px; border-bottom:1px solid var(--border); margin-bottom:8px; flex-wrap:wrap; }
+.rpt-sort-btn { font-size:11px; padding:3px 9px; border-radius:5px; border:1px solid var(--border); background:transparent; color:var(--text-muted); cursor:pointer; transition:background .12s,color .12s,border-color .12s; line-height:1.5; }
+.rpt-sort-btn:hover { background:var(--ink-05,rgba(26,22,18,.05)); color:var(--ink); }
+.rpt-sort-btn.active { background:var(--ink); color:#fff; border-color:var(--ink); }
+
+/* Collapsible report sections */
+.rpt-collapse-card { margin-bottom: 10px; }
+.rpt-collapse-hdr { display: flex; align-items: center; justify-content: space-between; cursor: pointer; padding: 2px 0; user-select: none; }
+.rpt-collapse-hdr:hover .card-section-title { opacity: .8; }
+.rpt-section-chevron { flex-shrink: 0; color: var(--text-hint); transition: transform .18s ease; }
+.rpt-collapse-body { padding-top: 12px; }
+
+/* Book Activations by Date */
+.rpt-act-group { border-bottom: 1px solid var(--border); }
+.rpt-act-group:last-child { border-bottom: none; }
+.rpt-act-hdr { display: flex; align-items: center; gap: 10px; padding: 11px 4px 11px 0; cursor: pointer; user-select: none; }
+.rpt-act-hdr:hover { background: var(--ink-03, rgba(26,22,18,.03)); border-radius: 6px; }
+.rpt-act-chevron { flex-shrink: 0; color: var(--text-hint); transition: transform .18s ease; }
+.rpt-act-hdr-left { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rpt-act-date { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 13px; color: var(--ink); white-space: nowrap; }
+.rpt-act-stns { display: flex; gap: 5px; flex-wrap: wrap; }
+.rpt-act-stn-pill { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; padding: 1px 7px; border-radius: 999px; background: var(--surface-2, rgba(0,0,0,.05)); color: var(--text-muted); white-space: nowrap; }
+.rpt-act-stn-pill strong { color: var(--ink); font-weight: 700; }
+.rpt-act-count { font-size: 11px; font-weight: 700; color: var(--text-hint); background: var(--surface-2,rgba(0,0,0,.05)); border-radius: 999px; padding: 2px 9px; white-space: nowrap; flex-shrink: 0; }
+.rpt-act-body { padding: 0 0 10px 23px; }
+.rpt-act-time { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--text-muted); white-space: nowrap; font-weight: 500; }
+.rpt-act-station { font-size: 12px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+
+/* Active Books report table */
+.rpt-books-station { margin-bottom: 20px; }
+.rpt-books-station:last-child { margin-bottom: 0; }
+.rpt-books-station-hdr { display: flex; align-items: center; justify-content: space-between; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 13px; color: var(--ink); padding: 0 0 8px; border-bottom: 2px solid var(--border); margin-bottom: 0; }
+.rpt-books-station-count { font-size: 11px; font-weight: 600; color: var(--text-hint); background: var(--surface-2,rgba(0,0,0,.05)); border-radius: 999px; padding: 2px 8px; }
+.rpt-books-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.rpt-books-table thead th { text-align: left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--text-hint); padding: 7px 8px 6px; border-bottom: 1px solid var(--border); }
+.rpt-books-table thead th:first-child { padding-left: 0; }
+.rpt-books-row { border-bottom: 1px solid var(--border); }
+.rpt-books-row:last-child { border-bottom: none; }
+.rpt-books-row td { padding: 8px 8px; vertical-align: middle; }
+.rpt-books-row td:first-child { padding-left: 0; }
+.rpt-books-line { width: 40px; }
+.rpt-line-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; height: 22px; border-radius: 6px; background: var(--blue,#1E5DD8); color: #fff; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 800; padding: 0 5px; }
+.rpt-line-unset { background: var(--ink-10,rgba(26,22,18,.09)); color: var(--text-hint); }
+.rpt-books-dot { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 6px; color: #fff; font-size: 9px; font-weight: 800; font-family: 'Space Grotesk', sans-serif; margin-right: 6px; vertical-align: middle; flex-shrink: 0; }
+.rpt-books-name { font-weight: 600; color: var(--ink); white-space: nowrap; }
+.rpt-books-gamenum { font-family: 'JetBrains Mono', monospace; color: var(--text-muted); font-size: 11.5px; white-space: nowrap; }
+.rpt-books-packnum { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--ink); white-space: nowrap; }
+.rpt-books-ticket { min-width: 110px; }
+.rpt-ticket-val { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--text-muted); display: block; margin-bottom: 3px; }
+.rpt-ticket-bar-wrap { display: block; height: 4px; background: var(--ink-10); border-radius: 999px; overflow: hidden; }
+.rpt-ticket-bar { display: block; height: 100%; border-radius: 999px; }
+.rpt-books-price { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--text-muted); white-space: nowrap; text-align: right; }
 .audit-badge-soldout { background: var(--ink-15); color: var(--text-muted); }
 
 /* ── DASHBOARD ANALYTICS ──────────────────────────────────────────────────── */

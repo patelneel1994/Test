@@ -33,3 +33,18 @@ function _logPackEvent(packId, action, details = {}) {
       body: JSON.stringify(event) }).catch(() => {});
 }
 
+// System-level event logger (no pack_id) — for day/shift open/close and errors.
+// Requires pack_id to be nullable in the DB; silently no-ops if it isn't.
+function _logSystemEvent(action, details = {}) {
+  if (!_dbCaps.hasPackEvents) return;
+  const event = {
+    action,
+    ...(_currentShift?.id ? { shift_id: _currentShift.id } : {}),
+    ...(_currentDay?.id   ? { day_id:   _currentDay.id   } : {}),
+    ...details,
+  };
+  sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_pack_events`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify(event) }).catch(() => {});
+}
+

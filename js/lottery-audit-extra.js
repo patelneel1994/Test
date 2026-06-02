@@ -699,6 +699,7 @@ async function confirmInventory(e) {
     closeInventoryModal();
   } catch (err) {
     showError('Failed', err.message);
+    _logSystemEvent('error', { notes: `Audit failed (${_invContext}): ${err.message}` });
     if (btn) btn.disabled = false;
   }
 }
@@ -858,6 +859,11 @@ async function _invCommitOpenDay() {
     _currentShift = Array.isArray(shifts) && shifts[0] ? shifts[0] : null;
   }
 
+  _logSystemEvent('day_opened', {
+    day_id:   _currentDay?.id || null,
+    shift_id: _currentShift?.id || null,
+    notes:    `Day opened — ${_packs.length} book${_packs.length !== 1 ? 's' : ''} audited`,
+  });
   updateDayShiftButtons();
   await loadLotteryStock();
 }
@@ -956,6 +962,11 @@ async function _invCommitClose(type) {
         body: JSON.stringify({ start_ticket: tick, last_shift_ticket: tick, ...extra }) });
   }));
 
+  _logSystemEvent('shift_closed', {
+    shift_id: shiftId,
+    day_id:   _currentDay?.id || null,
+    notes:    `Shift closed — ${totalSold} ticket${totalSold !== 1 ? 's' : ''}, $${totalRev.toFixed(2)} revenue`,
+  });
   _currentShift = null;
 
   // Change Shift: auto-open next shift immediately after closing
@@ -985,6 +996,11 @@ async function _invCommitClose(type) {
       { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
         body: JSON.stringify({ status: 'closed', closed_at: new Date().toISOString(),
           total_tickets_sold: dayTotals.tickets, total_revenue: dayTotals.revenue }) });
+    _logSystemEvent('day_closed', {
+      shift_id: shiftId,
+      day_id:   _currentDay.id,
+      notes:    `Day closed — ${dayTotals.tickets} ticket${dayTotals.tickets !== 1 ? 's' : ''}, $${dayTotals.revenue.toFixed(2)} revenue`,
+    });
     _currentDay = null;
   }
   updateDayShiftButtons();
