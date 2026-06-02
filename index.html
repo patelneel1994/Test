@@ -972,6 +972,9 @@
           placeholder="Notes (optional) — discrepancy explained, manager on duty…"
           style="margin-top:12px;resize:none;font-size:13px;background:rgba(255,255,255,.07);color:var(--cream);border-color:rgba(255,255,255,.15)"></textarea>
 
+        <!-- Staging/Extra books reminder (shown when extra books need verification) -->
+        <div id="inv-extra-reminder" style="display:none"></div>
+
         <!-- Buttons -->
         <div style="display:flex;gap:8px;margin-top:12px">
           <button class="modal-close" style="flex:1;margin:0;padding:11px;background:rgba(255,255,255,.08);color:var(--cream);border-color:rgba(255,255,255,.15)" onclick="closeInventoryModal()">Cancel</button>
@@ -1084,6 +1087,41 @@
       <button class="modal-close" style="flex:1;margin:0;padding:11px" onclick="closeOpenDayDiscModal()">← Go back &amp; fix</button>
       <button class="modal-add-btn" style="flex:2;margin:0;background:var(--red-text,#B91C1C)"
         onmousedown="confirmOpenDayAnyway()" ontouchstart="confirmOpenDayAnyway()">Confirm anyway</button>
+    </div>
+  </div>
+</div>
+
+<!-- EXTRA BOOK → STATION MOVE MODAL -->
+<div class="modal-overlay modal-overlay-center" id="extra-station-modal">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Move to Station</div>
+    <p id="extra-station-modal-desc" style="font-size:13px;color:var(--text-muted);margin:0 0 14px;line-height:1.55"></p>
+    <div id="extra-station-btn-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+      <!-- rendered by JS -->
+    </div>
+    <button class="modal-close" style="margin:0;width:100%;padding:11px" onclick="closeExtraStationModal()">Cancel</button>
+  </div>
+</div>
+
+<!-- EXTRA BOOK BYPASS MODAL -->
+<div class="modal-overlay modal-overlay-center" id="extra-bypass-modal">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Skip This Book</div>
+    <div id="extra-bypass-book-info" style="font-size:13px;color:var(--text-muted);margin-bottom:12px"></div>
+    <div style="background:var(--red-bg);border:1.5px solid var(--red-border);border-radius:8px;padding:10px 13px;font-size:12px;color:var(--red-text);margin-bottom:14px;line-height:1.6">
+      <strong>⚠ Are you sure you want to do this?</strong><br>
+      This book will be unaccounted for in today's audit. A reason is required.
+    </div>
+    <label class="lottery-form-label" style="display:block;margin-bottom:6px">Why is this book missing?</label>
+    <input class="modal-input" id="extra-bypass-reason" type="text"
+      placeholder="e.g. Returned to lottery, sent to other location…"
+      autocomplete="off" style="margin-bottom:14px" />
+    <div style="display:flex;gap:8px">
+      <button class="modal-close" style="flex:1;margin:0;padding:11px" onclick="closeExtraBypassModal()">Cancel</button>
+      <button class="modal-add-btn" id="extra-bypass-confirm-btn" style="flex:2;margin:0;background:var(--red-text);border-color:var(--red-border)"
+        onmousedown="confirmExtraBypass(event)" ontouchstart="confirmExtraBypass(event)">Confirm Bypass</button>
     </div>
   </div>
 </div>
@@ -1352,6 +1390,7 @@
 <script src="js/summary.js"></script>
 <script src="js/search.js"></script>
 <script src="js/lottery.js"></script>
+<script src="js/lottery-repair.js"></script>
 <script src="js/tabs.js"></script>
 <script src="js/app.js"></script>
 

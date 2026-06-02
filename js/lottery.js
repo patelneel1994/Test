@@ -90,6 +90,12 @@ function _sortedAllLocs(byLoc) {
 // Is this location a "station" (audit-eligible)?
 function _isStation(loc) { return _getStations().includes(loc); }
 
+// Is this location a full-audit staging area (Extra / configurable extra locs)?
+// These books are verified by scan during audit but don't contribute to shift revenue.
+function _isFullAuditStaging(loc) {
+  return loc === 'Extra' || _getExtraLocs().includes(loc);
+}
+
 // ---- State ----
 let _lotterySession      = [];
 let _currentLotteryParse = null;
@@ -117,11 +123,18 @@ const _packInfoCache     = {};
 // ---- Inventory state ----
 let _invContext       = null;
 let _invBusy          = false;  // re-entry guard — prevents double-tap creating duplicate days
-let _invPacks         = [];     // active packs
+let _invPacks         = [];     // active packs (stations only — Extra packs separated below)
 let _invReceivedPacks = [];     // received (not yet activated) packs — shown in open-day/shift
 let _invData          = {};     // pack_id → ticket number
 let _invSoldOut       = {};     // pack_id → finalTicket — staged sold-outs, committed on confirm
 let _invScanCleanup   = null;
+
+// ---- Extra books audit state ----
+let _invExtraPacks   = [];  // packs at Extra / extra-locs (separated from _invPacks at load time)
+let _invExtraState   = {};  // pack_id → { ticket, verified, bypassed, bypassReason, movedTo }
+let _extraCollapsed  = false;
+let _extraBypassTarget  = null;  // pack_id currently in bypass confirmation modal
+let _extraStationTarget = null;  // pack_id currently in station-pick modal
 
 // ---- Move books modal ----
 let _moveBooksQueue = []; // { id, packNumber, gameName, location }
@@ -306,24 +319,41 @@ async function openInventory(context, skipPrompt = false) {
   _invSelectedStation = null;
 
   try {
+    // Refresh locations cache so extra-loc names are always current when separating books.
+    await _loadLotteryLocations();
+
     const sel = _dbCaps.hasLoadingDirection
       ? `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,loading_direction,location,station_line,lottery_games(game_name,price,tickets_per_pack)`
       : `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,location,station_line,lottery_games(game_name,price,tickets_per_pack)`;
     const base = `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=${sel}&order=location.asc,pack_number.asc`;
     const isOpenDay = context === 'open-day';
     const isClose   = !isOpenDay && context.startsWith('close');
-    const fetches = [sbFetch(`${base}&status=eq.activated`)];
-    if (isOpenDay) fetches.push(sbFetch(`${base}&status=eq.received`));
-    if (isClose)   fetches.push(sbFetch(`${base}&status=eq.soldout`));
+    // Always fetch received — extra-loc books have status=received (not activated) because
+    // moving a book to a non-station location sets status='received' (see _isStation check).
+    const fetches = [sbFetch(`${base}&status=eq.activated`), sbFetch(`${base}&status=eq.received`)];
+    if (isClose) fetches.push(sbFetch(`${base}&status=eq.soldout`));
     const results = await Promise.all(fetches);
     const jsons   = await Promise.all(results.map(r => r.json()));
     _invPacks         = Array.isArray(jsons[0]) ? jsons[0] : [];
-    _invReceivedPacks = isOpenDay ? (Array.isArray(jsons[1]) ? jsons[1] : []) : [];
+    const allReceived = Array.isArray(jsons[1]) ? jsons[1] : [];
+
+    // Separate Extra / extra-loc books from station books immediately after fetch.
+    // Extra books get their own audit section and don't affect shift revenue.
+    _invExtraPacks  = _invPacks.filter(p => _isFullAuditStaging(p.location));
+    _invPacks       = _invPacks.filter(p => !_isFullAuditStaging(p.location));
+    _invExtraState  = {};
+    _extraCollapsed = false;
+
+    // Received books at extra locations go into the Extra audit section for ALL contexts.
+    // For open-day, remaining received books (at stations) stay in _invReceivedPacks.
+    const recAtExtra  = allReceived.filter(p => _isFullAuditStaging(p.location));
+    _invExtraPacks    = [..._invExtraPacks, ...recAtExtra];
+    _invReceivedPacks = isOpenDay ? allReceived.filter(p => !_isFullAuditStaging(p.location)) : [];
 
     // Include soldout packs whose last_shift_ticket hasn't been settled yet —
     // these were marked sold-out mid-shift and need their revenue counted.
     if (isClose) {
-      const soldoutPacks = Array.isArray(jsons[1]) ? jsons[1] : [];
+      const soldoutPacks = Array.isArray(jsons[2]) ? jsons[2] : [];
       const unsettled = soldoutPacks.filter(p =>
         p.start_ticket != null && p.last_shift_ticket != null && p.start_ticket !== p.last_shift_ticket
       );
@@ -334,8 +364,8 @@ async function openInventory(context, skipPrompt = false) {
       _invPacks = [..._invPacks, ...unsettled];
     }
 
-    // Auto-commit when nothing to audit
-    if (!_invPacks.length && !_invReceivedPacks.length) {
+    // Auto-commit only when there is truly nothing to audit (no station books AND no Extra books)
+    if (!_invPacks.length && !_invReceivedPacks.length && !_invExtraPacks.length) {
       if (context === 'open-day')           await _invCommitOpenDay();
       else if (context.startsWith('close')) await _invCommitClose(context === 'close-day' ? 'day' : 'shift');
       return;
@@ -394,6 +424,13 @@ function _renderStationPicker() {
         <div class="aspb-count">${total} books total</div>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
       </button>`;
+  }
+  // Extra books notice — shown when extra-location books also need verification
+  if (_invExtraPacks.length) {
+    html += `<div style="margin-top:10px;padding:8px 10px;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.2);border-radius:8px;font-size:12px;color:#4338ca;line-height:1.5">
+      <strong>Extra Books</strong> — ${_invExtraPacks.length} book${_invExtraPacks.length !== 1 ? 's' : ''} in extra location${_invExtraPacks.length !== 1 ? 's' : ''} also need verification.<br>
+      <span style="opacity:.8">Shown below the station books after you select a station above.</span>
+    </div>`;
   }
   btnList.innerHTML = html;
 }
@@ -486,6 +523,7 @@ function closeInventoryModal() {
   document.getElementById('inventory-modal').classList.remove('open');
   if (_invScanCleanup) { _invScanCleanup(); _invScanCleanup = null; }
   _invContext = null; _invPacks = []; _invReceivedPacks = []; _invData = {}; _invSoldOut = {};
+  _invExtraPacks = []; _invExtraState = {};
   _invSelectedStation = null;
 }
 
@@ -650,14 +688,26 @@ function _renderInvList() {
   const isOpenDay = _invContext === 'open-day';
 
   if (!_invPacks.length && !_invReceivedPacks.length) {
-    el.innerHTML = '<div class="audit-empty">No active books — press Confirm to proceed.</div>';
+    if (!_invExtraPacks.length) {
+      el.innerHTML = '<div class="audit-empty">No active books — press Confirm to proceed.</div>';
+      return;
+    }
+    // Only Extra-location books exist — skip station list, show Extra section directly
+    el.innerHTML = _renderExtraSection();
+    if (isClose) _updateInvTotals();
     return;
   }
 
   const locOrder = _getLocOrderAll();
-  const byLoc = {};
+  const locOrderSet = new Set(locOrder);
+  const byLoc = {};       // filtered by selected station — for normal rendering
+  const byLocAll = {};    // unfiltered — for catch-all of unrecognized locations
   for (const p of _invPacks) {
     const loc = p.location || 'Office';
+    if (!locOrderSet.has(loc)) {
+      if (!byLocAll[loc]) byLocAll[loc] = [];
+      byLocAll[loc].push(p);
+    }
     if (_invSelectedStation && loc !== _invSelectedStation) continue;
     if (!byLoc[loc]) byLoc[loc] = [];
     byLoc[loc].push(p);
@@ -790,6 +840,47 @@ function _renderInvList() {
     html += '</div>';
   }
 
+  // Render any locations not in locOrder (e.g. custom extra location with stale/mismatched cache)
+  // Uses byLocAll (unfiltered) so these always appear regardless of station selection.
+  for (const loc of Object.keys(byLocAll)) {
+    if (!byLocAll[loc].length) continue;
+    html += `<div class="audit-loc-group"><div class="audit-loc-label">${loc}</div>`;
+    for (const p of byLocAll[loc]) {
+      const game     = p.lottery_games || {};
+      const tpp      = game.tickets_per_pack || 0;
+      const baseline = p.last_shift_ticket != null ? p.last_shift_ticket : p.start_ticket;
+      const hasVal   = p.id in _invData;
+      const scanned  = _invData[p.id];
+      const dir      = (p.loading_direction || 'asc').toLowerCase();
+      const dotColor = _gameColor(p.game_number);
+      _packInfoCache[p.id] = {
+        ticketsPerPack: tpp, gameName: game.game_name || '', packNumber: p.pack_number,
+        startTicket: p.start_ticket, endTicket: p.end_ticket ?? null,
+        lastShiftTicket: p.last_shift_ticket ?? null, loadingDirection: dir,
+        location: p.location, stationLine: p.station_line ?? null,
+      };
+      const hasViolation = hasVal && _invDirectionViolation(p.id, scanned);
+      html += `
+        <div class="audit-book-card ${hasViolation ? 'audit-book-flag' : (hasVal ? 'audit-book-ok' : 'audit-book-pending')}" id="inv-row-${p.id}">
+          <div class="audit-book-dot" style="background:${dotColor}">${String(p.game_number).slice(-2)}</div>
+          <div class="audit-book-body">
+            <div class="audit-book-hdr">
+              <span class="audit-book-name">${game.game_name || `Game #${p.game_number}`}</span>
+              <span class="audit-book-num">#${p.pack_number}</span>
+            </div>
+            <div class="audit-book-meta">${loc} · expected #${baseline ?? '?'}</div>
+          </div>
+          <div class="audit-book-actions">
+            <input type="number" class="audit-ticket-input" id="inv-inp-${p.id}"
+              value="${hasVal ? scanned : ''}" placeholder="#" min="0"
+              oninput="_handleInvManual('${p.id}')" />
+          </div>
+          <div class="audit-book-status ${hasViolation ? 'audit-status-flag' : (hasVal ? 'audit-status-ok' : 'audit-status-pending')}" id="inv-status-${p.id}">${hasViolation ? '!' : (hasVal ? '✓' : '○')}</div>
+        </div>`;
+    }
+    html += '</div>';
+  }
+
   // ── Received books (open-day only) ──
   // "Load Received Books" section removed — was shown during open-day audit to activate
   // received packs directly from the audit screen. Removed to simplify the open-day flow.
@@ -831,12 +922,328 @@ function _renderInvList() {
   }
   */
 
+  // Append Extra books section below station list
+  html += _renderExtraSection();
   el.innerHTML = html;
 
   if (isClose) {
     for (const p of _invPacks) { if (p.id in _invData) _updateInvCalc(p.id); }
     _updateInvTotals();
   }
+}
+
+// ===== EXTRA BOOKS AUDIT SECTION =====
+
+function _extraExpectedPos(p) {
+  const dir = (p.loading_direction || 'asc').toLowerCase();
+  if (p.last_shift_ticket != null) return p.last_shift_ticket;
+  if (p.start_ticket != null)      return p.start_ticket;
+  const tpp = p.lottery_games?.tickets_per_pack || 0;
+  return dir === 'desc' ? (p.end_ticket ?? Math.max(0, tpp - 1)) : 0;
+}
+
+function _renderExtraSection() {
+  if (!_invExtraPacks.length) return '';
+
+  const total    = _invExtraPacks.length;
+  const verified = _invExtraPacks.filter(p => {
+    const s = _invExtraState[p.id];
+    return s && (s.verified || s.bypassed || s.movedTo);
+  }).length;
+  const allDone  = verified === total;
+
+  const toggle   = _extraCollapsed ? '▶' : '▼';
+  const pillHtml = allDone
+    ? `<span class="extra-status-pill extra-pill-done">All verified ✓</span>`
+    : `<span class="extra-status-pill extra-pill-pending">${verified}/${total} verified</span>`;
+  const reqBadge = allDone ? '' : `<span class="extra-required-badge">Required</span>`;
+
+  let html = `
+    <div class="extra-section" id="extra-section">
+      <div class="extra-section-hdr" onmousedown="toggleExtraSection()" ontouchstart="toggleExtraSection()">
+        <span class="extra-toggle-icon">${toggle}</span>
+        <span class="extra-section-title">Staging / Extra Books</span>
+        ${pillHtml}
+        ${reqBadge}
+      </div>`;
+
+  if (!_extraCollapsed) {
+    html += `<div class="extra-section-body">`;
+    for (const p of _invExtraPacks) html += _renderExtraBookCard(p);
+    html += `</div>`;
+  }
+
+  html += `</div>`;
+  return html;
+}
+
+function _renderExtraBookCard(p) {
+  const state    = _invExtraState[p.id] || {};
+  const game     = p.lottery_games || {};
+  const dotColor = _gameColor(p.game_number);
+  const tpp      = game.tickets_per_pack || 0;
+  const dir      = (p.loading_direction || 'asc').toLowerCase();
+  const expected = _extraExpectedPos(p);
+  const id       = p.id;
+
+  let cardClass   = 'audit-book-extra-pending';
+  let statusIcon  = '○';
+  let statusClass = 'audit-status-pending';
+  let bodyExtra   = '';
+  let showInput   = true;
+
+  if (state.movedTo) {
+    cardClass   = 'audit-book-extra-moved';
+    statusIcon  = '→';
+    statusClass = 'audit-status-ok';
+    bodyExtra   = `<div class="extra-state-note extra-note-moved">Moved to ${state.movedTo} · starting at ticket #${state.ticket}</div>`;
+    showInput   = false;
+  } else if (state.bypassed) {
+    cardClass   = 'audit-book-extra-bypassed';
+    statusIcon  = '!';
+    statusClass = 'audit-status-flag';
+    bodyExtra   = `<div class="extra-state-note extra-note-bypass">⚠ Bypassed — ${state.bypassReason}</div>`;
+    showInput   = false;
+  } else if (state.verified) {
+    cardClass   = 'audit-book-matched';
+    statusIcon  = '✓';
+    statusClass = 'audit-status-ok';
+    const atExpected = state.ticket === expected;
+    bodyExtra = atExpected
+      ? `<div class="extra-state-note extra-note-ok">Clean ✓ — at expected ticket #${state.ticket}</div>`
+      : `<div class="extra-state-note extra-note-disc">Noted at #${state.ticket} (expected #${expected}) — kept at Extra</div>`;
+    showInput = false;
+  } else if (state.ticket != null) {
+    // Scanned but awaiting station-or-keep decision
+    cardClass   = 'audit-book-extra-warn';
+    statusIcon  = '?';
+    statusClass = 'audit-status-flag';
+    bodyExtra   = `
+      <div class="extra-miduse-prompt">
+        <div class="extra-miduse-msg">Ticket #${state.ticket} — not at expected position (#${expected}). Was this book brought to a station for selling?</div>
+        <div class="extra-prompt-btns">
+          <button class="pack-act-btn act-station" style="font-size:11px;padding:5px 12px"
+            onmousedown="openExtraStationModal('${id}')" ontouchstart="openExtraStationModal('${id}')">Yes — pick station</button>
+          <button class="pack-act-btn" style="font-size:11px;padding:5px 12px;background:rgba(0,0,0,.06);color:var(--ink)"
+            onmousedown="_extraKeepHere('${id}')" ontouchstart="_extraKeepHere('${id}')">No — keep at Extra</button>
+        </div>
+      </div>`;
+    showInput = false; // ticket already entered, awaiting decision
+  }
+
+  const isNewBook  = p.status === 'received';
+  const newBadge   = isNewBook ? `<span class="audit-badge" style="background:rgba(14,93,216,.1);color:#1d4ed8;border:1px solid rgba(14,93,216,.25);font-size:9.5px">New</span>` : '';
+
+  const inputHtml = showInput ? `
+    <input type="number" class="audit-ticket-input shift-ticket-input" id="extra-inp-${id}"
+      value="${state.ticket != null ? state.ticket : ''}" placeholder="#"
+      min="0" oninput="_handleExtraManual('${id}')" />
+    <button class="extra-bypass-btn"
+      onmousedown="openExtraBypassModal('${id}')" ontouchstart="openExtraBypassModal('${id}')">Bypass</button>` : '';
+
+  return `
+    <div class="audit-book-card ${cardClass}" id="extra-row-${id}">
+      <div class="audit-book-dot" style="background:${dotColor}">${String(p.game_number).slice(-2)}</div>
+      <div class="audit-book-body">
+        <div class="audit-book-hdr">
+          <span class="audit-book-name">${game.game_name || `Game #${p.game_number}`}</span>
+          <span class="audit-book-num">#${p.pack_number}</span>
+          ${newBadge}
+        </div>
+        <div class="audit-book-meta" style="font-size:11.5px">${p.location || 'Extra'} · ${tpp > 0 ? `${tpp} tickets` : 'size unknown'} · expected #${expected}</div>
+        ${bodyExtra}
+      </div>
+      <div class="audit-book-right">${inputHtml}</div>
+      <div class="audit-book-status ${statusClass}" id="extra-status-${id}">${statusIcon}</div>
+    </div>`;
+}
+
+function toggleExtraSection() {
+  _extraCollapsed = !_extraCollapsed;
+  const sec = document.getElementById('extra-section');
+  if (sec) sec.outerHTML = _renderExtraSection();
+}
+
+function _handleExtraScan(pack, ticket) {
+  const id       = pack.id;
+  const expected = _extraExpectedPos(pack);
+  const isClean  = ticket === expected;
+
+  _invExtraState[id] = { ...(_invExtraState[id] || {}), ticket };
+
+  if (isClean) {
+    // Clean position — auto-verify immediately
+    _invExtraState[id].verified = true;
+  }
+  // If not clean and open-day context: leave as pending-decision (renders miduse prompt)
+  // If not clean and close context: auto-verify with noted discrepancy
+  if (!isClean && _invContext !== 'open-day') {
+    _invExtraState[id].verified = true;
+  }
+
+  _logPackEvent(id, 'extra_scan', {
+    ticket_before: pack.last_shift_ticket ?? pack.start_ticket ?? null,
+    ticket_after:  ticket,
+    notes: `${_invContext} · Extra audit scan — ${pack.lottery_games?.game_name || 'Game ' + pack.game_number} #${pack.pack_number} at #${ticket}`,
+  });
+
+  _refreshExtraCard(id);
+  _updateInvProgress();
+  beepSuccess();
+  if (navigator.vibrate) navigator.vibrate(30);
+}
+
+function _handleExtraManual(packId) {
+  const inp  = document.getElementById(`extra-inp-${packId}`);
+  if (!inp) return;
+  const val  = parseInt(inp.value, 10);
+  const pack = _invExtraPacks.find(x => x.id === packId);
+  if (!pack) return;
+  if (!isNaN(val) && val >= 0) {
+    _handleExtraScan(pack, val);
+  } else {
+    delete (_invExtraState[packId] || {}).ticket;
+    delete (_invExtraState[packId] || {}).verified;
+    _refreshExtraCard(packId);
+    _updateInvProgress();
+  }
+}
+
+function _extraKeepHere(packId) {
+  if (!_invExtraState[packId]) return;
+  _invExtraState[packId].verified = true;
+  _refreshExtraCard(packId);
+  _updateInvProgress();
+}
+
+function _refreshExtraCard(packId) {
+  const pack = _invExtraPacks.find(p => p.id === packId);
+  if (!pack) return;
+  const row = document.getElementById(`extra-row-${packId}`);
+  if (!row) return;
+  const newHtml = _renderExtraBookCard(pack);
+  const tmp = document.createElement('div');
+  tmp.innerHTML = newHtml.trim();
+  row.replaceWith(tmp.firstElementChild);
+  // Refresh section header progress
+  const sec = document.getElementById('extra-section');
+  if (sec) {
+    const hdr = sec.querySelector('.extra-section-hdr');
+    if (hdr) {
+      const total    = _invExtraPacks.length;
+      const verified = _invExtraPacks.filter(p => {
+        const s = _invExtraState[p.id];
+        return s && (s.verified || s.bypassed || s.movedTo);
+      }).length;
+      const allDone  = verified === total;
+      const pill     = sec.querySelector('.extra-status-pill');
+      const reqBadge = sec.querySelector('.extra-required-badge');
+      if (pill) {
+        pill.className = `extra-status-pill ${allDone ? 'extra-pill-done' : 'extra-pill-pending'}`;
+        pill.textContent = allDone ? 'All verified ✓' : `${verified}/${total} verified`;
+      }
+      if (reqBadge) reqBadge.style.display = allDone ? 'none' : '';
+    }
+  }
+}
+
+// ===== EXTRA → STATION MOVE =====
+
+function openExtraStationModal(packId) {
+  _extraStationTarget = packId;
+  const pack    = _invExtraPacks.find(p => p.id === packId);
+  const state   = _invExtraState[packId] || {};
+  const game    = pack?.lottery_games || {};
+  const descEl  = document.getElementById('extra-station-modal-desc');
+  const listEl  = document.getElementById('extra-station-btn-list');
+  if (descEl) descEl.innerHTML = `
+    <strong>${game.game_name || `Game #${pack?.game_number}`} #${pack?.pack_number}</strong>
+    scanned at ticket <strong>#${state.ticket}</strong>.
+    Select the station where this book was being sold:`;
+  if (listEl) {
+    listEl.innerHTML = _getStations().map(st => `
+      <button class="modal-add-btn" style="margin:0;font-size:13px"
+        onmousedown="_confirmExtraToStation('${packId}','${st}')"
+        ontouchstart="_confirmExtraToStation('${packId}','${st}')">${st}</button>`).join('');
+  }
+  document.getElementById('extra-station-modal').classList.add('open');
+}
+
+function closeExtraStationModal() {
+  document.getElementById('extra-station-modal').classList.remove('open');
+  _extraStationTarget = null;
+}
+
+async function _confirmExtraToStation(packId, station) {
+  const pack   = _invExtraPacks.find(p => p.id === packId);
+  if (!pack) { closeExtraStationModal(); return; }
+  const ticket = _invExtraState[packId]?.ticket ?? null;
+  closeExtraStationModal();
+  try {
+    await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(packId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ location: station, start_ticket: ticket, last_shift_ticket: ticket })
+    });
+    _logPackEvent(packId, 'extra_to_station', {
+      location_from: pack.location || 'Extra',
+      location_to:   station,
+      ticket_before: pack.last_shift_ticket ?? pack.start_ticket ?? null,
+      ticket_after:  ticket,
+      notes: `Moved from Extra to ${station} during audit at ticket #${ticket}`,
+    });
+    // Move book from Extra list into station list so it shows in the main audit (pre-scanned)
+    pack.location          = station;
+    pack.start_ticket      = ticket;
+    pack.last_shift_ticket = ticket;
+    _invExtraPacks         = _invExtraPacks.filter(x => x.id !== packId);
+    _invPacks.push(pack);
+    if (ticket != null) _invData[packId] = ticket;
+    _invExtraState[packId] = { ticket, verified: true, movedTo: station };
+    _renderInvList();
+    _updateInvProgress();
+  } catch (err) {
+    showError('Move failed', err.message);
+  }
+}
+
+// ===== EXTRA BYPASS =====
+
+function openExtraBypassModal(packId) {
+  _extraBypassTarget = packId;
+  const pack    = _invExtraPacks.find(p => p.id === packId);
+  const game    = pack?.lottery_games || {};
+  const infoEl  = document.getElementById('extra-bypass-book-info');
+  const reasonEl = document.getElementById('extra-bypass-reason');
+  if (infoEl) infoEl.textContent = `${game.game_name || `Game #${pack?.game_number}`} · Book #${pack?.pack_number}`;
+  if (reasonEl) reasonEl.value = '';
+  document.getElementById('extra-bypass-modal').classList.add('open');
+  setTimeout(() => reasonEl?.focus(), 100);
+}
+
+function closeExtraBypassModal() {
+  document.getElementById('extra-bypass-modal').classList.remove('open');
+  _extraBypassTarget = null;
+}
+
+function confirmExtraBypass(e) {
+  if (e) e.preventDefault();
+  const packId = _extraBypassTarget;
+  if (!packId) return;
+  const reasonEl = document.getElementById('extra-bypass-reason');
+  const reason   = (reasonEl?.value || '').trim();
+  if (!reason) {
+    reasonEl?.classList.add('inv-input-error');
+    setTimeout(() => reasonEl?.classList.remove('inv-input-error'), 1000);
+    return;
+  }
+  _invExtraState[packId] = { ...(_invExtraState[packId] || {}), bypassed: true, bypassReason: reason };
+  _logPackEvent(packId, 'extra_bypassed', {
+    notes: `Extra bypass during ${_invContext}: ${reason}`,
+  });
+  closeExtraBypassModal();
+  _refreshExtraCard(packId);
+  _updateInvProgress();
 }
 
 function _handleInvBarcode(raw) {
@@ -846,17 +1253,54 @@ function _handleInvBarcode(raw) {
   if (!result) { _flashInvScanError(); return; }
 
   let parsed, pack;
+  let isExtraPack = false;
   if (result.ambiguous) {
-    // Resolve by matching against loaded pack list
+    // Resolve by matching against loaded pack list, then Extra packs
     for (const candidate of result.candidates) {
       pack = _invPacks.find(p => p.game_number === candidate.gameNumber && p.pack_number === candidate.packNumber);
       if (pack) { parsed = candidate; break; }
+    }
+    if (!pack) {
+      for (const candidate of result.candidates) {
+        pack = _invExtraPacks.find(p => p.game_number === candidate.gameNumber && p.pack_number === candidate.packNumber);
+        if (pack) { parsed = candidate; isExtraPack = true; break; }
+      }
     }
     if (!pack) { _flashInvScanError('Book not in active list'); return; }
   } else {
     parsed = result;
     pack = _invPacks.find(p => p.game_number === parsed.gameNumber && p.pack_number === parsed.packNumber);
+    if (!pack) {
+      pack = _invExtraPacks.find(p => p.game_number === parsed.gameNumber && p.pack_number === parsed.packNumber);
+      if (pack) isExtraPack = true;
+    }
     if (!pack) { _flashInvScanError('Book not in active list'); return; }
+  }
+
+  // Route Extra book scans to the dedicated Extra handler
+  if (isExtraPack) {
+    const scanInp2 = document.getElementById('inv-scan-input');
+    if (scanInp2) scanInp2.value = '';
+    _handleExtraScan(pack, parsed.ticketPosition);
+    // Update last-scan feedback panel
+    const lastScanEl = document.getElementById('inv-last-scan');
+    if (lastScanEl) {
+      lastScanEl.style.display = '';
+      lastScanEl.innerHTML = `
+        <div class="audit-last-scan als-ok">
+          <div class="als-station">Extra</div>
+          <div class="als-book">${pack.lottery_games?.game_name || `Game #${pack.game_number}`} · #${pack.pack_number}</div>
+          <div class="als-ticket"><strong>#${parsed.ticketPosition}</strong> <span class="als-good">✓ Extra verified</span></div>
+        </div>`;
+    }
+    // Scroll the Extra card into view
+    setTimeout(() => {
+      const row = document.getElementById(`extra-row-${pack.id}`);
+      if (row) row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 100);
+    const scanInpFocus = document.getElementById('inv-scan-input');
+    if (scanInpFocus) scanInpFocus.focus();
+    return;
   }
 
   _invData[pack.id] = parsed.ticketPosition;
@@ -1145,9 +1589,29 @@ function _updateInvProgress() {
     }
   }
 
-  const confirmBtn = document.getElementById('inv-confirm-btn');
-  if (confirmBtn) confirmBtn.disabled = (!_INV_OPTIONAL.has(_invContext) && done < total && total > 0) || hasViolation;
+  // Extra books must all be verified (scanned+confirmed) or bypassed before confirming
+  const extraTotal    = _invExtraPacks.length;
+  const extraVerified = _invExtraPacks.filter(p => {
+    const s = _invExtraState[p.id];
+    return s && (s.verified || s.bypassed || s.movedTo);
+  }).length;
+  const extraBlocking = extraTotal > 0 && extraVerified < extraTotal;
 
+  const confirmBtn = document.getElementById('inv-confirm-btn');
+  if (confirmBtn) confirmBtn.disabled = (!_INV_OPTIONAL.has(_invContext) && done < total && total > 0) || hasViolation || extraBlocking;
+
+  // Show/hide extra books reminder in scanner panel so it's always in view
+  const extraReminder = document.getElementById('inv-extra-reminder');
+  if (extraReminder) {
+    if (extraBlocking) {
+      const remaining = extraTotal - extraVerified;
+      extraReminder.style.display = '';
+      extraReminder.innerHTML = `<div style="margin-top:10px;padding:8px 10px;background:rgba(99,102,241,.15);border:1px solid rgba(99,102,241,.35);border-radius:8px;font-size:12px;color:#c7d2fe;line-height:1.5">
+        ↓ <strong>${remaining} staging book${remaining !== 1 ? 's' : ''}</strong> still need verification — scroll right to verify</div>`;
+    } else {
+      extraReminder.style.display = 'none';
+    }
+  }
 }
 
 async function confirmInventory(e) {
@@ -1248,10 +1712,12 @@ function skipInventory() {
 
 async function _invCommitOpenDay() {
   // Snapshot globals immediately — closeInventoryModal() can clear them during async awaits.
-  const _packs     = [..._invPacks];
-  const _scanData  = { ..._invData };
-  const _soldOuts  = { ..._invSoldOut };
-  const _packCache = { ..._packInfoCache };
+  const _packs      = [..._invPacks];
+  const _scanData   = { ..._invData };
+  const _soldOuts   = { ..._invSoldOut };
+  const _packCache  = { ..._packInfoCache };
+  const _extraPacks = [..._invExtraPacks];
+  const _extraState = { ..._invExtraState };
   const openNotes = (document.getElementById('inv-notes-input')?.value || '').trim() || null;
   // Create day
   const dayRes = await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_days`,
@@ -1293,6 +1759,28 @@ async function _invCommitOpenDay() {
       return sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(id)}`,
         { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
           body: JSON.stringify({ status: 'soldout', start_ticket: finalTicket, last_shift_ticket: finalTicket }) });
+    }));
+  }
+
+  // Commit Extra book audit results — update checkpoint tickets and log events
+  if (_extraPacks.length) {
+    await Promise.all(_extraPacks.map(p => {
+      const state = _extraState[p.id];
+      if (!state) return Promise.resolve();
+      if (state.movedTo) return Promise.resolve(); // already patched when move was confirmed
+      if (state.bypassed) {
+        // Bypass was already logged at bypass-time; nothing to patch
+        return Promise.resolve();
+      }
+      if (state.verified && state.ticket != null) {
+        // Update last_shift_ticket as a checkpoint so future audits detect tampering
+        return sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(p.id)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ last_shift_ticket: state.ticket }),
+        });
+      }
+      return Promise.resolve();
     }));
   }
 
@@ -2086,7 +2574,8 @@ async function confirmRemovePack(e) {
             { method: 'POST', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
               body: JSON.stringify([{ pack_id: _pendingRemoveId, shift_id: _currentShift.id,
                 tickets_sold: sold, revenue: sold * price,
-                ticket_at_open: shiftBaseline, ticket_at_close: removedAtTicket }]) });
+                ticket_at_open: shiftBaseline, ticket_at_close: removedAtTicket,
+                station_line: info.stationLine ?? null }]) });
         }
       }
     }
@@ -2256,7 +2745,8 @@ async function confirmReturnToLottery(e) {
             { method: 'POST', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
               body: JSON.stringify([{ pack_id: b.id, shift_id: _currentShift.id,
                 tickets_sold: sold, revenue: sold * b.price,
-                ticket_at_open: b.lastShiftTicket, ticket_at_close: returnedAtTicket }]) });
+                ticket_at_open: b.lastShiftTicket, ticket_at_close: returnedAtTicket,
+                station_line: (_packInfoCache[b.id] || {}).stationLine ?? null }]) });
         }
       }
     }));
@@ -2625,7 +3115,7 @@ function _updateMoveDestButtons() {
   // Activated books: stations only. Received or empty: all locations.
   const locs = (mode === 'activated') ? _getStations() : _getLocOrderAll();
   const noteEl = document.getElementById('move-books-admin-note');
-  if (noteEl) noteEl.style.display = mode === 'activated' ? '' : 'none';
+  if (noteEl) noteEl.style.display = 'none';
   destEl.innerHTML = locs.map(loc => {
     const isStn = _isStation(loc);
     const isOff = loc === 'Office';
@@ -2684,8 +3174,7 @@ function _executeConfirmedMove(e) {
   const hasActive = _movePendingHasActive;
   _movePendingDest = null;
   _movePendingHasActive = false;
-  if (hasActive) requireAdmin(() => _doMoveBooks(dest));
-  else _doMoveBooks(dest);
+  _doMoveBooks(dest);
 }
 
 async function _doMoveBooks(newLocation) {
@@ -3048,12 +3537,13 @@ function _packActionHtml(p) {
       ontouchstart="openSoldOutModal('${p.id}',${p.start_ticket},event)">Sold Out</button>`;
   }
   if (p.status === 'removed') {
-    const stationBtns = _getStations().map(st =>
+    const locs = [..._getStations(), ..._getExtraLocs(), 'Extra'];
+    const btns = locs.map(loc =>
       `<button class="pack-act-btn act-station"
-        onmousedown="restoreRemovedPack('${p.id}','${st}',event)"
-        ontouchstart="restoreRemovedPack('${p.id}','${st}',event)">${st}</button>`
+        onmousedown="restoreRemovedPack('${p.id}','${loc}',event)"
+        ontouchstart="restoreRemovedPack('${p.id}','${loc}',event)">${loc}</button>`
     ).join('');
-    return `<div class="pack-move-row"><span class="pack-move-label">Bring back to</span>${stationBtns}</div>`;
+    return `<div class="pack-move-row"><span class="pack-move-label">Bring back to</span>${btns}</div>`;
   }
   if (p.status === 'soldout') {
     const locs = [..._getStations(), 'Office'];
@@ -3707,6 +4197,11 @@ function setStockFilter(filter) {
   document.querySelectorAll('.stock-filter-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.filter === filter)
   );
+  if ((filter === 'removed' || filter === 'soldout') && _stockViewMode === 'location') {
+    _stockViewMode = 'game';
+    document.getElementById('stock-view-game').classList.add('active');
+    document.getElementById('stock-view-loc').classList.remove('active');
+  }
   loadLotteryStock();
 }
 
@@ -3914,8 +4409,8 @@ async function openShiftClose(type) {
   if (notesEl) notesEl.value = '';
 
   const select = _dbCaps.hasLoadingDirection
-    ? `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,loading_direction,location,lottery_games(game_name,price,tickets_per_pack)`
-    : `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,location,lottery_games(game_name,price,tickets_per_pack)`;
+    ? `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,loading_direction,location,station_line,lottery_games(game_name,price,tickets_per_pack)`
+    : `id,game_number,pack_number,start_ticket,end_ticket,last_shift_ticket,location,station_line,lottery_games(game_name,price,tickets_per_pack)`;
   try {
     const res = await sbFetch(
       `${CONFIG.supabaseUrl}/rest/v1/lottery_packs?select=${select}&status=eq.activated&order=location.asc,pack_number.asc`
@@ -4029,7 +4524,7 @@ async function confirmShiftClose(e) {
       const sold        = _soldTickets(currentTick, lastTicket, dir);
       const revenue     = sold * price;
       totalSold += sold; totalRev += revenue;
-      entries.push({ pack_id: p.id, tickets_sold: sold, revenue, ticket_at_open: lastTicket, ticket_at_close: currentTick });
+      entries.push({ pack_id: p.id, tickets_sold: sold, revenue, ticket_at_open: lastTicket, ticket_at_close: currentTick, station_line: p.station_line ?? null });
     }
 
     // Create or update shift record
