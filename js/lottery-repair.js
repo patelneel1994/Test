@@ -152,3 +152,86 @@ async function repairGameEntries(gameNumberOrArray) {
     showError('Repair error', err?.message || String(err));
   }
 }
+
+// ===== DELETE ZERO-REVENUE DAYS =====
+// Finds closed lottery_days with total_revenue = 0 (and no shift revenue),
+// shows a preview, and deletes them along with their shifts and shift entries.
+//
+//   deleteZeroRevenueDays()               — all zero-revenue closed days
+//   deleteZeroRevenueDays('2026-06-01')   — only that date
+//
+async function deleteZeroRevenueDays(date) {
+  if (!isAdmin()) { showError('Access denied', 'This repair is restricted to admins.'); return; }
+
+  try {
+    // 1. Fetch closed days with zero revenue, optionally filtered to one date
+    let url = `${CONFIG.supabaseUrl}/rest/v1/lottery_days` +
+      `?status=eq.closed&total_revenue=eq.0&select=id,opened_at,closed_at,total_tickets_sold,total_revenue&order=opened_at.asc`;
+    if (date) {
+      // Match any day whose opened_at falls within the given date (local midnight → next midnight UTC range)
+      const start = new Date(date + 'T00:00:00').toISOString();
+      const end   = new Date(date + 'T23:59:59').toISOString();
+      url += `&opened_at=gte.${start}&opened_at=lte.${end}`;
+    }
+    const daysRes = await sbFetch(url);
+    let days = await daysRes.json();
+    if (!Array.isArray(days) || !days.length) {
+      alert('No closed zero-revenue days found.'); return;
+    }
+
+    // 2. Cross-check: confirm their shifts also sum to zero (guard against stale day totals)
+    const dayIds = days.map(d => d.id);
+    const shiftsRes = await sbFetch(
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_shifts` +
+      `?day_id=in.(${dayIds.join(',')})&select=id,day_id,total_revenue`
+    );
+    const shifts = await shiftsRes.json();
+    const shiftRevByDay = {};
+    for (const s of (Array.isArray(shifts) ? shifts : [])) {
+      shiftRevByDay[s.day_id] = (shiftRevByDay[s.day_id] || 0) + parseFloat(s.total_revenue || 0);
+    }
+    // Keep only days where shift revenue also rounds to zero
+    days = days.filter(d => (shiftRevByDay[d.id] || 0) < 0.01);
+    if (!days.length) {
+      alert('No zero-revenue days confirmed (shift totals had revenue — skipping all).'); return;
+    }
+
+    const fmt = d =>
+      `  ${new Date(d.opened_at).toLocaleString()} → ${d.closed_at ? new Date(d.closed_at).toLocaleString() : 'open'}  (id ${d.id})`;
+    if (!confirm(
+      `Delete ${days.length} zero-revenue day${days.length !== 1 ? 's' : ''} and all their shifts/entries?\n\n` +
+      days.map(fmt).join('\n') +
+      `\n\nThis cannot be undone.`
+    )) return;
+
+    // 3. Delete shift entries for those shifts
+    const shiftIds = (Array.isArray(shifts) ? shifts : [])
+      .filter(s => days.some(d => d.id === s.day_id))
+      .map(s => s.id);
+    if (shiftIds.length) {
+      await sbFetch(
+        `${CONFIG.supabaseUrl}/rest/v1/lottery_shift_entries?shift_id=in.(${shiftIds.join(',')})`,
+        { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } }
+      );
+    }
+
+    // 4. Delete the shifts
+    const deleteDayIds = days.map(d => d.id);
+    if (shiftIds.length) {
+      await sbFetch(
+        `${CONFIG.supabaseUrl}/rest/v1/lottery_shifts?day_id=in.(${deleteDayIds.join(',')})`,
+        { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } }
+      );
+    }
+
+    // 5. Delete the days
+    await sbFetch(
+      `${CONFIG.supabaseUrl}/rest/v1/lottery_days?id=in.(${deleteDayIds.join(',')})`,
+      { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } }
+    );
+
+    alert(`Done! Deleted ${days.length} zero-revenue day${days.length !== 1 ? 's' : ''} and ${shiftIds.length} associated shift${shiftIds.length !== 1 ? 's' : ''}.`);
+  } catch (err) {
+    showError('Repair error', err?.message || String(err));
+  }
+}
