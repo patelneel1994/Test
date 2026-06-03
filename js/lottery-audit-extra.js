@@ -902,7 +902,7 @@ async function _invCommitClose(type) {
     entries.push({ pack_id: p.id, tickets_sold: sold, revenue, ticket_at_open: lastTicket, ticket_at_close: currentTick, station_line: stationLine });
   }
 
-  // Add any tickets sold on packs that were removed mid-shift (logged at removal time)
+  // Add any tickets sold on packs that were removed or sold out mid-shift (logged at action time)
   if (_dbCaps.hasFullDayTracking && _currentShift) {
     const activeIds  = new Set(_packs.map(p => p.id));
     const existRes   = await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_shift_entries?shift_id=eq.${_currentShift.id}&select=pack_id,tickets_sold,revenue`);

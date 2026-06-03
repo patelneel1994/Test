@@ -1,3 +1,29 @@
+// ===== SHIFT ENTRY HELPERS =====
+// Core: writes a lottery_shift_entries row for a mid-shift action.
+// countFinalTicket=true for sold-out (last ticket itself was dispensed).
+async function _writeShiftEntry(packId, atTicket, countFinalTicket) {
+  if (!_currentShift || !_dbCaps.hasFullDayTracking) return 0;
+  if (atTicket == null) return 0;
+  const info     = _packInfoCache[packId] || {};
+  const baseline = info.lastShiftTicket ?? info.startTicket;
+  if (baseline == null) return 0;
+  const dir   = (info.loadingDirection || 'asc').toLowerCase();
+  const price = parseFloat(info.price || 0);
+  const sold  = _soldTickets(atTicket, baseline, dir) + (countFinalTicket ? 1 : 0);
+  if (sold <= 0) return 0;
+  await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_shift_entries`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify([{ pack_id: packId, shift_id: _currentShift.id,
+        tickets_sold: sold, revenue: sold * price,
+        ticket_at_open: baseline, ticket_at_close: atTicket,
+        station_line: info.stationLine ?? null }]) });
+  return sold;
+}
+
+// Public helpers — call these at each action site.
+async function commitRemoveEntry(packId, atTicket)  { return _writeShiftEntry(packId, atTicket, false); }
+async function commitSoldOutEntry(packId, atTicket) { return _writeShiftEntry(packId, atTicket, true);  }
+
 // ===== STATUS / LOCATION CONFIG =====
 
 const PACK_STATUS = {
@@ -63,23 +89,7 @@ async function confirmRemovePack(e) {
       { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
         body: JSON.stringify(update) });
     _logPackEvent(_pendingRemoveId, 'removed', { ticket_before: prevTicket ?? null, ticket_after: removedAtTicket });
-    if (removedAtTicket != null && _currentShift) {
-      const info = _packInfoCache[_pendingRemoveId] || {};
-      const shiftBaseline = info.lastShiftTicket ?? info.startTicket;
-      const dir   = info.loadingDirection || 'asc';
-      const price = info.price || 0;
-      if (shiftBaseline != null) {
-        const sold = _soldTickets(removedAtTicket, shiftBaseline, dir);
-        if (sold > 0) {
-          await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_shift_entries`,
-            { method: 'POST', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-              body: JSON.stringify([{ pack_id: _pendingRemoveId, shift_id: _currentShift.id,
-                tickets_sold: sold, revenue: sold * price,
-                ticket_at_open: shiftBaseline, ticket_at_close: removedAtTicket,
-                station_line: info.stationLine ?? null }]) });
-        }
-      }
-    }
+    await commitRemoveEntry(_pendingRemoveId, removedAtTicket);
     closeRemoveModal();
     await loadLotteryStock(); loadLotteryDbStats();
     await _refreshInvAfterLoad(); loadReceiveQueue();
@@ -419,12 +429,21 @@ async function confirmSoldOut(e) {
   const btn = document.getElementById('soldout-confirm-btn');
   if (btn) btn.disabled = true;
   try {
-    const _soc = _packInfoCache[_pendingSoldOutId] || {};
-    const prevTicket = _soc.lastShiftTicket ?? _soc.startTicket ?? null;
+    const _soc        = _packInfoCache[_pendingSoldOutId] || {};
+    const prevTicket  = _soc.lastShiftTicket ?? _soc.startTicket ?? null;
+    // Settle the pack: set last_shift_ticket = finalTicket so the unsettled-detection
+    // filter (start_ticket != last_shift_ticket) correctly skips it at the next close.
+    // Only do this when a current shift exists; without one the close audit must still
+    // detect and count this pack, so leave last_shift_ticket unchanged.
+    const hasShift  = _dbCaps.hasFullDayTracking && !!_currentShift;
+    const patchBody = { status: 'soldout', start_ticket: finalTicket, station_line: null,
+                        ...(hasShift ? { last_shift_ticket: finalTicket } : {}) };
     await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(_pendingSoldOutId)}`,
       { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ status: 'soldout', start_ticket: finalTicket, station_line: null }) });
+        body: JSON.stringify(patchBody) });
     _logPackEvent(_pendingSoldOutId, 'soldout', { ticket_before: prevTicket ?? null, ticket_after: finalTicket });
+    await commitSoldOutEntry(_pendingSoldOutId, finalTicket);
+
     delete _packInfoCache[_pendingSoldOutId];
     closeSoldOutModal();
     await loadLotteryStock(); loadLotteryDbStats();

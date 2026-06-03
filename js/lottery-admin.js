@@ -1,7 +1,7 @@
 // ===== ADMIN CHECK =====
 // Session-level admin unlock. Expires after ADMIN_SESSION_MS of inactivity.
 // Replace _adminUnlocked with a real auth lookup when a user/role system is added.
-const ADMIN_SESSION_MS = 2 * 60 * 1000;  // 2 minutes
+const ADMIN_SESSION_MS = 10 * 60 * 1000;  // 2 minutes
 let _adminUnlocked       = false;
 let _adminCallback       = null;   // pending action waiting for admin auth
 let _adminExpireTimer    = null;   // auto-lock timeout

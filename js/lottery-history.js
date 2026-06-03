@@ -82,7 +82,7 @@ async function loadShiftHistory() {
         const fullSel =
           `id,day_id,opened_at,closed_at,status,shift_type,total_tickets_sold,total_revenue,notes,` +
           `lottery_shift_entries(pack_id,tickets_sold,revenue,ticket_at_open,ticket_at_close,station_line,` +
-            `lottery_packs(pack_number,game_number,location,lottery_games(game_name,price)))` +
+            `lottery_packs(pack_number,game_number,location,status,lottery_games(game_name,price)))` +
           eventsSelect;
         const sumSel =
           `id,day_id,opened_at,closed_at,status,shift_type,total_tickets_sold,total_revenue,notes`;
@@ -141,7 +141,7 @@ async function loadShiftHistory() {
     } else {
       const res = await sbFetch(
         `${CONFIG.supabaseUrl}/rest/v1/lottery_shifts` +
-        `?select=id,shift_type,closed_at,total_tickets_sold,total_revenue,notes,lottery_shift_entries(pack_id,tickets_sold,revenue,ticket_at_open,ticket_at_close,station_line,lottery_packs(pack_number,game_number,location,lottery_games(game_name,price)))` +
+        `?select=id,shift_type,closed_at,total_tickets_sold,total_revenue,notes,lottery_shift_entries(pack_id,tickets_sold,revenue,ticket_at_open,ticket_at_close,station_line,lottery_packs(pack_number,game_number,location,status,lottery_games(game_name,price)))` +
         `&order=closed_at.desc${dateFilter.replace(/opened_at/g, 'closed_at')}`
       );
       const shifts = await res.json();
@@ -252,14 +252,17 @@ function _buildPackTicketRows(entries, events) {
   const _BADGE_LABEL = { removed: 'Removed', returned_to_lottery: 'Returned', soldout: 'Sold Out', restored: 'Restored' };
 
   const _rowHtml = ({ pack, openTick, closeTick, sold, rev, statusEvents, stationLine, loc }) => {
-    const game    = pack.lottery_games || {};
-    const name    = game.game_name || (pack.game_number ? `Game #${pack.game_number}` : '?');
-    const packNum = pack.pack_number || '?';
-    const price   = parseFloat(game.price || 0);
-    const dotBg   = _priceColor(price).bg;
-    const abbr    = String(pack.game_number || '').slice(-2).padStart(2, '0');
-    const lineTag = _isStation(loc)
-      ? (stationLine != null ? `<span class="line-num-badge">${stationLine}</span>` : `<span class="line-num-empty"></span>`)
+    const game      = pack.lottery_games || {};
+    const name      = game.game_name || (pack.game_number ? `Game #${pack.game_number}` : '?');
+    const packNum   = pack.pack_number || '?';
+    const price     = parseFloat(game.price || 0);
+    const dotBg     = _priceColor(price).bg;
+    const abbr      = String(pack.game_number || '').slice(-2).padStart(2, '0');
+    const isSoldOut = statusEvents.some(ev => ev.action === 'soldout') || pack.status === 'soldout';
+    const lineTag   = _isStation(loc)
+      ? (stationLine != null
+          ? `<span class="line-num-badge${isSoldOut ? ' lnb-soldout' : ''}">${stationLine}</span>`
+          : `<span class="line-num-empty"></span>`)
       : '';
     const tickRange = (openTick != null && closeTick != null)
       ? `<span class="spt-range"><span class="spt-tick">#${openTick}</span><span class="spt-arrow">→</span><span class="spt-tick">#${closeTick}</span></span>`
@@ -270,7 +273,7 @@ function _buildPackTicketRows(entries, events) {
       const label = _BADGE_LABEL[ev.action] || ev.action;
       return `<span class="spt-badge spt-${ev.action.replace(/_/g,'-')}">${label}${tick != null ? ` #${tick}` : ''}</span>`;
     }).join('');
-    return `<div class="shift-pack-tick-row">
+    return `<div class="shift-pack-tick-row${isSoldOut ? ' spt-row-soldout' : ''}">
       <div class="spt-dot" style="background:${dotBg}">${abbr}</div>
       <div class="spt-info">
         <div class="spt-top">${lineTag}<span class="spt-name">${name}</span><span class="spt-packnum">#${packNum}</span>${badges}</div>
@@ -371,18 +374,23 @@ function _renderShiftEntryCard(en) {
   const rev       = parseFloat(en.revenue || 0);
   const sold      = en.tickets_sold || 0;
   const isSuspect = sold === 0 && en.ticket_at_open != null;
+  const isSoldOut = pack.status === 'soldout';
   const tickRange = (en.ticket_at_open != null && en.ticket_at_close != null)
     ? `<span class="aec-range">#${en.ticket_at_open}<span class="aec-arrow">→</span>#${en.ticket_at_close}</span>` : '';
-  const loc = en.lottery_packs?.location || '';
+  const loc = pack.location || '';
   const lineBadge = _isStation(loc)
-    ? (en.station_line != null ? `<span class="line-num-badge">${en.station_line}</span>` : `<span class="line-num-empty"></span>`)
+    ? (en.station_line != null
+        ? `<span class="line-num-badge${isSoldOut ? ' lnb-soldout' : ''}">${en.station_line}</span>`
+        : `<span class="line-num-empty"></span>`)
     : '';
-  return `<div class="audit-entry-card${isSuspect ? ' aec-flag' : ''}">
+  const soldOutBadge = isSoldOut ? `<span class="aec-soldout-badge">Sold Out</span>` : '';
+  return `<div class="audit-entry-card${isSuspect ? ' aec-flag' : ''}${isSoldOut ? ' aec-soldout' : ''}">
     <div class="aec-dot" style="background:${dotBg}">${abbr}</div>
     <div class="aec-body">
       <div class="aec-top">
         ${lineBadge}<span class="aec-name">${name}</span>
         <span class="aec-book">#${pack.pack_number || '?'}</span>
+        ${soldOutBadge}
       </div>
       <div class="aec-bottom">
         ${tickRange}
@@ -496,7 +504,7 @@ async function _loadDayDetail(dayId, groupId) {
     const shiftSel =
       `id,day_id,opened_at,closed_at,status,shift_type,total_tickets_sold,total_revenue,notes,` +
       `lottery_shift_entries(pack_id,tickets_sold,revenue,ticket_at_open,ticket_at_close,station_line,` +
-        `lottery_packs(pack_number,game_number,location,lottery_games(game_name,price)))` +
+        `lottery_packs(pack_number,game_number,location,status,lottery_games(game_name,price)))` +
       evSel;
     const r = await sbFetch(
       `${CONFIG.supabaseUrl}/rest/v1/lottery_shifts?day_id=eq.${dayId}&select=${shiftSel}&order=opened_at.asc`
