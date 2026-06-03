@@ -26,7 +26,7 @@ function _renderExtraSection() {
 
   let html = `
     <div class="extra-section" id="extra-section">
-      <div class="extra-section-hdr" onmousedown="toggleExtraSection()" ontouchstart="toggleExtraSection()">
+      <div class="extra-section-hdr" onmousedown="toggleExtraSection()">
         <span class="extra-toggle-icon">${toggle}</span>
         <span class="extra-section-title">Staging / Extra Books</span>
         ${pillHtml}
@@ -89,9 +89,9 @@ function _renderExtraBookCard(p) {
         <div class="extra-miduse-msg">Ticket #${state.ticket} — not at expected position (#${expected}). Was this book brought to a station for selling?</div>
         <div class="extra-prompt-btns">
           <button class="pack-act-btn act-station" style="font-size:11px;padding:5px 12px"
-            onmousedown="openExtraStationModal('${id}')" ontouchstart="openExtraStationModal('${id}')">Yes — pick station</button>
+            onmousedown="openExtraStationModal('${id}')">Yes — pick station</button>
           <button class="pack-act-btn" style="font-size:11px;padding:5px 12px;background:rgba(0,0,0,.06);color:var(--ink)"
-            onmousedown="_extraKeepHere('${id}')" ontouchstart="_extraKeepHere('${id}')">No — keep at Extra</button>
+            onmousedown="_extraKeepHere('${id}')">No — keep at Extra</button>
         </div>
       </div>`;
     showInput = false; // ticket already entered, awaiting decision
@@ -102,7 +102,7 @@ function _renderExtraBookCard(p) {
 
   const inputHtml = showInput ? `
     <button class="extra-bypass-btn"
-      onmousedown="openExtraBypassModal('${id}')" ontouchstart="openExtraBypassModal('${id}')">Bypass</button>` : '';
+      onmousedown="openExtraBypassModal('${id}')">Bypass</button>` : '';
 
   return `
     <div class="audit-book-card ${cardClass}" id="extra-row-${id}">
@@ -226,8 +226,7 @@ function openExtraStationModal(packId) {
   if (listEl) {
     listEl.innerHTML = _getStations().map(st => `
       <button class="modal-add-btn" style="margin:0;font-size:13px"
-        onmousedown="_confirmExtraToStation('${packId}','${st}')"
-        ontouchstart="_confirmExtraToStation('${packId}','${st}')">${st}</button>`).join('');
+        onmousedown="_confirmExtraToStation('${packId}','${st}')">${st}</button>`).join('');
   }
   document.getElementById('extra-station-modal').classList.add('open');
 }

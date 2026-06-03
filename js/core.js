@@ -28,7 +28,7 @@ function dismissError() {
 
 // ===== FOCUS =====
 // Barcode input ALWAYS holds focus except when camera open or modal is active.
-// ALL qty buttons use onmousedown/ontouchstart + e.preventDefault() so they never steal focus.
+// ALL qty buttons use onmousedown + e.preventDefault() so they never steal focus.
 function refocusBarcode() {
   if (cameraRunning) return;
   if (document.getElementById('loc-modal').classList.contains('open')) return;

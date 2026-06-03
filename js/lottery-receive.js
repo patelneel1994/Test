@@ -179,7 +179,7 @@ function renderLotteryResult(state) {
               <input class="modal-input lottery-form-input" id="lg-tpp" type="number" min="1" placeholder="300" /></div>
           </div>
           <button class="modal-add-btn" style="margin-bottom:0"
-            onmousedown="submitAddGame(event)" ontouchstart="submitAddGame(event)">Add Game &amp; Receive Pack</button>
+            onmousedown="submitAddGame(event)">Add Game &amp; Receive Pack</button>
         </div>
       </div>`;
     const lgNameEl = document.getElementById('lg-name');
@@ -199,7 +199,7 @@ function renderLotteryResult(state) {
           <div style="font-family:monospace">${p.formatted}</div>
         </div>
         <button class="modal-add-btn" style="margin-bottom:0"
-          onmousedown="reactivateAndReceivePack(event)" ontouchstart="reactivateAndReceivePack(event)">Bring Back &amp; Receive Pack</button>
+          onmousedown="reactivateAndReceivePack(event)">Bring Back &amp; Receive Pack</button>
       </div>`;
     return;
   }
@@ -225,8 +225,7 @@ function renderLotteryResult(state) {
           ? `<div class="lottery-card-sub" style="margin-bottom:8px">Ready to load — pick a station:</div>
              <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px">
                ${_getStations().map(st => `<button class="pack-act-btn act-station"
-                 onmousedown="openActivationForm('${pk.id}','${st}',event)"
-                 ontouchstart="openActivationForm('${pk.id}','${st}',event)">${st}</button>`).join('')}
+                 onmousedown="openActivationForm('${pk.id}','${st}',event)">${st}</button>`).join('')}
              </div>`
           : `<div class="lottery-card-sub">${_currentDay ? 'Open a shift to load' : 'Open a day to load'}</div>`)
       : pk.status === 'activated'

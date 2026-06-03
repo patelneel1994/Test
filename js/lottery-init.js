@@ -204,12 +204,10 @@ async function loadReceiveQueue() {
           location:         p.location,
         };
         const delBtn = `<button class="catalog-del-btn" style="margin-left:auto"
-          onmousedown="deleteReceivedPack('${p.id}','${(game.game_name || `Game #${gn}`).replace(/'/g,"\\'")}',event)"
-          ontouchstart="deleteReceivedPack('${p.id}','${(game.game_name || `Game #${gn}`).replace(/'/g,"\\'")}',event)">Delete</button>`;
+          onmousedown="deleteReceivedPack('${p.id}','${(game.game_name || `Game #${gn}`).replace(/'/g,"\\'")}',event)"\\'")}',event)">Delete</button>`;
         const loadBtns = canLoad
           ? _getStations().map(st => `<button class="pack-act-btn act-station"
-              onmousedown="openActivationForm('${p.id}','${st}',event)"
-              ontouchstart="openActivationForm('${p.id}','${st}',event)">${st}</button>`).join('') + delBtn
+              onmousedown="openActivationForm('${p.id}','${st}',event)">${st}</button>`).join('') + delBtn
           : `<span class="cat-in-use">${_currentDay ? 'Open a shift to load' : 'Open a day to load'}</span>${delBtn}`;
         html += `
           <div class="cat-card">

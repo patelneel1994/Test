@@ -64,11 +64,11 @@ function _renderBulkMoveBar(_rows) {
   bar.style.display = '';
   bar.innerHTML = `<div class="bulk-move-row">
     <button class="pack-act-btn act-move-tva" style="font-size:12px;padding:6px 12px"
-      onmousedown="openMoveBooksModal()" ontouchstart="openMoveBooksModal()">Move Books…</button>
+      onmousedown="openMoveBooksModal()">Move Books…</button>
     ${isAdmin() ? `<button class="pack-act-btn act-return-lottery" style="font-size:12px;padding:6px 12px"
-      onmousedown="openReturnToLotteryModal(event)" ontouchstart="openReturnToLotteryModal(event)">Return to Lottery…</button>` : ''}
+      onmousedown="openReturnToLotteryModal(event)">Return to Lottery…</button>` : ''}
     <span class="bulk-move-sep"></span>
-    <button class="pack-act-btn bulk-reset-btn" onmousedown="openResetModal()" ontouchstart="openResetModal()">⚠ Reset All</button>
+    <button class="pack-act-btn bulk-reset-btn" onmousedown="openResetModal()">⚠ Reset All</button>
   </div>`;
 }
 

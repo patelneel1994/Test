@@ -482,8 +482,7 @@ function _renderInvList() {
             </div>
             <div class="audit-book-actions">
               <button class="pack-act-btn" style="font-size:11px;padding:5px 10px"
-                onmousedown="_invUnmarkSoldOut('${p.id}')"
-                ontouchstart="_invUnmarkSoldOut('${p.id}')">Undo</button>
+                onmousedown="_invUnmarkSoldOut('${p.id}')">Undo</button>
             </div>
             <div class="audit-book-status audit-status-ok" id="inv-status-${p.id}">✓</div>
           </div>`;
@@ -518,14 +517,11 @@ function _renderInvList() {
       // Close-shift / close-day: any staff. Open-day: admin gate + extra warning in modal.
       const soldOutBtn = isClose
         ? `<button class="pack-act-btn act-soldout" style="font-size:11px;padding:5px 10px"
-            onmousedown="openSoldOutModal('${p.id}',null,event)"
-            ontouchstart="openSoldOutModal('${p.id}',null,event)">Sold Out</button>`
+            onmousedown="openSoldOutModal('${p.id}',null,event)">Sold Out</button>`
         : `<button class="pack-act-btn act-soldout" style="font-size:11px;padding:5px 10px;opacity:.7"
-            onmousedown="requireAdmin(()=>openSoldOutModal('${p.id}',null,null));event.preventDefault()"
-            ontouchstart="requireAdmin(()=>openSoldOutModal('${p.id}',null,null));event.preventDefault()">Sold Out</button>`;
+            onmousedown="requireAdmin(()=>openSoldOutModal('${p.id}',null,null));event.preventDefault()">Sold Out</button>`;
       const removeBtn = isOpenDay ? `<button class="pack-remove-btn"
-            onmousedown="removePackAtTicket('${p.id}',${p.start_ticket ?? 0},event)"
-            ontouchstart="removePackAtTicket('${p.id}',${p.start_ticket ?? 0},event)" title="Remove">✕</button>` : '';
+            onmousedown="removePackAtTicket('${p.id}',${p.start_ticket ?? 0},event)" title="Remove">✕</button>` : '';
 
       html += `
         <div class="audit-book-card${hasVal ? (hasViolation ? ' audit-book-flagged' : ' audit-book-matched') : (p.station_line != null ? ' audit-book-lined-pending' : ' audit-book-pending')}" id="inv-row-${p.id}">
@@ -628,8 +624,7 @@ function _renderInvList() {
           </div>
           <div class="audit-book-actions">
             ${_getStations().map(st => `<button class="pack-act-btn act-station" style="font-size:11px;padding:5px 10px"
-              onmousedown="loadReceivedPack('${p.id}','${st}',event)"
-              ontouchstart="loadReceivedPack('${p.id}','${st}',event)">${st}</button>`).join('')}
+              onmousedown="loadReceivedPack('${p.id}','${st}',event)">${st}</button>`).join('')}
           </div>
         </div>`;
     }

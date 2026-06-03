@@ -224,7 +224,7 @@ function _renderRltList() {
         <span class="rlt-ticket-label">At ticket #</span>
         <span class="rlt-ticket-val">${b.scannedTicket ?? '—'}</span>
       </div>` : '<div class="rlt-ticket-row"><span class="rlt-ticket-label" style="font-style:italic">No tickets sold — full book</span></div>'}
-      <button class="rlt-remove-btn" onmousedown="_rltRemoveItem('${b.id}')" ontouchstart="_rltRemoveItem('${b.id}')">✕</button>
+      <button class="rlt-remove-btn" onmousedown="_rltRemoveItem('${b.id}')">✕</button>
     </div>`;
   }).join('');
 }
@@ -530,8 +530,7 @@ function openMoveBooksModal() {
       const isOff = loc === 'Office';
       const cls   = isStn ? 'dest-station' : isOff ? 'dest-office' : '';
       return `<button class="move-dest-btn ${cls}"
-        onmousedown="confirmMoveBooks('${loc}',event)"
-        ontouchstart="confirmMoveBooks('${loc}',event)">${loc}</button>`;
+        onmousedown="confirmMoveBooks('${loc}',event)">${loc}</button>`;
     }).join('');
   }
   const inp = document.getElementById('move-books-input');
@@ -614,7 +613,7 @@ function _renderMoveBooksQueue() {
         <span class="move-queue-name">${q.gameName}</span>
         <span class="move-queue-sub">#${q.packNumber} · from ${q.location}</span>
       </div>
-      <button class="sloc-del" onmousedown="_removeMoveQueueItem(${i},event)" ontouchstart="_removeMoveQueueItem(${i},event)" title="Remove">
+      <button class="sloc-del" onmousedown="_removeMoveQueueItem(${i},event)" title="Remove">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>`;
@@ -641,8 +640,7 @@ function _updateMoveDestButtons() {
     const isOff = loc === 'Office';
     const cls   = isStn ? 'dest-station' : isOff ? 'dest-office' : '';
     return `<button class="move-dest-btn ${cls}"
-      onmousedown="confirmMoveBooks('${loc}',event)"
-      ontouchstart="confirmMoveBooks('${loc}',event)">${loc}</button>`;
+      onmousedown="confirmMoveBooks('${loc}',event)">${loc}</button>`;
   }).join('');
 }
 
@@ -669,11 +667,9 @@ function _showMoveConfirmPanel(newLocation, hasActive) {
       <div class="move-confirm-summary">Moving <strong>${n} book${n !== 1 ? 's' : ''}</strong> to <strong>${newLocation}</strong></div>
       <div class="move-confirm-actions">
         <button class="move-confirm-back"
-          onmousedown="_cancelMoveConfirm(event)"
-          ontouchstart="_cancelMoveConfirm(event)">← Change</button>
+          onmousedown="_cancelMoveConfirm(event)">← Change</button>
         <button class="move-confirm-btn"
-          onmousedown="_executeConfirmedMove(event)"
-          ontouchstart="_executeConfirmedMove(event)">Confirm move</button>
+          onmousedown="_executeConfirmedMove(event)">Confirm move</button>
       </div>
     </div>`;
 }
@@ -717,7 +713,7 @@ function _showMoveUndoToast(movedBooks, newLocation) {
   toast.id = 'move-undo-toast';
   toast.className = 'move-undo-toast';
   toast.innerHTML = `<span>Moved ${n} book${n !== 1 ? 's' : ''} to ${newLocation}</span>
-    <button class="move-undo-btn" onmousedown="_undoMoveBooks(event)" ontouchstart="_undoMoveBooks(event)">Undo</button>`;
+    <button class="move-undo-btn" onmousedown="_undoMoveBooks(event)">Undo</button>`;
   document.body.appendChild(toast);
   requestAnimationFrame(() => toast.classList.add('move-undo-toast--visible'));
 
@@ -1036,13 +1032,11 @@ function _packActionHtml(p) {
     const stagingLocs = [..._FIXED_STAGING, ...extras].filter(l => l !== loc);
     const moveButtons = stagingLocs.map(dest =>
       `<button class="pack-act-btn act-move-office${loc === dest ? ' act-move-active' : ''}"
-        onmousedown="moveReceivedPack('${p.id}','${dest}',event)"
-        ontouchstart="moveReceivedPack('${p.id}','${dest}',event)">${dest}</button>`
+        onmousedown="moveReceivedPack('${p.id}','${dest}',event)">${dest}</button>`
     ).join('');
     const stationButtons = stations.map(st =>
       `<button class="pack-act-btn act-station"
-        onmousedown="openActivationForm('${p.id}','${st}',event)"
-        ontouchstart="openActivationForm('${p.id}','${st}',event)">${st}</button>`
+        onmousedown="openActivationForm('${p.id}','${st}',event)">${st}</button>`
     ).join('');
     return `<div class="pack-move-row">
       <span class="pack-move-label">Move to</span>
@@ -1053,15 +1047,13 @@ function _packActionHtml(p) {
   if (p.status === 'activated') {
     if (_dbCaps.hasFullDayTracking && !_currentDay && !_currentShift) return '';
     return `<button class="pack-act-btn act-soldout"
-      onmousedown="openSoldOutModal('${p.id}',${p.start_ticket},event)"
-      ontouchstart="openSoldOutModal('${p.id}',${p.start_ticket},event)">Sold Out</button>`;
+      onmousedown="openSoldOutModal('${p.id}',${p.start_ticket},event)">Sold Out</button>`;
   }
   if (p.status === 'removed') {
     const locs = [..._getStations(), ..._getExtraLocs(), 'Extra'];
     const btns = locs.map(loc =>
       `<button class="pack-act-btn act-station"
-        onmousedown="restoreRemovedPack('${p.id}','${loc}',event)"
-        ontouchstart="restoreRemovedPack('${p.id}','${loc}',event)">${loc}</button>`
+        onmousedown="restoreRemovedPack('${p.id}','${loc}',event)">${loc}</button>`
     ).join('');
     return `<div class="pack-move-row"><span class="pack-move-label">Bring back to</span>${btns}</div>`;
   }
@@ -1069,8 +1061,7 @@ function _packActionHtml(p) {
     const locs = [..._getStations(), 'Office'];
     const btns = locs.map(loc =>
       `<button class="pack-act-btn act-station" style="font-size:11px;padding:5px 10px"
-        onmousedown="restoreSoldOutPack('${p.id}','${loc}',${p.start_ticket ?? 0},event)"
-        ontouchstart="restoreSoldOutPack('${p.id}','${loc}',${p.start_ticket ?? 0},event)">↩ ${loc}</button>`
+        onmousedown="restoreSoldOutPack('${p.id}','${loc}',${p.start_ticket ?? 0},event)">↩ ${loc}</button>`
     ).join('');
     return `<div class="pack-move-row"><span class="pack-move-label">Restore to</span>${btns}</div>`;
   }
@@ -1081,20 +1072,17 @@ function _packRemoveBtn(p) {
   if (!_canMoveOrActivate()) return '';
   if (p.status === 'activated') return `
     <button class="pack-remove-btn"
-      onmousedown="removePackAtTicket('${p.id}',${p.start_ticket},event)"
-      ontouchstart="removePackAtTicket('${p.id}',${p.start_ticket},event)" title="Remove at ticket #">✕</button>`;
+      onmousedown="removePackAtTicket('${p.id}',${p.start_ticket},event)" title="Remove at ticket #">✕</button>`;
   if (p.status === 'received') return `
     <button class="pack-remove-btn"
-      onmousedown="removePackAtTicket('${p.id}',null,event)"
-      ontouchstart="removePackAtTicket('${p.id}',null,event)" title="Remove">✕</button>`;
+      onmousedown="removePackAtTicket('${p.id}',null,event)" title="Remove">✕</button>`;
   return '';
 }
 
 function _packEditBtn(p) {
   if (p.status !== 'activated') return '';
   return `<button class="pack-remove-btn" style="color:var(--ink-60);font-size:13px" title="Edit ticket position"
-    onmousedown="openEditPackModal('${p.id}',${p.start_ticket ?? 0},${p.end_ticket ?? 'null'},event)"
-    ontouchstart="openEditPackModal('${p.id}',${p.start_ticket ?? 0},${p.end_ticket ?? 'null'},event)">✎</button>`;
+    onmousedown="openEditPackModal('${p.id}',${p.start_ticket ?? 0},${p.end_ticket ?? 'null'},event)">✎</button>`;
 }
 
 function renderPackRow(p, ticketsPerPack, gameName, price) {
