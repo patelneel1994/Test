@@ -436,7 +436,7 @@ async function confirmSoldOut(e) {
     // Only do this when a current shift exists; without one the close audit must still
     // detect and count this pack, so leave last_shift_ticket unchanged.
     const hasShift  = _dbCaps.hasFullDayTracking && !!_currentShift;
-    const patchBody = { status: 'soldout', start_ticket: finalTicket, station_line: null,
+    const patchBody = { status: 'soldout', start_ticket: finalTicket,
                         ...(hasShift ? { last_shift_ticket: finalTicket } : {}) };
     await sbFetch(`${CONFIG.supabaseUrl}/rest/v1/lottery_packs?id=eq.${encodeURIComponent(_pendingSoldOutId)}`,
       { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },

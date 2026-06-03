@@ -82,7 +82,7 @@ async function loadShiftHistory() {
         const fullSel =
           `id,day_id,opened_at,closed_at,status,shift_type,total_tickets_sold,total_revenue,notes,` +
           `lottery_shift_entries(pack_id,tickets_sold,revenue,ticket_at_open,ticket_at_close,station_line,` +
-            `lottery_packs(pack_number,game_number,location,status,lottery_games(game_name,price)))` +
+            `lottery_packs(pack_number,game_number,location,station_line,status,lottery_games(game_name,price)))` +
           eventsSelect;
         const sumSel =
           `id,day_id,opened_at,closed_at,status,shift_type,total_tickets_sold,total_revenue,notes`;
@@ -141,7 +141,7 @@ async function loadShiftHistory() {
     } else {
       const res = await sbFetch(
         `${CONFIG.supabaseUrl}/rest/v1/lottery_shifts` +
-        `?select=id,shift_type,closed_at,total_tickets_sold,total_revenue,notes,lottery_shift_entries(pack_id,tickets_sold,revenue,ticket_at_open,ticket_at_close,station_line,lottery_packs(pack_number,game_number,location,status,lottery_games(game_name,price)))` +
+        `?select=id,shift_type,closed_at,total_tickets_sold,total_revenue,notes,lottery_shift_entries(pack_id,tickets_sold,revenue,ticket_at_open,ticket_at_close,station_line,lottery_packs(pack_number,game_number,location,station_line,status,lottery_games(game_name,price)))` +
         `&order=closed_at.desc${dateFilter.replace(/opened_at/g, 'closed_at')}`
       );
       const shifts = await res.json();
@@ -231,8 +231,9 @@ function _buildPackTicketRows(entries, events) {
     if (en.ticket_at_close != null) row.closeTick = en.ticket_at_close;
     row.sold += en.tickets_sold    || 0;
     row.rev  += parseFloat(en.revenue || 0);
-    // station_line and location — last entry wins (most recent shift's assignment)
-    if (en.station_line != null) row.stationLine = en.station_line;
+    // station_line: prefer shift entry value; fall back to pack's current value (preserved for soldout)
+    const entryLine = en.station_line ?? pack.station_line ?? null;
+    if (entryLine != null) row.stationLine = entryLine;
     if (!row.loc && pack.location) row.loc = pack.location;
   }
 
@@ -305,7 +306,7 @@ function _buildPackTicketRows(entries, events) {
   const stationHtml = locKeys.map(loc => {
     const rows = groups[loc].sort((a, b) => {
       if (a.stationLine == null && b.stationLine == null) return 0;
-      if (a.stationLine == null) return 1; if (b.stationLine == null) return -1;
+      if (a.stationLine == null) return -1; if (b.stationLine == null) return 1;
       return a.stationLine - b.stationLine;
     });
     // Skip "Unknown" groups that have no sold tickets — they're locationless noise
@@ -328,8 +329,8 @@ function _buildPackTicketRows(entries, events) {
 function _sortShiftEntries(entries) {
   return [...entries].sort((a, b) => {
     if (a.station_line == null && b.station_line == null) return 0;
-    if (a.station_line == null) return 1;
-    if (b.station_line == null) return -1;
+    if (a.station_line == null) return -1;
+    if (b.station_line == null) return 1;
     return a.station_line - b.station_line;
   });
 }
@@ -504,7 +505,7 @@ async function _loadDayDetail(dayId, groupId) {
     const shiftSel =
       `id,day_id,opened_at,closed_at,status,shift_type,total_tickets_sold,total_revenue,notes,` +
       `lottery_shift_entries(pack_id,tickets_sold,revenue,ticket_at_open,ticket_at_close,station_line,` +
-        `lottery_packs(pack_number,game_number,location,status,lottery_games(game_name,price)))` +
+        `lottery_packs(pack_number,game_number,location,station_line,status,lottery_games(game_name,price)))` +
       evSel;
     const r = await sbFetch(
       `${CONFIG.supabaseUrl}/rest/v1/lottery_shifts?day_id=eq.${dayId}&select=${shiftSel}&order=opened_at.asc`

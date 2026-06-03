@@ -197,6 +197,12 @@ function _renderStationSlots(loc, packs, slotCount) {
   }
 
   let html = '';
+
+  if (unslotted.length) {
+    html += `<div class="slot-section-header">No line assigned</div>`;
+    for (const p of unslotted) html += renderPackRowByLoc(p);
+  }
+
   for (let i = 1; i <= slotCount; i++) {
     const p = packByLine[i];
     if (p) {
@@ -210,11 +216,6 @@ function _renderStationSlots(loc, packs, slotCount) {
           </div>
         </div>`;
     }
-  }
-
-  if (unslotted.length) {
-    html += `<div class="slot-section-header">No line assigned</div>`;
-    for (const p of unslotted) html += renderPackRowByLoc(p);
   }
 
   if (received.length) {
