@@ -61,7 +61,7 @@ async function loadShiftHistory() {
   try {
     if (_dbCaps.hasFullDayTracking) {
       const eventsSelect = _dbCaps.hasPackEvents
-        ? `,lottery_pack_events(id,pack_id,action,location_from,location_to,ticket_before,ticket_after,notes,created_at,lottery_packs(pack_number,game_number,raw_barcode,lottery_games(game_name,price)))`
+        ? `,lottery_pack_events(id,pack_id,action,location_from,location_to,ticket_before,ticket_after,notes,created_at,lottery_packs(pack_number,game_number,raw_barcode,station_line,location,lottery_games(game_name,price)))`
         : '';
 
       // ── Query 1: days (no embedded shifts — PostgREST embedding silently caps
@@ -500,7 +500,7 @@ async function _loadDayDetail(dayId, groupId) {
 
   try {
     const evSel = _dbCaps.hasPackEvents
-      ? `,lottery_pack_events(id,pack_id,action,location_from,location_to,ticket_before,ticket_after,notes,created_at,lottery_packs(pack_number,game_number,raw_barcode,lottery_games(game_name,price)))`
+      ? `,lottery_pack_events(id,pack_id,action,location_from,location_to,ticket_before,ticket_after,notes,created_at,lottery_packs(pack_number,game_number,raw_barcode,station_line,location,lottery_games(game_name,price)))`
       : '';
     const shiftSel =
       `id,day_id,opened_at,closed_at,status,shift_type,total_tickets_sold,total_revenue,notes,` +
@@ -748,8 +748,14 @@ function renderDayHistory(days, activePacks = []) {
         const name = game.game_name || (pack.game_number ? `#${pack.game_number}` : '');
         const detail = _packEventDetail(ev);
         const t = new Date(ev.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const evLoc  = pack.location ?? ev.location_to ?? null;
+        const evLine = pack.station_line ?? null;
+        const lineTag = (evLoc != null && evLine != null && _isStation(evLoc))
+          ? `<span class="line-num-badge">${evLine}</span>`
+          : '';
         return `<div class="cp-event-row ev-${ev.action}">
           <span class="cp-ev-badge ev-badge-${ev.action}">${ev.action}</span>
+          ${lineTag}
           ${name ? `<span class="cp-ev-name">${name}</span>` : ''}
           <span class="cp-ev-detail">${detail}</span>
           <span class="cp-ev-time">${t}</span>

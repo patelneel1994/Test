@@ -92,17 +92,30 @@ Three typefaces, each with a distinct role:
 | **Inter** | Body text, descriptions, prose | 400, 500, 600, 700 |
 | **JetBrains Mono** | Barcodes, ticket numbers, monetary values, data | 400, 500, 600, 700, 800 |
 
-### Scale (approximate)
+### Scale
+
+Five clean tiers. No fractional sizes.
 
 ```
-Page title:       38px / 800 / Space Grotesk / tracking -.02em
-Section title:    16–17px / 800 / Space Grotesk
-Card heading:     15–16px / 700 / Space Grotesk
-Body:             13–14px / 400–600 / Inter
-Label (caps):     10–11px / 700 / Space Grotesk / uppercase / tracking .06–.12em
-Mono data:        11–14px / 700–800 / JetBrains Mono
-Badge/pill:       10–11px / 700 / Space Grotesk / uppercase
+Page title:        38px / 800 / Space Grotesk / tracking -.02em
+Section heading:   18px / 800 / Space Grotesk / tracking -.01em  (.card-section-title)
+Card heading:      14–15px / 700–800 / Space Grotesk
+Body / values:     13px / 500–700 / Inter or JetBrains Mono
+Metadata (caps):   11px / 600–700 / Space Grotesk / uppercase / tracking .07–.12em
 ```
+
+**Weight roles** (strict):
+- 800: page titles, section headings, display numbers only
+- 700: primary labels, card headings, action buttons
+- 600: body values, secondary headings
+- 400–500: timestamps, subtitles, metadata — must recede
+
+**JetBrains Mono scope** — every number that a cashier or manager reads as data:
+- Ticket numbers, pack numbers, barcodes
+- Monetary values (revenue, cost, totals)
+- Counts and quantities in data context
+- Timestamps in data context
+- Generic `monospace` fallbacks are forbidden; always use `'JetBrains Mono', monospace`
 
 Hierarchy uses weight contrast, not just size. 800 vs. 400 in the same size creates clear primary/secondary reading order.
 
